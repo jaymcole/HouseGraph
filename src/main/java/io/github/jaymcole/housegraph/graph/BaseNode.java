@@ -11,11 +11,24 @@ public abstract class BaseNode {
         status = NodeProcessingStatus.NOT_STARTED;
         inputs = new ArrayList<>();
         outputs = new ArrayList<>();
-        configureInputs();
-        configureOutputs();
+    }
+
+    /**
+     * configureInputs()/configureOutputs() are deferred until first use rather than
+     * called from the constructor, since a subclass's field initializers (e.g. the
+     * NodeVariable fields they pass to addInput/addOutput) haven't run yet while the
+     * BaseNode constructor is executing.
+     */
+    private void ensureConfigured() {
+        if (!configured) {
+            configured = true;
+            configureInputs();
+            configureOutputs();
+        }
     }
 
     public void beginProcessing() {
+        ensureConfigured();
         if(status.isComplete()) {
             return;
         }
@@ -58,6 +71,21 @@ public abstract class BaseNode {
         outputs.add(variable);
     }
 
+    public List<NodeVariable> getInputs() {
+        ensureConfigured();
+        return inputs;
+    }
+
+    public List<NodeVariable> getOutputs() {
+        ensureConfigured();
+        return outputs;
+    }
+
+    public String getName() {
+        return getClass().getSimpleName();
+    }
+
+    private boolean configured = false;
     private List<NodeVariable> inputs;
     private List<NodeVariable> outputs;
 

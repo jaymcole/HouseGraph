@@ -1,11 +1,14 @@
 package io.github.jaymcole.housegraph;
 
+import io.github.jaymcole.housegraph.graph.nodes.AddNode;
+import io.github.jaymcole.housegraph.graph.nodes.ConstantFloatNode;
+import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.NodeView;
 import javafx.application.Application;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Label;
-import javafx.scene.layout.VBox;
+import javafx.scene.control.Button;
+import javafx.scene.control.ToolBar;
+import javafx.scene.layout.BorderPane;
 import javafx.stage.Stage;
 
 /**
@@ -15,17 +18,22 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) {
-        Label title = new Label("HouseGraph");
-        title.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
+        GraphCanvas canvas = new GraphCanvas();
 
-        Label subtitle = new Label("Home automation graph editor");
+        Button addConstantButton = new Button("Add Constant");
+        addConstantButton.setOnAction(e -> canvas.addNode(new NodeView(new ConstantFloatNode(), canvas.getContent())));
 
-        VBox root = new VBox(10, title, subtitle);
-        root.setAlignment(Pos.CENTER);
-        root.setPadding(new Insets(40));
+        Button addSumButton = new Button("Add Sum");
+        addSumButton.setOnAction(e -> canvas.addNode(new NodeView(new AddNode(), canvas.getContent())));
+
+        ToolBar toolBar = new ToolBar(addConstantButton, addSumButton);
+
+        BorderPane root = new BorderPane();
+        root.setTop(toolBar);
+        root.setCenter(canvas);
 
         stage.setTitle("HouseGraph");
-        stage.setScene(new Scene(root, 800, 600));
+        stage.setScene(new Scene(root, 1100, 750));
         stage.show();
     }
 
