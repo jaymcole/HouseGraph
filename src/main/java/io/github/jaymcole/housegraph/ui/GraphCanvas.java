@@ -1,6 +1,8 @@
 package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.Edge;
+import io.github.jaymcole.housegraph.graph.FlowEdge;
+import io.github.jaymcole.housegraph.graph.FlowGraph;
 import io.github.jaymcole.housegraph.graph.Graph;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
@@ -25,22 +27,25 @@ import java.util.Set;
 
 /**
  * An infinite, pannable, zoomable canvas that hosts {@link NodeView}s and the
- * {@link EdgeView}s connecting them.
+ * {@link EdgeView}/{@link FlowEdgeView} connections between them.
  * <p>
  * Panning: right-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
  * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges;
- * Delete/Backspace removes the current selection. Edges are created by dragging from
- * one port's circle to another.
+ * Delete/Backspace removes the current selection. Data edges are created by dragging
+ * from one data port's circle to another; flow edges by dragging between the triangular
+ * flow anchors at the top corners of each node.
  */
 public class GraphCanvas extends Pane implements NodeView.DragController {
 
     private final Group content = new Group();
     private final List<PortView> ports = new ArrayList<>();
+    private final List<FlowPortView> flowPorts = new ArrayList<>();
     private final List<NodeView> nodeViews = new ArrayList<>();
     private final Map<Edge, EdgeView> edgeViews = new HashMap<>();
+    private final Map<FlowEdge, FlowEdgeView> flowEdgeViews = new HashMap<>();
 
     private final Set<NodeView> selectedNodes = new LinkedHashSet<>();
-    private final Set<EdgeView> selectedEdges = new LinkedHashSet<>();
+    private final Set<ConnectionView> selectedConnections = new LinkedHashSet<>();
 
     private double zoom = 1.0;
     private double translateX = 0;
@@ -51,6 +56,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
 
     private PortView dragSourcePort;
     private CubicCurve dragLine;
+
+    private FlowPortView dragSourceFlowPort;
+    private CubicCurve flowDragLine;
 
     private Rectangle selectionRectangle;
     private Point2D selectionStartContent;
@@ -94,6 +102,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         nodeViews.add(nodeView);
         ports.addAll(nodeView.getInputPorts());
         ports.addAll(nodeView.getOutputPorts());
+        flowPorts.add(nodeView.getFlowInPort());
+        flowPorts.add(nodeView.getFlowOutPort());
 
         for (PortView port : nodeView.getInputPorts()) {
             wirePort(port);
@@ -101,6 +111,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         for (PortView port : nodeView.getOutputPorts()) {
             wirePort(port);
         }
+        wireFlowPort(nodeView.getFlowInPort());
+        wireFlowPort(nodeView.getFlowOutPort());
     }
 
     private void removeNode(NodeView nodeView) {
@@ -108,7 +120,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         nodeViews.remove(nodeView);
         ports.removeAll(nodeView.getInputPorts());
         ports.removeAll(nodeView.getOutputPorts());
+        flowPorts.remove(nodeView.getFlowInPort());
+        flowPorts.remove(nodeView.getFlowOutPort());
     }
+
+    // --- Data ports / edges -----------------------------------------------------
 
     private void wirePort(PortView port) {
         port.getCircle().setOnMousePressed(event -> {
@@ -199,11 +215,103 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             edgeViews.remove(edge);
             outputPort.disconnect();
             inputPort.disconnect();
-            selectedEdges.remove(edgeViewRef[0]);
+            selectedConnections.remove(edgeViewRef[0]);
         });
         edgeViewRef[0] = edgeView;
         edgeViews.put(edge, edgeView);
         content.getChildren().add(edgeView);
+    }
+
+    // --- Flow ports / edges ------------------------------------------------------
+
+    private void wireFlowPort(FlowPortView port) {
+        port.setOnMousePressed(event -> {
+            dragSourceFlowPort = port;
+            flowDragLine = new CubicCurve();
+            flowDragLine.setFill(null);
+            flowDragLine.setStroke(Color.web("#98c379"));
+            flowDragLine.setStrokeWidth(2);
+            flowDragLine.setMouseTransparent(true);
+            content.getChildren().add(flowDragLine);
+
+            Point2D start = port.getCenterInContent(content);
+            flowDragLine.setStartX(start.getX());
+            flowDragLine.setStartY(start.getY());
+            flowDragLine.setEndX(start.getX());
+            flowDragLine.setEndY(start.getY());
+            flowDragLine.setControlX1(start.getX());
+            flowDragLine.setControlY1(start.getY());
+            flowDragLine.setControlX2(start.getX());
+            flowDragLine.setControlY2(start.getY());
+            event.consume();
+        });
+
+        port.setOnMouseDragged(event -> {
+            if (flowDragLine == null) {
+                return;
+            }
+            Point2D start = dragSourceFlowPort.getCenterInContent(content);
+            Point2D end = content.sceneToLocal(event.getSceneX(), event.getSceneY());
+            flowDragLine.setStartX(start.getX());
+            flowDragLine.setStartY(start.getY());
+            flowDragLine.setEndX(end.getX());
+            flowDragLine.setEndY(end.getY());
+            double controlOffset = Math.max(50, Math.abs(end.getX() - start.getX()) / 2);
+            flowDragLine.setControlX1(start.getX() + controlOffset);
+            flowDragLine.setControlY1(start.getY());
+            flowDragLine.setControlX2(end.getX() - controlOffset);
+            flowDragLine.setControlY2(end.getY());
+            event.consume();
+        });
+
+        port.setOnMouseReleased(event -> {
+            if (dragSourceFlowPort != null) {
+                Point2D releasePoint = content.sceneToLocal(event.getSceneX(), event.getSceneY());
+                FlowPortView target = findFlowPortNear(releasePoint);
+                if (target != null && isValidFlowConnection(dragSourceFlowPort, target)) {
+                    createFlowEdge(dragSourceFlowPort, target);
+                }
+            }
+            content.getChildren().remove(flowDragLine);
+            flowDragLine = null;
+            dragSourceFlowPort = null;
+            event.consume();
+        });
+    }
+
+    private FlowPortView findFlowPortNear(Point2D point) {
+        FlowPortView best = null;
+        double bestDistance = 16;
+        for (FlowPortView port : flowPorts) {
+            double distance = port.getCenterInContent(content).distance(point);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = port;
+            }
+        }
+        return best;
+    }
+
+    private boolean isValidFlowConnection(FlowPortView a, FlowPortView b) {
+        return a.getOwner() != b.getOwner() && a.getDirection() != b.getDirection();
+    }
+
+    private void createFlowEdge(FlowPortView a, FlowPortView b) {
+        FlowPortView outPort = a.getDirection() == FlowPortView.Direction.OUT ? a : b;
+        FlowPortView inPort = a.getDirection() == FlowPortView.Direction.OUT ? b : a;
+
+        FlowEdge flowEdge = new FlowEdge(outPort.getOwner().getNode(), inPort.getOwner().getNode());
+        FlowGraph.registerFlowEdge(flowEdge);
+
+        FlowEdgeView[] flowEdgeViewRef = new FlowEdgeView[1];
+        FlowEdgeView flowEdgeView = new FlowEdgeView(outPort, inPort, content, () -> {
+            FlowGraph.removeFlowEdge(flowEdge);
+            flowEdgeViews.remove(flowEdge);
+            selectedConnections.remove(flowEdgeViewRef[0]);
+        });
+        flowEdgeViewRef[0] = flowEdgeView;
+        flowEdgeViews.put(flowEdge, flowEdgeView);
+        content.getChildren().add(flowEdgeView);
     }
 
     // --- Node drag / selection ---------------------------------------------------
@@ -237,15 +345,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         }
     }
 
-    private void selectEdge(EdgeView edge) {
-        if (selectedEdges.add(edge)) {
-            edge.setSelected(true);
+    private void selectConnection(ConnectionView connection) {
+        if (selectedConnections.add(connection)) {
+            connection.setSelected(true);
         }
     }
 
-    private void deselectEdge(EdgeView edge) {
-        if (selectedEdges.remove(edge)) {
-            edge.setSelected(false);
+    private void deselectConnection(ConnectionView connection) {
+        if (selectedConnections.remove(connection)) {
+            connection.setSelected(false);
         }
     }
 
@@ -253,32 +361,38 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         for (NodeView node : new ArrayList<>(selectedNodes)) {
             deselectNode(node);
         }
-        for (EdgeView edge : new ArrayList<>(selectedEdges)) {
-            deselectEdge(edge);
+        for (ConnectionView connection : new ArrayList<>(selectedConnections)) {
+            deselectConnection(connection);
         }
+    }
+
+    private List<ConnectionView> allConnections() {
+        List<ConnectionView> all = new ArrayList<>(edgeViews.values());
+        all.addAll(flowEdgeViews.values());
+        return all;
     }
 
     private void deleteSelected() {
         List<NodeView> nodesToDelete = new ArrayList<>(selectedNodes);
-        List<EdgeView> edgesToDelete = new ArrayList<>(selectedEdges);
+        List<ConnectionView> connectionsToDelete = new ArrayList<>(selectedConnections);
 
         for (NodeView node : nodesToDelete) {
-            for (EdgeView edgeView : edgeViews.values()) {
-                if (edgeView.touchesNode(node) && !edgesToDelete.contains(edgeView)) {
-                    edgesToDelete.add(edgeView);
+            for (ConnectionView connection : allConnections()) {
+                if (connection.touchesNode(node) && !connectionsToDelete.contains(connection)) {
+                    connectionsToDelete.add(connection);
                 }
             }
         }
 
-        for (EdgeView edgeView : edgesToDelete) {
-            edgeView.delete();
+        for (ConnectionView connection : connectionsToDelete) {
+            connection.delete();
         }
         for (NodeView node : nodesToDelete) {
             removeNode(node);
         }
 
         selectedNodes.clear();
-        selectedEdges.clear();
+        selectedConnections.clear();
     }
 
     // --- Canvas panning (right-click) / rubber-band selection (left-click) --------
@@ -338,11 +452,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
                 deselectNode(node);
             }
         }
-        for (EdgeView edge : edgeViews.values()) {
-            if (edge.getBoundsInParent().intersects(rect)) {
-                selectEdge(edge);
+        for (ConnectionView connection : allConnections()) {
+            if (connection.getBoundsInParent().intersects(rect)) {
+                selectConnection(connection);
             } else {
-                deselectEdge(edge);
+                deselectConnection(connection);
             }
         }
     }

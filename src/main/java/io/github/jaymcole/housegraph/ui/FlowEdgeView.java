@@ -7,13 +7,14 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.CubicCurve;
 
 /**
- * Visual curve connecting an output {@link PortView} to an input {@link PortView},
- * with a small button at its midpoint to delete the connection.
+ * Visual curve connecting an OUT {@link FlowPortView} to an IN {@link FlowPortView},
+ * with a small button at its midpoint to delete the connection. Styled distinctly
+ * (green) from data {@link EdgeView}s to keep control flow visually separate.
  */
-public class EdgeView extends Group implements ConnectionView {
+public class FlowEdgeView extends Group implements ConnectionView {
 
-    private final PortView source;
-    private final PortView target;
+    private final FlowPortView source;
+    private final FlowPortView target;
     private final Group content;
     private final Runnable onDelete;
     private final CubicCurve curve = new CubicCurve();
@@ -21,7 +22,7 @@ public class EdgeView extends Group implements ConnectionView {
 
     private boolean selected = false;
 
-    public EdgeView(PortView source, PortView target, Group content, Runnable onDelete) {
+    public FlowEdgeView(FlowPortView source, FlowPortView target, Group content, Runnable onDelete) {
         this.source = source;
         this.target = target;
         this.content = content;
@@ -66,26 +67,30 @@ public class EdgeView extends Group implements ConnectionView {
         deleteButton.relocate(midX - 8, midY - 10);
     }
 
+    @Override
     public void delete() {
         content.getChildren().remove(this);
         onDelete.run();
     }
 
+    @Override
     public boolean touchesNode(NodeView node) {
         return source.getOwner() == node || target.getOwner() == node;
     }
 
+    @Override
     public void setSelected(boolean selected) {
         this.selected = selected;
         applyCurveStyle();
     }
 
+    @Override
     public boolean isSelected() {
         return selected;
     }
 
     private void applyCurveStyle() {
-        curve.setStroke(selected ? Color.web("#e5c07b") : Color.web("#61afef"));
+        curve.setStroke(selected ? Color.web("#e5c07b") : Color.web("#98c379"));
         curve.setStrokeWidth(selected ? 3 : 2);
     }
 }

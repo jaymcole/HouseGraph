@@ -1,7 +1,8 @@
 package io.github.jaymcole.housegraph;
 
-import io.github.jaymcole.housegraph.graph.nodes.AddNode;
-import io.github.jaymcole.housegraph.graph.nodes.ConstantFloatNode;
+import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
+import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
+import io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.NodeView;
 import javafx.application.Application;
@@ -26,7 +27,10 @@ public class App extends Application {
         Button addSumButton = new Button("Add Sum");
         addSumButton.setOnAction(e -> canvas.addNode(new NodeView(new AddNode(), canvas.getContent(), canvas)));
 
-        ToolBar toolBar = new ToolBar(addConstantButton, addSumButton);
+        Button addTriggerButton = new Button("Add Trigger");
+        addTriggerButton.setOnAction(e -> canvas.addNode(new NodeView(new TriggerNode(), canvas.getContent(), canvas)));
+
+        ToolBar toolBar = new ToolBar(addConstantButton, addSumButton, addTriggerButton);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);

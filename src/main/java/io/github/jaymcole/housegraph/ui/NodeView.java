@@ -2,12 +2,14 @@ package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
@@ -21,8 +23,8 @@ import java.util.List;
 
 /**
  * Visual representation of a {@link BaseNode}: a title bar (used to drag the node
- * around the canvas) plus a left column of input ports and a right column of
- * output ports.
+ * around the canvas, and hosting the flow-in/flow-out anchors at its corners) plus a
+ * left column of input ports and a right column of output ports.
  */
 public class NodeView extends BorderPane {
 
@@ -38,6 +40,8 @@ public class NodeView extends BorderPane {
     private final DragController dragController;
     private final List<PortView> inputPorts = new ArrayList<>();
     private final List<PortView> outputPorts = new ArrayList<>();
+    private final FlowPortView flowInPort;
+    private final FlowPortView flowOutPort;
 
     private Point2D lastDragContentPoint;
     private boolean selected = false;
@@ -50,11 +54,21 @@ public class NodeView extends BorderPane {
         setPrefWidth(190);
         applyBorderStyle();
 
+        flowInPort = new FlowPortView(this, FlowPortView.Direction.IN);
+        flowOutPort = new FlowPortView(this, FlowPortView.Direction.OUT);
+
         Label title = new Label(node.getName());
         title.setMaxWidth(Double.MAX_VALUE);
-        title.setStyle("-fx-background-color: #4a4d4f; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 6;");
-        title.setCursor(Cursor.MOVE);
-        setTop(title);
+        title.setAlignment(Pos.CENTER);
+        title.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
+        HBox.setHgrow(title, Priority.ALWAYS);
+
+        HBox titleBar = new HBox(6, flowInPort, title, flowOutPort);
+        titleBar.setAlignment(Pos.CENTER);
+        titleBar.setPadding(new Insets(6, 8, 6, 8));
+        titleBar.setStyle("-fx-background-color: #4a4d4f;");
+        titleBar.setCursor(Cursor.MOVE);
+        setTop(titleBar);
 
         VBox inputsBox = new VBox(8);
         inputsBox.setAlignment(Pos.TOP_LEFT);
@@ -90,8 +104,16 @@ public class NodeView extends BorderPane {
         body.setPadding(new Insets(0, 10, 0, 10));
         setCenter(body);
 
-        title.setOnMousePressed(this::handleDragStart);
-        title.setOnMouseDragged(this::handleDragging);
+        if (node instanceof TriggerNode) {
+            Button triggerButton = new Button("Trigger");
+            triggerButton.setMaxWidth(Double.MAX_VALUE);
+            triggerButton.setOnAction(e -> node.execute());
+            BorderPane.setMargin(triggerButton, new Insets(0, 10, 10, 10));
+            setBottom(triggerButton);
+        }
+
+        titleBar.setOnMousePressed(this::handleDragStart);
+        titleBar.setOnMouseDragged(this::handleDragging);
 
         // Prevent clicks elsewhere on the node from panning/rubber-band-selecting the canvas underneath it.
         setOnMousePressed(Event::consume);
@@ -146,5 +168,13 @@ public class NodeView extends BorderPane {
 
     public List<PortView> getOutputPorts() {
         return outputPorts;
+    }
+
+    public FlowPortView getFlowInPort() {
+        return flowInPort;
+    }
+
+    public FlowPortView getFlowOutPort() {
+        return flowOutPort;
     }
 }

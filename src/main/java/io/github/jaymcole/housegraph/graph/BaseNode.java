@@ -53,6 +53,20 @@ public abstract class BaseNode {
         }
     }
 
+    /**
+     * Triggers this node to (re)run, pulling data from any connected data edges first,
+     * then cascades along any outgoing {@link FlowEdge}s to trigger downstream nodes.
+     * This is the entry point for flow-driven execution (e.g. a {@code TriggerNode}
+     * button), as opposed to {@link #beginProcessing()}'s pull-only, run-once model.
+     */
+    public void execute() {
+        status = NodeProcessingStatus.NOT_STARTED;
+        beginProcessing();
+        for (FlowEdge flowEdge : FlowGraph.getOutgoingFlowEdges(this)) {
+            flowEdge.getTargetNode().execute();
+        }
+    }
+
     public abstract void process();
     public abstract void configureInputs();
     public abstract void configureOutputs();
