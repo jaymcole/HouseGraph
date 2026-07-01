@@ -58,6 +58,16 @@ public abstract class BaseNode {
     public abstract void configureInputs();
     public abstract void configureOutputs();
 
+    /**
+     * Called by {@link NodeGraph} right after this node finishes a process() attempt
+     * (success or failure — check {@link #getLastError()} if it matters). No-op by
+     * default; a node can override it to react to its own values changing, e.g. a
+     * node with a custom UI (see {@code io.github.jaymcole.housegraph.ui.NodeContentProvider})
+     * pushing a freshly-computed value into a Label it built.
+     */
+    protected void onExecuted() {
+    }
+
     protected void addInput(NodeVariable variable) {
         inputs.add(variable);
     }

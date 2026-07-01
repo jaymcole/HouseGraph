@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph;
 
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
+import io.github.jaymcole.housegraph.graph.nodes.debug.ValueDisplayNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
@@ -32,7 +33,10 @@ public class App extends Application {
         Button addTriggerButton = new Button("Add Trigger");
         addTriggerButton.setOnAction(e -> canvas.addNode(new NodeView(new TriggerNode(), canvas.getContent(), canvas)));
 
-        ToolBar toolBar = new ToolBar(addConstantButton, addSumButton, addTriggerButton);
+        Button addDisplayButton = new Button("Add Display");
+        addDisplayButton.setOnAction(e -> canvas.addNode(new NodeView(new ValueDisplayNode(), canvas.getContent(), canvas)));
+
+        ToolBar toolBar = new ToolBar(addConstantButton, addSumButton, addTriggerButton, addDisplayButton);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);

@@ -218,6 +218,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         PortView outputPort = a.getDirection() == PortView.Direction.OUTPUT ? a : b;
         PortView inputPort = a.getDirection() == PortView.Direction.OUTPUT ? b : a;
 
+        // An input can only ever be fed by one edge; wiring a new one replaces the old.
+        for (EdgeView existing : new ArrayList<>(edgeViews.values())) {
+            if (existing.hasTarget(inputPort)) {
+                existing.delete();
+            }
+        }
+
         Edge edge = new Edge(
                 outputPort.getOwner().getNode(), outputPort.getVariable(),
                 inputPort.getOwner().getNode(), inputPort.getVariable());
@@ -315,6 +322,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     private void createFlowEdge(FlowPortView a, FlowPortView b) {
         FlowPortView outPort = a.getDirection() == FlowPortView.Direction.OUT ? a : b;
         FlowPortView inPort = a.getDirection() == FlowPortView.Direction.OUT ? b : a;
+
+        // A flow-in can only ever be fed by one edge; wiring a new one replaces the old.
+        for (FlowEdgeView existing : new ArrayList<>(flowEdgeViews.values())) {
+            if (existing.hasTarget(inPort)) {
+                existing.delete();
+            }
+        }
 
         FlowEdge flowEdge = new FlowEdge(outPort.getOwner().getNode(), inPort.getOwner().getNode());
         graph.registerFlowEdge(flowEdge);

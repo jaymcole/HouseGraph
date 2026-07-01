@@ -78,6 +78,10 @@ public class FlowEdgeView extends Group implements ConnectionView {
         return source.getOwner() == node || target.getOwner() == node;
     }
 
+    public boolean hasTarget(FlowPortView port) {
+        return target == port;
+    }
+
     @Override
     public void setSelected(boolean selected) {
         this.selected = selected;

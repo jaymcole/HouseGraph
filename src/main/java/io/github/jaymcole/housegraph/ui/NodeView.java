@@ -3,14 +3,13 @@ package io.github.jaymcole.housegraph.ui;
 import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
-import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
-import javafx.scene.control.Button;
+import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
@@ -121,12 +120,13 @@ public class NodeView extends BorderPane {
         body.setPadding(new Insets(0, 10, 0, 10));
         setCenter(body);
 
-        if (node instanceof TriggerNode) {
-            Button triggerButton = new Button("Trigger");
-            triggerButton.setMaxWidth(Double.MAX_VALUE);
-            triggerButton.setOnAction(e -> node.execute());
-            BorderPane.setMargin(triggerButton, new Insets(0, 10, 10, 10));
-            setBottom(triggerButton);
+        if (node instanceof NodeContentProvider contentProvider) {
+            Node customContent = contentProvider.createNodeContent();
+            if (customContent instanceof Region region) {
+                region.setMaxWidth(Double.MAX_VALUE);
+            }
+            BorderPane.setMargin(customContent, new Insets(0, 10, 10, 10));
+            setBottom(customContent);
         }
 
         titleBar.setOnMousePressed(this::handleDragStart);

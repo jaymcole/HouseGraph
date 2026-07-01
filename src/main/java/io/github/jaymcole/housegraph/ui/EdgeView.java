@@ -75,6 +75,10 @@ public class EdgeView extends Group implements ConnectionView {
         return source.getOwner() == node || target.getOwner() == node;
     }
 
+    public boolean hasTarget(PortView port) {
+        return target == port;
+    }
+
     public void setSelected(boolean selected) {
         this.selected = selected;
         applyCurveStyle();

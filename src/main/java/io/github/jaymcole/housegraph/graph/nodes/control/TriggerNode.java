@@ -2,14 +2,17 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.ui.NodeContentProvider;
+import javafx.scene.Node;
+import javafx.scene.control.Button;
 
 /**
  * Simple entry-point node: no data ports, just a flow-out port used to kick off
- * execution of downstream flow-connected nodes. Its UI adds a button that calls
- * {@link #execute()} directly.
+ * execution of downstream flow-connected nodes. Its UI is a button that calls
+ * {@link #execute()} directly — see {@link NodeContentProvider}.
  */
 @Executable.ExecutableOut
-public class TriggerNode extends BaseNode {
+public class TriggerNode extends BaseNode implements NodeContentProvider {
 
     @Override
     public void process() {
@@ -21,5 +24,12 @@ public class TriggerNode extends BaseNode {
 
     @Override
     public void configureOutputs() {
+    }
+
+    @Override
+    public Node createNodeContent() {
+        Button triggerButton = new Button("Trigger");
+        triggerButton.setOnAction(e -> execute());
+        return triggerButton;
     }
 }

@@ -188,6 +188,7 @@ public class NodeGraph {
             node.setLastError(e);
             System.err.println("Node \"" + node.getName() + "\" failed to process: " + e);
         }
+        node.onExecuted();
     }
 
     @SuppressWarnings("unchecked")
