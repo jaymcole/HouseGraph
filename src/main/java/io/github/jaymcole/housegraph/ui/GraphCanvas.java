@@ -2,8 +2,7 @@ package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowEdge;
-import io.github.jaymcole.housegraph.graph.FlowGraph;
-import io.github.jaymcole.housegraph.graph.Graph;
+import io.github.jaymcole.housegraph.graph.NodeGraph;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
@@ -37,6 +36,7 @@ import java.util.Set;
  */
 public class GraphCanvas extends Pane implements NodeView.DragController {
 
+    private final NodeGraph graph;
     private final Group content = new Group();
     private final List<PortView> ports = new ArrayList<>();
     private final List<FlowPortView> flowPorts = new ArrayList<>();
@@ -63,7 +63,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     private Rectangle selectionRectangle;
     private Point2D selectionStartContent;
 
-    public GraphCanvas() {
+    public GraphCanvas(NodeGraph graph) {
+        this.graph = graph;
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
         setFocusTraversable(true);
@@ -98,6 +99,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         nodeView.setLayoutY(40 + nodePlacementCounter * 30);
         nodePlacementCounter++;
 
+        graph.addNode(nodeView.getNode());
         content.getChildren().add(nodeView);
         nodeViews.add(nodeView);
         ports.addAll(nodeView.getInputPorts());
@@ -123,6 +125,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     }
 
     private void removeNode(NodeView nodeView) {
+        graph.removeNode(nodeView.getNode());
         content.getChildren().remove(nodeView);
         nodeViews.remove(nodeView);
         ports.removeAll(nodeView.getInputPorts());
@@ -206,7 +209,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     }
 
     private boolean isValidConnection(PortView a, PortView b) {
-        return a.getOwner() != b.getOwner() && a.getDirection() != b.getDirection();
+        return a.getOwner() != b.getOwner()
+                && a.getDirection() != b.getDirection()
+                && a.getVariable().type == b.getVariable().type;
     }
 
     private void createEdge(PortView a, PortView b) {
@@ -216,13 +221,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         Edge edge = new Edge(
                 outputPort.getOwner().getNode(), outputPort.getVariable(),
                 inputPort.getOwner().getNode(), inputPort.getVariable());
-        Graph.registerEdge(edge);
+        graph.registerEdge(edge);
         outputPort.connect();
         inputPort.connect();
 
         EdgeView[] edgeViewRef = new EdgeView[1];
         EdgeView edgeView = new EdgeView(outputPort, inputPort, content, () -> {
-            Graph.removeEdge(edge);
+            graph.removeEdge(edge);
             edgeViews.remove(edge);
             outputPort.disconnect();
             inputPort.disconnect();
@@ -312,11 +317,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         FlowPortView inPort = a.getDirection() == FlowPortView.Direction.OUT ? b : a;
 
         FlowEdge flowEdge = new FlowEdge(outPort.getOwner().getNode(), inPort.getOwner().getNode());
-        FlowGraph.registerFlowEdge(flowEdge);
+        graph.registerFlowEdge(flowEdge);
 
         FlowEdgeView[] flowEdgeViewRef = new FlowEdgeView[1];
         FlowEdgeView flowEdgeView = new FlowEdgeView(outPort, inPort, content, () -> {
-            FlowGraph.removeFlowEdge(flowEdge);
+            graph.removeFlowEdge(flowEdge);
             flowEdgeViews.remove(flowEdge);
             selectedConnections.remove(flowEdgeViewRef[0]);
         });

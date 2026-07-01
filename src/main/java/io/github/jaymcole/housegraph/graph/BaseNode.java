@@ -1,17 +1,17 @@
 package io.github.jaymcole.housegraph.graph;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public abstract class BaseNode {
 
-    private NodeProcessingStatus status;
-
-    public BaseNode() {
-        status = NodeProcessingStatus.NOT_STARTED;
-        inputs = new ArrayList<>();
-        outputs = new ArrayList<>();
-    }
+    private NodeGraph graph;
+    private NodeProcessingStatus status = NodeProcessingStatus.NOT_STARTED;
+    private Throwable lastError;
+    private boolean configured = false;
+    private final List<NodeVariable> inputs = new ArrayList<>();
+    private final List<NodeVariable> outputs = new ArrayList<>();
 
     /**
      * configureInputs()/configureOutputs() are deferred until first use rather than
@@ -27,44 +27,31 @@ public abstract class BaseNode {
         }
     }
 
+    /**
+     * Pulls a fresh value through this node's incoming data edges (recursively
+     * resolving upstream nodes first) and runs process(). Safe to call directly on
+     * any node, independent of flow wiring. Requires the node to have been added to
+     * a {@link NodeGraph} first.
+     */
     public void beginProcessing() {
-        ensureConfigured();
-        if(status.isComplete()) {
-            return;
-        }
-
-        for(Edge edge : Graph.getLeftEdges(this)) {
-            if (!edge.getLeftNode().status.isComplete()) {
-                edge.getLeftNode().beginProcessing();
-            }
-        }
-
-        try {
-            process();
-            status = NodeProcessingStatus.SUCCESS;
-        } catch (Exception e) {
-            status = NodeProcessingStatus.FAILED;
-        }
-
-        for(Edge edge : Graph.getRightEdges(this)) {
-            if (edge.getRightNode().status != NodeProcessingStatus.WAITING_FOR_UPSTREAM) {
-                edge.getLeftNode().beginProcessing();
-            }
-        }
+        requireGraph().resolve(this);
     }
 
     /**
-     * Triggers this node to (re)run, pulling data from any connected data edges first,
-     * then cascades along any outgoing {@link FlowEdge}s to trigger downstream nodes.
-     * This is the entry point for flow-driven execution (e.g. a {@code TriggerNode}
-     * button), as opposed to {@link #beginProcessing()}'s pull-only, run-once model.
+     * Triggers this node the same way {@link #beginProcessing()} does, then cascades
+     * along any outgoing {@link FlowEdge}s to trigger downstream flow-connected
+     * nodes. This is the entry point for flow-driven execution (e.g. a TriggerNode
+     * button), as opposed to beginProcessing()'s pull-only model.
      */
     public void execute() {
-        status = NodeProcessingStatus.NOT_STARTED;
-        beginProcessing();
-        for (FlowEdge flowEdge : FlowGraph.getOutgoingFlowEdges(this)) {
-            flowEdge.getTargetNode().execute();
+        requireGraph().execute(this);
+    }
+
+    private NodeGraph requireGraph() {
+        if (graph == null) {
+            throw new IllegalStateException(getName() + " has not been added to a NodeGraph yet");
         }
+        return graph;
     }
 
     public abstract void process();
@@ -72,35 +59,52 @@ public abstract class BaseNode {
     public abstract void configureOutputs();
 
     protected void addInput(NodeVariable variable) {
-        if (inputs == null) {
-            inputs = new ArrayList<>();
-        }
         inputs.add(variable);
     }
 
     protected void addOutput(NodeVariable variable) {
-        if (inputs == null) {
-            outputs = new ArrayList<>();
-        }
         outputs.add(variable);
     }
 
     public List<NodeVariable> getInputs() {
         ensureConfigured();
-        return inputs;
+        return Collections.unmodifiableList(inputs);
     }
 
     public List<NodeVariable> getOutputs() {
         ensureConfigured();
-        return outputs;
+        return Collections.unmodifiableList(outputs);
     }
 
     public String getName() {
         return getClass().getSimpleName();
     }
 
-    private boolean configured = false;
-    private List<NodeVariable> inputs;
-    private List<NodeVariable> outputs;
+    /** The exception from the most recent failed process() call, or null if it last succeeded (or hasn't run). */
+    public Throwable getLastError() {
+        return lastError;
+    }
+
+    // Package-private: only NodeGraph (same package) drives node execution state.
+
+    NodeGraph getGraph() {
+        return graph;
+    }
+
+    void setGraph(NodeGraph graph) {
+        this.graph = graph;
+    }
+
+    NodeProcessingStatus getStatus() {
+        return status;
+    }
+
+    void setStatus(NodeProcessingStatus status) {
+        this.status = status;
+    }
+
+    void setLastError(Throwable lastError) {
+        this.lastError = lastError;
+    }
 
 }

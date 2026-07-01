@@ -29,7 +29,7 @@ public class AddNode extends BaseNode {
     }
 
     private float getSafeValue(NodeVariable<Float> variable) {
-        if (variable == null) {
+        if (variable == null || variable.getValue() == null) {
             return 0f;
         }
         return variable.getValue();

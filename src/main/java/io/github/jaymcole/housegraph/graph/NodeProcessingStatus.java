@@ -2,8 +2,9 @@ package io.github.jaymcole.housegraph.graph;
 
 public enum NodeProcessingStatus {
     NOT_STARTED,
+    /** Currently being resolved/executed during the current pass; also doubles as the cycle-detection marker. */
+    IN_PROGRESS,
     SUCCESS,
-    WAITING_FOR_UPSTREAM,
     FAILED;
 
     public boolean isComplete() {

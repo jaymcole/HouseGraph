@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph;
 
+import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode;
@@ -19,7 +20,8 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) {
-        GraphCanvas canvas = new GraphCanvas();
+        NodeGraph graph = new NodeGraph();
+        GraphCanvas canvas = new GraphCanvas(graph);
 
         Button addConstantButton = new Button("Add Constant");
         addConstantButton.setOnAction(e -> canvas.addNode(new NodeView(new ConstantFloatNode(), canvas.getContent(), canvas)));
