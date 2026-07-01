@@ -1,4 +1,4 @@
-package com.jaymcole.housegraph;
+package io.github.jaymcole.housegraph;
 
 import org.junit.jupiter.api.Test;
 

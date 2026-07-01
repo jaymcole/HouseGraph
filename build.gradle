@@ -3,7 +3,7 @@ plugins {
     id 'org.openjfx.javafxplugin' version '0.1.0'
 }
 
-group = 'com.jaymcole.housegraph'
+group = 'io.github.jaymcole'
 version = '0.1.0'
 
 repositories {
@@ -22,7 +22,7 @@ javafx {
 }
 
 application {
-    mainClass = 'com.jaymcole.housegraph.Launcher'
+    mainClass = 'io.github.jaymcole.housegraph.Launcher'
 }
 
 dependencies {
