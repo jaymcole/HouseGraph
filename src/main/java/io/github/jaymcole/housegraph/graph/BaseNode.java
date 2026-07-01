@@ -1,5 +1,7 @@
 package io.github.jaymcole.housegraph.graph;
 
+import io.github.jaymcole.housegraph.annotations.Display;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -86,7 +88,12 @@ public abstract class BaseNode {
         return Collections.unmodifiableList(outputs);
     }
 
+    /** The node's display name: {@link Display.Name#value()} if the class is annotated with it, else the simple class name. */
     public String getName() {
+        Display.Name displayName = getClass().getAnnotation(Display.Name.class);
+        if (displayName != null && !displayName.value().isBlank()) {
+            return displayName.value();
+        }
         return getClass().getSimpleName();
     }
 

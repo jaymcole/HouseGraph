@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
+import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
@@ -11,6 +12,7 @@ import javafx.scene.control.Button;
  * execution of downstream flow-connected nodes. Its UI is a button that calls
  * {@link #execute()} directly — see {@link NodeContentProvider}.
  */
+@Display.Name("Trigger")
 @Executable.ExecutableOut
 public class TriggerNode extends BaseNode implements NodeContentProvider {
 

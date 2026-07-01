@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.debug;
 
+import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -13,6 +14,7 @@ import javafx.scene.control.Label;
  * build a small JavaFX snippet in {@link #createNodeContent()} and keep it fresh in
  * {@link #onExecuted()}; nothing else in the codebase needs to change.
  */
+@Display.Name("Input Display")
 @Executable.ExecutableIn
 @Executable.ExecutableOut
 public class ValueDisplayNode extends BaseNode implements NodeContentProvider {
