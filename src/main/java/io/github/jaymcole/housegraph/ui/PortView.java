@@ -24,10 +24,17 @@ public class PortView extends HBox {
         OUTPUT
     }
 
+    private static final double RADIUS = 6;
+    private static final Color FILL = Color.web("#61afef");
+    private static final Color BASE_STROKE = Color.web("#282c34");
+    private static final Color HOVER_STROKE = Color.web("#ffffff");
+    private static final double BASE_STROKE_WIDTH = 1.5;
+    private static final double HOVER_STROKE_WIDTH = 3;
+
     private final NodeView owner;
     private final NodeVariable<?> variable;
     private final Direction direction;
-    private final Circle circle = new Circle(6);
+    private final Circle circle = new Circle(RADIUS);
     private final TextField valueField;
 
     private int connectionCount = 0;
@@ -37,10 +44,12 @@ public class PortView extends HBox {
         this.variable = variable;
         this.direction = direction;
 
-        circle.setFill(Color.web("#61afef"));
-        circle.setStroke(Color.web("#282c34"));
-        circle.setStrokeWidth(1.5);
+        circle.setFill(FILL);
+        circle.setStroke(BASE_STROKE);
+        circle.setStrokeWidth(BASE_STROKE_WIDTH);
         circle.setCursor(Cursor.CROSSHAIR);
+        circle.setOnMouseEntered(event -> setHighlighted(true));
+        circle.setOnMouseExited(event -> setHighlighted(false));
 
         Label label = new Label(variable.name);
         label.setStyle("-fx-text-fill: #dddddd; -fx-font-size: 11px;");
@@ -127,6 +136,17 @@ public class PortView extends HBox {
         boolean showField = direction == Direction.OUTPUT || connectionCount == 0;
         valueField.setVisible(showField);
         valueField.setManaged(showField);
+    }
+
+    /**
+     * Highlights (or un-highlights) this port's border. Driven both by normal mouse
+     * hover and, since JavaFX doesn't fire hover events on nodes other than the one
+     * that captured a mouse press, by {@link GraphCanvas} manually hit-testing the
+     * cursor position while an edge drag is in progress.
+     */
+    public void setHighlighted(boolean highlighted) {
+        circle.setStroke(highlighted ? HOVER_STROKE : BASE_STROKE);
+        circle.setStrokeWidth(highlighted ? HOVER_STROKE_WIDTH : BASE_STROKE_WIDTH);
     }
 
     public Point2D getCenterInContent(Group content) {

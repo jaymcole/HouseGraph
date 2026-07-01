@@ -19,6 +19,12 @@ public class FlowPortView extends Polygon {
         OUT
     }
 
+    private static final Color FILL = Color.web("#98c379");
+    private static final Color BASE_STROKE = Color.web("#282c34");
+    private static final Color HOVER_STROKE = Color.web("#ffffff");
+    private static final double BASE_STROKE_WIDTH = 1;
+    private static final double HOVER_STROKE_WIDTH = 2.5;
+
     private final NodeView owner;
     private final Direction direction;
 
@@ -27,10 +33,23 @@ public class FlowPortView extends Polygon {
         this.owner = owner;
         this.direction = direction;
 
-        setFill(Color.web("#98c379"));
-        setStroke(Color.web("#282c34"));
-        setStrokeWidth(1);
+        setFill(FILL);
+        setStroke(BASE_STROKE);
+        setStrokeWidth(BASE_STROKE_WIDTH);
         setCursor(Cursor.CROSSHAIR);
+        setOnMouseEntered(event -> setHighlighted(true));
+        setOnMouseExited(event -> setHighlighted(false));
+    }
+
+    /**
+     * Highlights (or un-highlights) this port's border. Driven both by normal mouse
+     * hover and, since JavaFX doesn't fire hover events on nodes other than the one
+     * that captured a mouse press, by {@link GraphCanvas} manually hit-testing the
+     * cursor position while a flow edge drag is in progress.
+     */
+    public void setHighlighted(boolean highlighted) {
+        setStroke(highlighted ? HOVER_STROKE : BASE_STROKE);
+        setStrokeWidth(highlighted ? HOVER_STROKE_WIDTH : BASE_STROKE_WIDTH);
     }
 
     public Point2D getCenterInContent(Group content) {

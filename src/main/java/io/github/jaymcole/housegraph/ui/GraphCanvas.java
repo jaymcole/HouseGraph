@@ -1,12 +1,18 @@
 package io.github.jaymcole.housegraph.ui;
 
+import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowEdge;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
+import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
 import javafx.scene.Group;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuItem;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
@@ -23,6 +29,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * An infinite, pannable, zoomable canvas that hosts {@link NodeView}s and the
@@ -55,19 +62,43 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     private int nodePlacementCounter = 0;
 
     private PortView dragSourcePort;
+    private PortView highlightedTargetPort;
     private CubicCurve dragLine;
 
     private FlowPortView dragSourceFlowPort;
+    private FlowPortView highlightedTargetFlowPort;
     private CubicCurve flowDragLine;
 
     private Rectangle selectionRectangle;
     private Point2D selectionStartContent;
+    private boolean rightDragOccurred;
+
+    private final ContextMenu addNodeMenu;
+    private Point2D pendingDropPoint = Point2D.ZERO;
 
     public GraphCanvas(NodeGraph graph) {
         this.graph = graph;
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
         setFocusTraversable(true);
+        // Built once and reused: the set of node types on the classpath doesn't change
+        // during a run.
+        addNodeMenu = buildAddNodeMenu();
+        // ContextMenu's built-in autoHide is focus-based and doesn't reliably fire for
+        // clicks elsewhere in the same window, and NodeView/PortView consume their own
+        // mouse-press events before they'd ever bubble up to this canvas's own handler.
+        // A capturing-phase filter on the Scene sees every press first, before any
+        // descendant gets a chance to consume it, so it's the one place that reliably
+        // catches "clicked anywhere else" regardless of what was clicked.
+        sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene != null) {
+                newScene.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
+                    if (addNodeMenu.isShowing() && event.getButton() == MouseButton.PRIMARY) {
+                        addNodeMenu.hide();
+                    }
+                });
+            }
+        });
 
         // Without a clip, nodes dragged near the edge render outside this Pane's own
         // bounds and can paint over sibling UI (e.g. a toolbar placed above the canvas).
@@ -80,6 +111,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         setOnMousePressed(this::handleCanvasPressed);
         setOnMouseDragged(this::handleCanvasDragged);
         setOnMouseReleased(this::handleCanvasReleased);
+        setOnContextMenuRequested(this::handleContextMenuRequested);
         setOnKeyPressed(event -> {
             if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
                 deleteSelected();
@@ -95,9 +127,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     }
 
     public void addNode(NodeView nodeView) {
-        nodeView.setLayoutX(40 + nodePlacementCounter * 30);
-        nodeView.setLayoutY(40 + nodePlacementCounter * 30);
+        double x = 40 + nodePlacementCounter * 30;
+        double y = 40 + nodePlacementCounter * 30;
         nodePlacementCounter++;
+        addNode(nodeView, x, y);
+    }
+
+    /** Adds a node at an explicit position in content (canvas) coordinates, e.g. where a context menu was opened. */
+    public void addNode(NodeView nodeView, double contentX, double contentY) {
+        nodeView.setLayoutX(contentX);
+        nodeView.setLayoutY(contentY);
 
         graph.addNode(nodeView.getNode());
         content.getChildren().add(nodeView);
@@ -177,6 +216,20 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             dragLine.setControlY1(start.getY());
             dragLine.setControlX2(end.getX() - controlOffset);
             dragLine.setControlY2(end.getY());
+
+            // JavaFX doesn't fire hover events on other nodes while this circle holds
+            // the mouse grab, so the drop-target highlight has to be driven manually.
+            PortView candidate = findPortNear(end);
+            PortView validCandidate = (candidate != null && isValidConnection(dragSourcePort, candidate)) ? candidate : null;
+            if (validCandidate != highlightedTargetPort) {
+                if (highlightedTargetPort != null) {
+                    highlightedTargetPort.setHighlighted(false);
+                }
+                highlightedTargetPort = validCandidate;
+                if (highlightedTargetPort != null) {
+                    highlightedTargetPort.setHighlighted(true);
+                }
+            }
             event.consume();
         });
 
@@ -187,6 +240,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
                 if (target != null && isValidConnection(dragSourcePort, target)) {
                     createEdge(dragSourcePort, target);
                 }
+            }
+            if (highlightedTargetPort != null) {
+                highlightedTargetPort.setHighlighted(false);
+                highlightedTargetPort = null;
             }
             content.getChildren().remove(dragLine);
             dragLine = null;
@@ -284,6 +341,20 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             flowDragLine.setControlY1(start.getY());
             flowDragLine.setControlX2(end.getX() - controlOffset);
             flowDragLine.setControlY2(end.getY());
+
+            // Same manual hit-test as data ports: no native hover events on other
+            // nodes while this port holds the mouse grab.
+            FlowPortView candidate = findFlowPortNear(end);
+            FlowPortView validCandidate = (candidate != null && isValidFlowConnection(dragSourceFlowPort, candidate)) ? candidate : null;
+            if (validCandidate != highlightedTargetFlowPort) {
+                if (highlightedTargetFlowPort != null) {
+                    highlightedTargetFlowPort.setHighlighted(false);
+                }
+                highlightedTargetFlowPort = validCandidate;
+                if (highlightedTargetFlowPort != null) {
+                    highlightedTargetFlowPort.setHighlighted(true);
+                }
+            }
             event.consume();
         });
 
@@ -294,6 +365,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
                 if (target != null && isValidFlowConnection(dragSourceFlowPort, target)) {
                     createFlowEdge(dragSourceFlowPort, target);
                 }
+            }
+            if (highlightedTargetFlowPort != null) {
+                highlightedTargetFlowPort.setHighlighted(false);
+                highlightedTargetFlowPort = null;
             }
             content.getChildren().remove(flowDragLine);
             flowDragLine = null;
@@ -430,6 +505,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     private void handleCanvasPressed(MouseEvent event) {
         requestFocus();
         if (event.getButton() == MouseButton.SECONDARY) {
+            rightDragOccurred = false;
             lastDragSceneX = event.getSceneX();
             lastDragSceneY = event.getSceneY();
         } else if (event.getButton() == MouseButton.PRIMARY) {
@@ -447,6 +523,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
 
     private void handleCanvasDragged(MouseEvent event) {
         if (event.getButton() == MouseButton.SECONDARY) {
+            rightDragOccurred = true;
             translateX += event.getSceneX() - lastDragSceneX;
             translateY += event.getSceneY() - lastDragSceneY;
             lastDragSceneX = event.getSceneX();
@@ -472,6 +549,66 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             content.getChildren().remove(selectionRectangle);
             selectionRectangle = null;
         }
+    }
+
+    // --- Add-node context menu ----------------------------------------------------
+
+    private void handleContextMenuRequested(ContextMenuEvent event) {
+        if (rightDragOccurred) {
+            // The right-click was actually a pan gesture; don't also pop a menu.
+            return;
+        }
+        pendingDropPoint = content.sceneToLocal(event.getSceneX(), event.getSceneY());
+        addNodeMenu.hide();
+        addNodeMenu.show(this, event.getScreenX(), event.getScreenY());
+        event.consume();
+    }
+
+    private ContextMenu buildAddNodeMenu() {
+        ContextMenu menu = new ContextMenu();
+        Map<String, Menu> categoryMenus = new TreeMap<>();
+
+        for (NodeRegistry.Entry entry : NodeRegistry.discover()) {
+            MenuItem item = new MenuItem(entry.displayName());
+            item.setOnAction(event -> {
+                BaseNode instance = NodeRegistry.instantiate(entry.nodeClass());
+                if (instance != null) {
+                    addNode(new NodeView(instance, content, this), pendingDropPoint.getX(), pendingDropPoint.getY());
+                }
+            });
+
+            Menu categoryMenu = resolveCategoryMenu(menu, categoryMenus, entry.categoryPath());
+            (categoryMenu == null ? menu.getItems() : categoryMenu.getItems()).add(item);
+        }
+
+        if (menu.getItems().isEmpty()) {
+            MenuItem none = new MenuItem("(no node types found)");
+            none.setDisable(true);
+            menu.getItems().add(none);
+        }
+        return menu;
+    }
+
+    /** Finds (creating as needed) the Menu for a dot-separated category path, nesting under its parent categories. */
+    private Menu resolveCategoryMenu(ContextMenu root, Map<String, Menu> categoryMenus, String categoryPath) {
+        if (categoryPath.isEmpty()) {
+            return null;
+        }
+        Menu existing = categoryMenus.get(categoryPath);
+        if (existing != null) {
+            return existing;
+        }
+
+        int lastDot = categoryPath.lastIndexOf('.');
+        String parentPath = lastDot < 0 ? "" : categoryPath.substring(0, lastDot);
+        String label = lastDot < 0 ? categoryPath : categoryPath.substring(lastDot + 1);
+
+        Menu menu = new Menu(label);
+        categoryMenus.put(categoryPath, menu);
+
+        Menu parentMenu = resolveCategoryMenu(root, categoryMenus, parentPath);
+        (parentMenu == null ? root.getItems() : parentMenu.getItems()).add(menu);
+        return menu;
     }
 
     private void updateLiveSelection(Bounds rect) {
