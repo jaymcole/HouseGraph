@@ -1,8 +1,11 @@
-package io.github.jaymcole.housegraph.graph.nodes;
+package io.github.jaymcole.housegraph.graph.nodes.math;
 
+import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
+@Executable.ExecutableIn
+@Executable.ExecutableOut
 public class AddNode extends BaseNode {
 
     private final NodeVariable<Float> v1 = new NodeVariable<>("V1", Float.class);
