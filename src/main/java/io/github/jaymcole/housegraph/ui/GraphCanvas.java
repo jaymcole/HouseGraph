@@ -102,8 +102,6 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         nodeViews.add(nodeView);
         ports.addAll(nodeView.getInputPorts());
         ports.addAll(nodeView.getOutputPorts());
-        flowPorts.add(nodeView.getFlowInPort());
-        flowPorts.add(nodeView.getFlowOutPort());
 
         for (PortView port : nodeView.getInputPorts()) {
             wirePort(port);
@@ -111,8 +109,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         for (PortView port : nodeView.getOutputPorts()) {
             wirePort(port);
         }
-        wireFlowPort(nodeView.getFlowInPort());
-        wireFlowPort(nodeView.getFlowOutPort());
+
+        // Flow anchors are gated by @Executable.ExecutableIn/Out on the node's class,
+        // so either (or both) may be absent for a given node.
+        if (nodeView.getFlowInPort() != null) {
+            flowPorts.add(nodeView.getFlowInPort());
+            wireFlowPort(nodeView.getFlowInPort());
+        }
+        if (nodeView.getFlowOutPort() != null) {
+            flowPorts.add(nodeView.getFlowOutPort());
+            wireFlowPort(nodeView.getFlowOutPort());
+        }
     }
 
     private void removeNode(NodeView nodeView) {
@@ -120,8 +127,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         nodeViews.remove(nodeView);
         ports.removeAll(nodeView.getInputPorts());
         ports.removeAll(nodeView.getOutputPorts());
-        flowPorts.remove(nodeView.getFlowInPort());
-        flowPorts.remove(nodeView.getFlowOutPort());
+        if (nodeView.getFlowInPort() != null) {
+            flowPorts.remove(nodeView.getFlowInPort());
+        }
+        if (nodeView.getFlowOutPort() != null) {
+            flowPorts.remove(nodeView.getFlowOutPort());
+        }
     }
 
     // --- Data ports / edges -----------------------------------------------------

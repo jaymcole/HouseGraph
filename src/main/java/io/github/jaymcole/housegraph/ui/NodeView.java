@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.ui;
 
+import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
@@ -25,6 +26,10 @@ import java.util.List;
  * Visual representation of a {@link BaseNode}: a title bar (used to drag the node
  * around the canvas, and hosting the flow-in/flow-out anchors at its corners) plus a
  * left column of input ports and a right column of output ports.
+ * <p>
+ * The flow-in anchor only appears if the node's class is annotated
+ * {@link Executable.ExecutableIn}, and the flow-out anchor only if annotated
+ * {@link Executable.ExecutableOut}; a node with neither gets no flow anchors at all.
  */
 public class NodeView extends BorderPane {
 
@@ -40,6 +45,8 @@ public class NodeView extends BorderPane {
     private final DragController dragController;
     private final List<PortView> inputPorts = new ArrayList<>();
     private final List<PortView> outputPorts = new ArrayList<>();
+
+    /** Null if the node's class isn't annotated for that direction; see the class Javadoc. */
     private final FlowPortView flowInPort;
     private final FlowPortView flowOutPort;
 
@@ -54,8 +61,11 @@ public class NodeView extends BorderPane {
         setPrefWidth(190);
         applyBorderStyle();
 
-        flowInPort = new FlowPortView(this, FlowPortView.Direction.IN);
-        flowOutPort = new FlowPortView(this, FlowPortView.Direction.OUT);
+        Class<?> nodeClass = node.getClass();
+        flowInPort = nodeClass.isAnnotationPresent(Executable.ExecutableIn.class)
+                ? new FlowPortView(this, FlowPortView.Direction.IN) : null;
+        flowOutPort = nodeClass.isAnnotationPresent(Executable.ExecutableOut.class)
+                ? new FlowPortView(this, FlowPortView.Direction.OUT) : null;
 
         Label title = new Label(node.getName());
         title.setMaxWidth(Double.MAX_VALUE);
@@ -63,7 +73,14 @@ public class NodeView extends BorderPane {
         title.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
         HBox.setHgrow(title, Priority.ALWAYS);
 
-        HBox titleBar = new HBox(6, flowInPort, title, flowOutPort);
+        HBox titleBar = new HBox(6);
+        if (flowInPort != null) {
+            titleBar.getChildren().add(flowInPort);
+        }
+        titleBar.getChildren().add(title);
+        if (flowOutPort != null) {
+            titleBar.getChildren().add(flowOutPort);
+        }
         titleBar.setAlignment(Pos.CENTER);
         titleBar.setPadding(new Insets(6, 8, 6, 8));
         titleBar.setStyle("-fx-background-color: #4a4d4f;");
