@@ -5,7 +5,7 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 public class ConstantFloatNode extends BaseNode {
 
-    private final NodeVariable<Float> out = new NodeVariable<>("out");
+    private final NodeVariable<Float> out = new NodeVariable<>("out", Float.class, true);
 
     @Override
     public void process() {}

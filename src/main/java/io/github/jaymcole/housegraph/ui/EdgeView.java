@@ -15,26 +15,26 @@ public class EdgeView extends Group {
     private final PortView source;
     private final PortView target;
     private final Group content;
+    private final Runnable onDelete;
     private final CubicCurve curve = new CubicCurve();
     private final Button deleteButton = new Button("x");
+
+    private boolean selected = false;
 
     public EdgeView(PortView source, PortView target, Group content, Runnable onDelete) {
         this.source = source;
         this.target = target;
         this.content = content;
+        this.onDelete = onDelete;
 
         curve.setFill(null);
-        curve.setStroke(Color.web("#61afef"));
-        curve.setStrokeWidth(2);
         curve.setMouseTransparent(true);
+        applyCurveStyle();
 
         deleteButton.setStyle(
                 "-fx-background-color: #e06c75; -fx-text-fill: white; -fx-font-size: 9px;"
                         + " -fx-padding: 1 5 1 5; -fx-background-radius: 10;");
-        deleteButton.setOnAction(event -> {
-            content.getChildren().remove(EdgeView.this);
-            onDelete.run();
-        });
+        deleteButton.setOnAction(event -> delete());
 
         getChildren().addAll(curve, deleteButton);
 
@@ -64,5 +64,28 @@ public class EdgeView extends Group {
         double midX = (start.getX() + end.getX()) / 2;
         double midY = (start.getY() + end.getY()) / 2;
         deleteButton.relocate(midX - 8, midY - 10);
+    }
+
+    public void delete() {
+        content.getChildren().remove(this);
+        onDelete.run();
+    }
+
+    public boolean touchesNode(NodeView node) {
+        return source.getOwner() == node || target.getOwner() == node;
+    }
+
+    public void setSelected(boolean selected) {
+        this.selected = selected;
+        applyCurveStyle();
+    }
+
+    public boolean isSelected() {
+        return selected;
+    }
+
+    private void applyCurveStyle() {
+        curve.setStroke(selected ? Color.web("#e5c07b") : Color.web("#61afef"));
+        curve.setStrokeWidth(selected ? 3 : 2);
     }
 }

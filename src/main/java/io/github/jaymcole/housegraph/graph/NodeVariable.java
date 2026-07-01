@@ -6,16 +6,23 @@ public class NodeVariable<T> {
 
     public final String name;
     public final String id;
+    public final Class<T> type;
+    public final boolean manuallyEditable;
     private T value;
 
-    public NodeVariable(String variableName, String variableId) {
+    public NodeVariable(String variableName, Class<T> type, String variableId, boolean manuallyEditable) {
         this.name = variableName;
+        this.type = type;
         this.id = variableId;
+        this.manuallyEditable = manuallyEditable;
     }
 
-    public NodeVariable(String variableName) {
-        this.name = variableName;
-        id = UUID.randomUUID().toString();
+    public NodeVariable(String variableName, Class<T> type, boolean manuallyEditable) {
+        this(variableName, type, UUID.randomUUID().toString(), manuallyEditable);
+    }
+
+    public NodeVariable(String variableName, Class<T> type) {
+        this(variableName, type, UUID.randomUUID().toString(), false);
     }
 
     public void setValue(T value) {

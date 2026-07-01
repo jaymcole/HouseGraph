@@ -2,11 +2,14 @@ package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.Group;
 import javafx.scene.control.Label;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -23,26 +26,34 @@ import java.util.List;
  */
 public class NodeView extends BorderPane {
 
+    /** Lets the owning canvas coordinate selection and group-dragging across nodes. */
+    public interface DragController {
+        void onNodePressed(NodeView node);
+
+        void onNodeDragged(double deltaContentX, double deltaContentY);
+    }
+
     private final BaseNode node;
     private final Group content;
+    private final DragController dragController;
     private final List<PortView> inputPorts = new ArrayList<>();
     private final List<PortView> outputPorts = new ArrayList<>();
 
-    private Point2D dragAnchor;
-    private double dragStartLayoutX;
-    private double dragStartLayoutY;
+    private Point2D lastDragContentPoint;
+    private boolean selected = false;
 
-    public NodeView(BaseNode node, Group content) {
+    public NodeView(BaseNode node, Group content, DragController dragController) {
         this.node = node;
         this.content = content;
+        this.dragController = dragController;
 
         setPrefWidth(190);
-        setStyle("-fx-background-color: #3c3f41; -fx-border-color: #555555; -fx-border-width: 1;");
+        applyBorderStyle();
 
         Label title = new Label(node.getName());
         title.setMaxWidth(Double.MAX_VALUE);
         title.setStyle("-fx-background-color: #4a4d4f; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 6;");
-        title.setCursor(javafx.scene.Cursor.MOVE);
+        title.setCursor(Cursor.MOVE);
         setTop(title);
 
         VBox inputsBox = new VBox(8);
@@ -82,23 +93,47 @@ public class NodeView extends BorderPane {
         title.setOnMousePressed(this::handleDragStart);
         title.setOnMouseDragged(this::handleDragging);
 
-        // Prevent clicks elsewhere on the node from panning the canvas underneath it.
-        setOnMousePressed(javafx.event.Event::consume);
-        setOnMouseDragged(javafx.event.Event::consume);
+        // Prevent clicks elsewhere on the node from panning/rubber-band-selecting the canvas underneath it.
+        setOnMousePressed(Event::consume);
+        setOnMouseDragged(Event::consume);
     }
 
-    private void handleDragStart(javafx.scene.input.MouseEvent event) {
-        dragAnchor = content.sceneToLocal(event.getSceneX(), event.getSceneY());
-        dragStartLayoutX = getLayoutX();
-        dragStartLayoutY = getLayoutY();
+    private void handleDragStart(MouseEvent event) {
+        if (dragController != null) {
+            dragController.onNodePressed(this);
+        }
+        lastDragContentPoint = content.sceneToLocal(event.getSceneX(), event.getSceneY());
         event.consume();
     }
 
-    private void handleDragging(javafx.scene.input.MouseEvent event) {
+    private void handleDragging(MouseEvent event) {
         Point2D now = content.sceneToLocal(event.getSceneX(), event.getSceneY());
-        setLayoutX(dragStartLayoutX + (now.getX() - dragAnchor.getX()));
-        setLayoutY(dragStartLayoutY + (now.getY() - dragAnchor.getY()));
+        double deltaX = now.getX() - lastDragContentPoint.getX();
+        double deltaY = now.getY() - lastDragContentPoint.getY();
+        lastDragContentPoint = now;
+
+        if (dragController != null) {
+            dragController.onNodeDragged(deltaX, deltaY);
+        } else {
+            setLayoutX(getLayoutX() + deltaX);
+            setLayoutY(getLayoutY() + deltaY);
+        }
         event.consume();
+    }
+
+    public void setSelected(boolean selected) {
+        this.selected = selected;
+        applyBorderStyle();
+    }
+
+    public boolean isSelected() {
+        return selected;
+    }
+
+    private void applyBorderStyle() {
+        String borderColor = selected ? "#e5c07b" : "#555555";
+        String borderWidth = selected ? "2" : "1";
+        setStyle("-fx-background-color: #3c3f41; -fx-border-color: " + borderColor + "; -fx-border-width: " + borderWidth + ";");
     }
 
     public BaseNode getNode() {

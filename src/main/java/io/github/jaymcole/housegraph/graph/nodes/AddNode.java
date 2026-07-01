@@ -5,9 +5,9 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 public class AddNode extends BaseNode {
 
-    private final NodeVariable<Float> v1 = new NodeVariable<>("V1");
-    private final NodeVariable<Float> v2 = new NodeVariable<>("V2");
-    private final NodeVariable<Float> sum = new NodeVariable<>("Sum");
+    private final NodeVariable<Float> v1 = new NodeVariable<>("V1", Float.class);
+    private final NodeVariable<Float> v2 = new NodeVariable<>("V2", Float.class);
+    private final NodeVariable<Float> sum = new NodeVariable<>("Sum", Float.class);
 
     @Override
     public void process() {

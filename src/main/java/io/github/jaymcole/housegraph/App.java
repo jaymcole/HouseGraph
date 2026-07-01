@@ -21,10 +21,10 @@ public class App extends Application {
         GraphCanvas canvas = new GraphCanvas();
 
         Button addConstantButton = new Button("Add Constant");
-        addConstantButton.setOnAction(e -> canvas.addNode(new NodeView(new ConstantFloatNode(), canvas.getContent())));
+        addConstantButton.setOnAction(e -> canvas.addNode(new NodeView(new ConstantFloatNode(), canvas.getContent(), canvas)));
 
         Button addSumButton = new Button("Add Sum");
-        addSumButton.setOnAction(e -> canvas.addNode(new NodeView(new AddNode(), canvas.getContent())));
+        addSumButton.setOnAction(e -> canvas.addNode(new NodeView(new AddNode(), canvas.getContent(), canvas)));
 
         ToolBar toolBar = new ToolBar(addConstantButton, addSumButton);
 
