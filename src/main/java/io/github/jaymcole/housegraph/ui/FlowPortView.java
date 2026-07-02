@@ -3,8 +3,12 @@ package io.github.jaymcole.housegraph.ui;
 import javafx.geometry.Point2D;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
+import javafx.scene.effect.BlurType;
+import javafx.scene.effect.DropShadow;
+import javafx.scene.effect.Effect;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Polygon;
+import javafx.scene.shape.StrokeType;
 
 /**
  * Control-flow anchor point rendered as a small triangle at the top-left (IN) or
@@ -23,8 +27,13 @@ public class FlowPortView extends Polygon {
     private static final Color INVALID_FILL = Color.web("#e06c75");
     private static final Color BASE_STROKE = Color.web("#282c34");
     private static final Color HOVER_STROKE = Color.web("#ffffff");
-    private static final double BASE_STROKE_WIDTH = 1;
-    private static final double HOVER_STROKE_WIDTH = 2.5;
+    private static final double STROKE_WIDTH = 1;
+
+    // Effects are ignored by layout, so the glow can reach well past the triangle
+    // without nudging the title bar the way the old thicker centered stroke did.
+    // (Effect instances are plain state holders, safe to share across nodes.)
+    private static final Effect HOVER_GLOW =
+            new DropShadow(BlurType.GAUSSIAN, Color.web("#ffffff", 0.8), 7, 0.4, 0, 0);
 
     private final NodeView owner;
     private final Direction direction;
@@ -38,7 +47,11 @@ public class FlowPortView extends Polygon {
 
         setFill(FILL);
         setStroke(BASE_STROKE);
-        setStrokeWidth(BASE_STROKE_WIDTH);
+        setStrokeWidth(STROKE_WIDTH);
+        // Inside stroke + constant width keeps the layout bounds pinned to the
+        // 10x10 geometry; the triangle is too small for a thicker highlight ring,
+        // so hover emphasis comes from the glow effect instead.
+        setStrokeType(StrokeType.INSIDE);
         setCursor(Cursor.CROSSHAIR);
         setOnMouseEntered(event -> setHighlighted(true));
         setOnMouseExited(event -> setHighlighted(false));
@@ -69,10 +82,10 @@ public class FlowPortView extends Polygon {
         setFill(invalid ? INVALID_FILL : FILL);
         if (highlighted) {
             setStroke(HOVER_STROKE);
-            setStrokeWidth(HOVER_STROKE_WIDTH);
+            setEffect(HOVER_GLOW);
         } else {
             setStroke(BASE_STROKE);
-            setStrokeWidth(BASE_STROKE_WIDTH);
+            setEffect(null);
         }
     }
 

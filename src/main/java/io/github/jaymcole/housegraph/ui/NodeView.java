@@ -23,6 +23,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.shape.StrokeType;
 import javafx.util.Duration;
 
 import java.util.ArrayList;
@@ -59,7 +60,10 @@ public class NodeView extends BorderPane {
     private final FlowPortView flowInPort;
     private final FlowPortView flowOutPort;
 
-    private static final String PULSE_BORDER_COLOR = "#61dafb";
+    private static final Color SELECTED_BORDER_COLOR = Color.web("#e5c07b");
+    private static final Color PULSE_BORDER_COLOR = Color.web("#61dafb");
+    private static final double SELECTED_BORDER_WIDTH = 2;
+    private static final double PULSE_BORDER_WIDTH = 3;
     private static final Color PROCESSING_STRIPE_COLOR = Color.web("#e5a561");
     private static final Duration PULSE_DURATION = Duration.millis(400);
     private static final double PROCESSING_STRIPE_WIDTH = 4;
@@ -67,6 +71,7 @@ public class NodeView extends BorderPane {
     private static final double PROCESSING_GAP_LENGTH = 8;
     private static final double PROCESSING_CYCLE_LENGTH = PROCESSING_DASH_LENGTH + PROCESSING_GAP_LENGTH;
 
+    private final Rectangle highlightBorder;
     private final Rectangle processingStripes;
     private final Timeline processingAnimation;
 
@@ -84,7 +89,13 @@ public class NodeView extends BorderPane {
         // A fixed width would leave slack whenever content is narrower than it, and
         // that slack has to render as a gap somewhere - between columns, or trailing
         // after the last one - neither of which is wanted.
-        applyBorderStyle();
+        //
+        // The structural border is a constant 1px and never changes. A Region's border
+        // width feeds into its insets, so widening it on selection used to push the
+        // title bar and ports inward and grow the whole node by a couple of pixels.
+        // Selection and pulse emphasis are instead drawn by the highlightBorder
+        // overlay below, which layout ignores entirely.
+        setStyle("-fx-background-color: #3c3f41; -fx-border-color: #555555; -fx-border-width: 1;");
 
         Class<?> nodeClass = node.getClass();
         flowInPort = nodeClass.isAnnotationPresent(Executable.ExecutableIn.class)
@@ -184,6 +195,22 @@ public class NodeView extends BorderPane {
         setOnMousePressed(Event::consume);
         setOnMouseDragged(Event::consume);
 
+        // Emphasis overlay for the selected and pulse states: an unmanaged, mouse-
+        // transparent rectangle stretched over the whole node, stroked on the inside
+        // so it sits exactly where the CSS border does. Unmanaged children don't
+        // participate in layout and an INSIDE stroke never extends a shape's bounds,
+        // so this border can be any width (or later carry glows, gradients, animated
+        // strokes...) without the node moving or resizing by a single pixel.
+        highlightBorder = new Rectangle();
+        highlightBorder.setFill(null);
+        highlightBorder.setStrokeType(StrokeType.INSIDE);
+        highlightBorder.widthProperty().bind(widthProperty());
+        highlightBorder.heightProperty().bind(heightProperty());
+        highlightBorder.setMouseTransparent(true);
+        highlightBorder.setVisible(false);
+        highlightBorder.setManaged(false);
+        getChildren().add(highlightBorder);
+
         // "Marching ants" overlay for the processing state: a dashed rectangle drawn
         // over the whole node, with its dash offset animated so the stripes appear to
         // crawl around the border. The gaps between orange dashes just show whatever's
@@ -241,27 +268,35 @@ public class NodeView extends BorderPane {
 
     public void setSelected(boolean selected) {
         this.selected = selected;
-        applyBorderStyle();
+        applyHighlight();
     }
 
     public boolean isSelected() {
         return selected;
     }
 
-    private void applyBorderStyle() {
-        String borderColor = selected ? "#e5c07b" : "#555555";
-        String borderWidth = selected ? "2" : "1";
-        setStyle("-fx-background-color: #3c3f41; -fx-border-color: " + borderColor + "; -fx-border-width: " + borderWidth + ";");
+    private void applyHighlight() {
+        if (selected) {
+            showHighlightBorder(SELECTED_BORDER_COLOR, SELECTED_BORDER_WIDTH);
+        } else {
+            highlightBorder.setVisible(false);
+        }
+    }
+
+    private void showHighlightBorder(Color color, double width) {
+        highlightBorder.setStroke(color);
+        highlightBorder.setStrokeWidth(width);
+        highlightBorder.setVisible(true);
     }
 
     /** Briefly flashes the border to show this node was just triggered, then reverts to its normal (selected or not) style. */
     public void pulse() {
-        setStyle("-fx-background-color: #3c3f41; -fx-border-color: " + PULSE_BORDER_COLOR + "; -fx-border-width: 3;");
+        showHighlightBorder(PULSE_BORDER_COLOR, PULSE_BORDER_WIDTH);
         if (pulseRevert != null) {
             pulseRevert.stop();
         }
         pulseRevert = new PauseTransition(PULSE_DURATION);
-        pulseRevert.setOnFinished(event -> applyBorderStyle());
+        pulseRevert.setOnFinished(event -> applyHighlight());
         pulseRevert.play();
     }
 

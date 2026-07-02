@@ -11,6 +11,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.StrokeType;
 
 /**
  * Visual connection point for a single {@link NodeVariable} on a {@link NodeView}.
@@ -53,6 +54,11 @@ public class PortView extends HBox {
         circle.setFill(FILL);
         circle.setStroke(BASE_STROKE);
         circle.setStrokeWidth(BASE_STROKE_WIDTH);
+        // The default CENTERED stroke bleeds outward and counts toward layout bounds,
+        // so the thicker hover stroke used to nudge this whole row sideways. An INSIDE
+        // stroke keeps the bounds pinned to the geometry no matter how wide it gets;
+        // the hover ring now grows into the fill instead of outward.
+        circle.setStrokeType(StrokeType.INSIDE);
         circle.setCursor(Cursor.CROSSHAIR);
         circle.setOnMouseEntered(event -> setHighlighted(true));
         circle.setOnMouseExited(event -> setHighlighted(false));
