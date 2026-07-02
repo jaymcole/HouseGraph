@@ -20,6 +20,7 @@ public class FlowPortView extends Polygon {
     }
 
     private static final Color FILL = Color.web("#98c379");
+    private static final Color INVALID_FILL = Color.web("#e06c75");
     private static final Color BASE_STROKE = Color.web("#282c34");
     private static final Color HOVER_STROKE = Color.web("#ffffff");
     private static final double BASE_STROKE_WIDTH = 1;
@@ -27,6 +28,8 @@ public class FlowPortView extends Polygon {
 
     private final NodeView owner;
     private final Direction direction;
+    private boolean highlighted = false;
+    private boolean invalid = false;
 
     public FlowPortView(NodeView owner, Direction direction) {
         super(0.0, 0.0, 10.0, 5.0, 0.0, 10.0);
@@ -48,8 +51,29 @@ public class FlowPortView extends Polygon {
      * cursor position while a flow edge drag is in progress.
      */
     public void setHighlighted(boolean highlighted) {
-        setStroke(highlighted ? HOVER_STROKE : BASE_STROKE);
-        setStrokeWidth(highlighted ? HOVER_STROKE_WIDTH : BASE_STROKE_WIDTH);
+        this.highlighted = highlighted;
+        applyVisualState();
+    }
+
+    /**
+     * Marks (or unmarks) this port as an invalid target for the flow edge currently
+     * being dragged (wrong direction or owner) — set on every other flow port for the
+     * duration of a drag by {@link GraphCanvas}, same as {@link PortView#setInvalid}.
+     */
+    public void setInvalid(boolean invalid) {
+        this.invalid = invalid;
+        applyVisualState();
+    }
+
+    private void applyVisualState() {
+        setFill(invalid ? INVALID_FILL : FILL);
+        if (highlighted) {
+            setStroke(HOVER_STROKE);
+            setStrokeWidth(HOVER_STROKE_WIDTH);
+        } else {
+            setStroke(BASE_STROKE);
+            setStrokeWidth(BASE_STROKE_WIDTH);
+        }
     }
 
     public Point2D getCenterInContent(Group content) {

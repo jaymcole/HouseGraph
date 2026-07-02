@@ -28,6 +28,7 @@ public class PortView extends HBox {
 
     private static final double RADIUS = 6;
     private static final Color FILL = Color.web("#61afef");
+    private static final Color INVALID_FILL = Color.web("#e06c75");
     private static final Color BASE_STROKE = Color.web("#282c34");
     private static final Color HOVER_STROKE = Color.web("#ffffff");
     private static final double BASE_STROKE_WIDTH = 1.5;
@@ -41,6 +42,8 @@ public class PortView extends HBox {
     private final TextField valueField;
 
     private int connectionCount = 0;
+    private boolean highlighted = false;
+    private boolean invalid = false;
 
     public PortView(NodeView owner, NodeVariable<?> variable, Direction direction) {
         this.owner = owner;
@@ -162,8 +165,32 @@ public class PortView extends HBox {
      * cursor position while an edge drag is in progress.
      */
     public void setHighlighted(boolean highlighted) {
-        circle.setStroke(highlighted ? HOVER_STROKE : BASE_STROKE);
-        circle.setStrokeWidth(highlighted ? HOVER_STROKE_WIDTH : BASE_STROKE_WIDTH);
+        this.highlighted = highlighted;
+        applyVisualState();
+    }
+
+    /**
+     * Marks (or unmarks) this port as an invalid target for the edge currently being
+     * dragged (wrong type, direction, or owner) — set on every other port for the
+     * duration of a drag by {@link GraphCanvas}, so the whole set of valid/invalid
+     * targets is visible at a glance rather than only on hover. Takes priority over
+     * the hover highlight, since an invalid port can't become a valid one just by
+     * being under the cursor.
+     */
+    public void setInvalid(boolean invalid) {
+        this.invalid = invalid;
+        applyVisualState();
+    }
+
+    private void applyVisualState() {
+        circle.setFill(invalid ? INVALID_FILL : FILL);
+        if (highlighted) {
+            circle.setStroke(HOVER_STROKE);
+            circle.setStrokeWidth(HOVER_STROKE_WIDTH);
+        } else {
+            circle.setStroke(BASE_STROKE);
+            circle.setStrokeWidth(BASE_STROKE_WIDTH);
+        }
     }
 
     public Point2D getCenterInContent(Group content) {

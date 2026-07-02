@@ -236,6 +236,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             dragLine.setControlY1(start.getY());
             dragLine.setControlX2(start.getX());
             dragLine.setControlY2(start.getY());
+
+            for (PortView candidate : ports) {
+                if (candidate != port) {
+                    candidate.setInvalid(!isValidConnection(port, candidate));
+                }
+            }
             event.consume();
         });
 
@@ -282,6 +288,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             if (highlightedTargetPort != null) {
                 highlightedTargetPort.setHighlighted(false);
                 highlightedTargetPort = null;
+            }
+            for (PortView candidate : ports) {
+                candidate.setInvalid(false);
             }
             content.getChildren().remove(dragLine);
             dragLine = null;
@@ -361,6 +370,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             flowDragLine.setControlY1(start.getY());
             flowDragLine.setControlX2(start.getX());
             flowDragLine.setControlY2(start.getY());
+
+            for (FlowPortView candidate : flowPorts) {
+                if (candidate != port) {
+                    candidate.setInvalid(!isValidFlowConnection(port, candidate));
+                }
+            }
             event.consume();
         });
 
@@ -407,6 +422,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             if (highlightedTargetFlowPort != null) {
                 highlightedTargetFlowPort.setHighlighted(false);
                 highlightedTargetFlowPort = null;
+            }
+            for (FlowPortView candidate : flowPorts) {
+                candidate.setInvalid(false);
             }
             content.getChildren().remove(flowDragLine);
             flowDragLine = null;
