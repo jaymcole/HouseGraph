@@ -1,0 +1,115 @@
+{
+  "nodes": [
+    {
+      "outputs": [],
+      "inputs": [],
+      "x": 40,
+      "y": 40,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode"
+    },
+    {
+      "outputs": [1],
+      "inputs": [],
+      "x": 43,
+      "y": 124,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode"
+    },
+    {
+      "outputs": [2],
+      "inputs": [],
+      "x": 41,
+      "y": 202,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode"
+    },
+    {
+      "outputs": [3],
+      "inputs": [
+        1,
+        2
+      ],
+      "x": 300,
+      "y": 62,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.math.AddNode"
+    },
+    {
+      "outputs": [],
+      "inputs": [3],
+      "x": 546,
+      "y": 60,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.debug.ValueDisplayNode"
+    },
+    {
+      "outputs": [6],
+      "inputs": [
+        3,
+        3
+      ],
+      "x": 745,
+      "y": 164,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.math.AddNode"
+    },
+    {
+      "outputs": [],
+      "inputs": [6],
+      "x": 971,
+      "y": 164,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.debug.ValueDisplayNode"
+    }
+  ],
+  "flowEdges": [
+    {
+      "sourceNode": 5,
+      "targetNode": 6
+    },
+    {
+      "sourceNode": 3,
+      "targetNode": 4
+    },
+    {
+      "sourceNode": 4,
+      "targetNode": 5
+    },
+    {
+      "sourceNode": 0,
+      "targetNode": 3
+    }
+  ],
+  "dataEdges": [
+    {
+      "targetVariable": 1,
+      "sourceNode": 2,
+      "sourceVariable": 0,
+      "targetNode": 3
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 3,
+      "sourceVariable": 0,
+      "targetNode": 5
+    },
+    {
+      "targetVariable": 1,
+      "sourceNode": 3,
+      "sourceVariable": 0,
+      "targetNode": 5
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 5,
+      "sourceVariable": 0,
+      "targetNode": 6
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 3,
+      "sourceVariable": 0,
+      "targetNode": 4
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 1,
+      "sourceVariable": 0,
+      "targetNode": 3
+    }
+  ]
+}

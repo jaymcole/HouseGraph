@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.graph.nodes.math;
+package io.github.jaymcole.housegraph.graph.nodes.constants;
 
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;

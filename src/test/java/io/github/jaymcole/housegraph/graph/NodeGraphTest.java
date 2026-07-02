@@ -2,7 +2,7 @@ package io.github.jaymcole.housegraph.graph;
 
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
-import io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode;
+import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;

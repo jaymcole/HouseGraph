@@ -60,6 +60,21 @@ public final class NodeRegistry {
         return entries;
     }
 
+    /** Resolves a fully-qualified class name (e.g. from a save file) back to a loadable node class, or null if it's not a valid one. */
+    public static Class<? extends BaseNode> resolveClass(String className) {
+        try {
+            Class<?> type = Class.forName(className, false, Thread.currentThread().getContextClassLoader());
+            if (BaseNode.class.isAssignableFrom(type) && !type.isInterface() && !Modifier.isAbstract(type.getModifiers())) {
+                @SuppressWarnings("unchecked")
+                Class<? extends BaseNode> nodeClass = (Class<? extends BaseNode>) type;
+                return nodeClass;
+            }
+        } catch (ClassNotFoundException e) {
+            // fall through to null
+        }
+        return null;
+    }
+
     /** Creates a fresh instance of a discovered node class via its no-arg constructor, or null if that fails. */
     public static BaseNode instantiate(Class<? extends BaseNode> nodeClass) {
         try {

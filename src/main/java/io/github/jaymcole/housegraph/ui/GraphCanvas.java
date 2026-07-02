@@ -26,38 +26,49 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.transform.Affine;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Function;
 
 /**
  * An infinite, pannable, zoomable canvas that hosts {@link NodeView}s and the
  * {@link EdgeView}/{@link FlowEdgeView} connections between them.
  * <p>
- * Panning: right-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
+ * Panning: middle-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
  * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges;
- * Delete/Backspace removes the current selection. Data edges are created by dragging
- * from one data port's circle to another; flow edges by dragging between the triangular
- * flow anchors at the top corners of each node.
+ * right-click opens the "Add Node" menu. Delete/Backspace removes the current
+ * selection; Ctrl/Cmd+C and Ctrl/Cmd+V copy and paste it. Data edges are created by
+ * dragging from one data port's circle to another; flow edges by dragging between the
+ * triangular flow anchors at the top corners of each node.
  */
 public class GraphCanvas extends Pane implements NodeView.DragController {
 
     private static final KeyCodeCombination COPY_COMBO = new KeyCodeCombination(KeyCode.C, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination PASTE_COMBO = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN);
 
-    /** One copied node plus the canvas position it was copied from. */
-    private record ClipboardNode(BaseNode node, double x, double y) {
+    /**
+     * One node plus its canvas position, as captured for copy/paste or save/load.
+     * Package-visible (not private) so {@link GraphFileIO} can build/read these
+     * without needing anything else from GraphCanvas's internals.
+     */
+    record ClipboardNode(BaseNode node, double x, double y) {
     }
 
-    /** A data edge between two copied nodes, referenced by index into the clipboard node list and variable list. */
-    private record ClipboardDataEdge(int sourceNodeIndex, int sourceVariableIndex, int targetNodeIndex, int targetVariableIndex) {
+    /** A data edge between two snapshotted nodes, referenced by index into the node list and variable list. */
+    record ClipboardDataEdge(int sourceNodeIndex, int sourceVariableIndex, int targetNodeIndex, int targetVariableIndex) {
     }
 
-    /** A flow edge between two copied nodes, referenced by index into the clipboard node list. */
-    private record ClipboardFlowEdge(int sourceNodeIndex, int targetNodeIndex) {
+    /** A flow edge between two snapshotted nodes, referenced by index into the node list. */
+    record ClipboardFlowEdge(int sourceNodeIndex, int targetNodeIndex) {
+    }
+
+    /** A self-contained slice of the graph (some or all of its nodes, plus the edges between them). */
+    record GraphSnapshot(List<ClipboardNode> nodes, List<ClipboardDataEdge> dataEdges, List<ClipboardFlowEdge> flowEdges) {
     }
 
     private final NodeGraph graph;
@@ -88,7 +99,6 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
 
     private Rectangle selectionRectangle;
     private Point2D selectionStartContent;
-    private boolean rightDragOccurred;
 
     private final ContextMenu addNodeMenu;
     private Point2D pendingDropPoint = Point2D.ZERO;
@@ -506,10 +516,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     }
 
     private void deleteSelected() {
-        List<NodeView> nodesToDelete = new ArrayList<>(selectedNodes);
-        List<ConnectionView> connectionsToDelete = new ArrayList<>(selectedConnections);
+        deleteNodes(selectedNodes);
+        selectedNodes.clear();
+        selectedConnections.clear();
+    }
 
-        for (NodeView node : nodesToDelete) {
+    /** Deletes a set of nodes plus any connection touching one of them (cascading, so no orphaned edges are left behind). */
+    private void deleteNodes(Collection<NodeView> nodesToDelete) {
+        List<NodeView> nodes = new ArrayList<>(nodesToDelete);
+        List<ConnectionView> connectionsToDelete = new ArrayList<>();
+
+        for (NodeView node : nodes) {
             for (ConnectionView connection : allConnections()) {
                 if (connection.touchesNode(node) && !connectionsToDelete.contains(connection)) {
                     connectionsToDelete.add(connection);
@@ -520,27 +537,28 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         for (ConnectionView connection : connectionsToDelete) {
             connection.delete();
         }
-        for (NodeView node : nodesToDelete) {
+        for (NodeView node : nodes) {
             removeNode(node);
         }
+    }
 
+    /** Removes everything from the canvas, e.g. before loading a graph from file. */
+    private void clearAll() {
+        deleteNodes(nodeViews);
         selectedNodes.clear();
         selectedConnections.clear();
     }
 
-    // --- Copy / paste --------------------------------------------------------------
+    // --- Copy / paste / save-load snapshotting --------------------------------------
 
     /**
-     * Snapshots the currently selected nodes (works for a single selected node too)
-     * plus any data/flow edges that run between two of them — edges to a node outside
-     * the selection aren't copied, since the other endpoint isn't part of the clipboard.
+     * Captures a set of nodes plus any data/flow edges that run between two of them —
+     * edges to a node outside the set aren't included, since the other endpoint isn't
+     * part of the snapshot. Used for both copy (a selection) and save-to-file (every
+     * node on the canvas).
      */
-    private void copySelection() {
-        if (selectedNodes.isEmpty()) {
-            return;
-        }
-
-        List<NodeView> ordered = new ArrayList<>(selectedNodes);
+    private GraphSnapshot snapshotOf(Collection<NodeView> views) {
+        List<NodeView> ordered = new ArrayList<>(views);
         Map<BaseNode, Integer> indexOf = new HashMap<>();
         for (int i = 0; i < ordered.size(); i++) {
             indexOf.put(ordered.get(i).getNode(), i);
@@ -573,53 +591,74 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
             flowEdges.add(new ClipboardFlowEdge(sourceIndex, targetIndex));
         }
 
-        clipboardNodes = nodes;
-        clipboardDataEdges = dataEdges;
-        clipboardFlowEdges = flowEdges;
-        pasteOffsetStep = 0;
+        return new GraphSnapshot(nodes, dataEdges, flowEdges);
     }
 
     /**
-     * Duplicates whatever's on the clipboard (fresh {@link BaseNode} instances, via
-     * {@link NodeRegistry#duplicate}, with the internal edges reconnected), offset from
-     * the original copy position so pastes don't land exactly on top of their source.
-     * Repeated pastes without an intervening copy step further each time. The pasted
-     * nodes become the new selection.
+     * Places a snapshot's nodes onto the canvas (each one built from {@code nodeFactory},
+     * offset from its captured position) and reconnects the internal edges. Shared by
+     * paste (factory duplicates the clipboard's live node instances) and load-from-file
+     * (factory just returns the already-freshly-built node parsed from JSON).
      */
-    private void pasteClipboard() {
-        if (clipboardNodes.isEmpty()) {
-            return;
-        }
-
-        double offset = 30 + pasteOffsetStep * 20;
-        pasteOffsetStep++;
-
-        List<NodeView> pasted = new ArrayList<>();
-        for (ClipboardNode entry : clipboardNodes) {
-            BaseNode copy = NodeRegistry.duplicate(entry.node());
-            if (copy == null) {
+    private List<NodeView> place(GraphSnapshot snapshot, Function<ClipboardNode, BaseNode> nodeFactory, double offsetX, double offsetY) {
+        List<NodeView> placed = new ArrayList<>();
+        for (ClipboardNode entry : snapshot.nodes()) {
+            BaseNode node = nodeFactory.apply(entry);
+            if (node == null) {
                 continue;
             }
-            NodeView nodeView = new NodeView(copy, content, this);
-            addNode(nodeView, entry.x() + offset, entry.y() + offset);
-            pasted.add(nodeView);
+            NodeView nodeView = new NodeView(node, content, this);
+            addNode(nodeView, entry.x() + offsetX, entry.y() + offsetY);
+            placed.add(nodeView);
         }
 
-        for (ClipboardDataEdge dataEdge : clipboardDataEdges) {
-            NodeView sourceView = pasted.get(dataEdge.sourceNodeIndex());
-            NodeView targetView = pasted.get(dataEdge.targetNodeIndex());
+        for (ClipboardDataEdge dataEdge : snapshot.dataEdges()) {
+            NodeView sourceView = placed.get(dataEdge.sourceNodeIndex());
+            NodeView targetView = placed.get(dataEdge.targetNodeIndex());
             PortView sourcePort = sourceView.getOutputPorts().get(dataEdge.sourceVariableIndex());
             PortView targetPort = targetView.getInputPorts().get(dataEdge.targetVariableIndex());
             createEdge(sourcePort, targetPort);
         }
 
-        for (ClipboardFlowEdge flowEdge : clipboardFlowEdges) {
-            NodeView sourceView = pasted.get(flowEdge.sourceNodeIndex());
-            NodeView targetView = pasted.get(flowEdge.targetNodeIndex());
+        for (ClipboardFlowEdge flowEdge : snapshot.flowEdges()) {
+            NodeView sourceView = placed.get(flowEdge.sourceNodeIndex());
+            NodeView targetView = placed.get(flowEdge.targetNodeIndex());
             if (sourceView.getFlowOutPort() != null && targetView.getFlowInPort() != null) {
                 createFlowEdge(sourceView.getFlowOutPort(), targetView.getFlowInPort());
             }
         }
+
+        return placed;
+    }
+
+    /** Snapshots the currently selected nodes (works for a single selected node too). */
+    private void copySelection() {
+        if (selectedNodes.isEmpty()) {
+            return;
+        }
+        GraphSnapshot snapshot = snapshotOf(selectedNodes);
+        clipboardNodes = snapshot.nodes();
+        clipboardDataEdges = snapshot.dataEdges();
+        clipboardFlowEdges = snapshot.flowEdges();
+        pasteOffsetStep = 0;
+    }
+
+    /**
+     * Duplicates whatever's on the clipboard (fresh {@link BaseNode} instances, via
+     * {@link NodeRegistry#duplicate}), offset from the original copy position so pastes
+     * don't land exactly on top of their source. Repeated pastes without an intervening
+     * copy step further each time. The pasted nodes become the new selection.
+     */
+    private void pasteClipboard() {
+        if (clipboardNodes.isEmpty()) {
+            return;
+        }
+        double offset = 30 + pasteOffsetStep * 20;
+        pasteOffsetStep++;
+
+        List<NodeView> pasted = place(
+                new GraphSnapshot(clipboardNodes, clipboardDataEdges, clipboardFlowEdges),
+                entry -> NodeRegistry.duplicate(entry.node()), offset, offset);
 
         clearSelection();
         for (NodeView nodeView : pasted) {
@@ -627,12 +666,22 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         }
     }
 
-    // --- Canvas panning (right-click) / rubber-band selection (left-click) --------
+    /** Everything currently on the canvas, in the same shape used for copy/paste — for save-to-file. */
+    GraphSnapshot snapshotAll() {
+        return snapshotOf(nodeViews);
+    }
+
+    /** Replaces the canvas's entire contents with a snapshot (e.g. loaded from file). */
+    void loadSnapshot(GraphSnapshot snapshot) {
+        clearAll();
+        place(snapshot, ClipboardNode::node, 0, 0);
+    }
+
+    // --- Canvas panning (middle-click) / rubber-band selection (left-click) --------
 
     private void handleCanvasPressed(MouseEvent event) {
         requestFocus();
-        if (event.getButton() == MouseButton.SECONDARY) {
-            rightDragOccurred = false;
+        if (event.getButton() == MouseButton.MIDDLE) {
             lastDragSceneX = event.getSceneX();
             lastDragSceneY = event.getSceneY();
         } else if (event.getButton() == MouseButton.PRIMARY) {
@@ -649,8 +698,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     }
 
     private void handleCanvasDragged(MouseEvent event) {
-        if (event.getButton() == MouseButton.SECONDARY) {
-            rightDragOccurred = true;
+        if (event.getButton() == MouseButton.MIDDLE) {
             translateX += event.getSceneX() - lastDragSceneX;
             translateY += event.getSceneY() - lastDragSceneY;
             lastDragSceneX = event.getSceneX();
@@ -681,10 +729,6 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     // --- Add-node context menu ----------------------------------------------------
 
     private void handleContextMenuRequested(ContextMenuEvent event) {
-        if (rightDragOccurred) {
-            // The right-click was actually a pan gesture; don't also pop a menu.
-            return;
-        }
         pendingDropPoint = content.sceneToLocal(event.getSceneX(), event.getSceneY());
         addNodeMenu.hide();
         addNodeMenu.show(this, event.getScreenX(), event.getScreenY());
