@@ -57,7 +57,10 @@ public class NodeView extends BorderPane {
         this.content = content;
         this.dragController = dragController;
 
-        setPrefWidth(190);
+        // No fixed/minimum width: the node sizes to its actual content (title + ports).
+        // A fixed width would leave slack whenever content is narrower than it, and
+        // that slack has to render as a gap somewhere - between columns, or trailing
+        // after the last one - neither of which is wanted.
         applyBorderStyle();
 
         Class<?> nodeClass = node.getClass();
@@ -112,12 +115,33 @@ public class NodeView extends BorderPane {
             }
         }
 
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
+        boolean hasInputs = !inputPorts.isEmpty();
+        boolean hasOutputs = !outputPorts.isEmpty();
 
-        HBox body = new HBox(inputsBox, spacer, outputsBox);
-        body.setSpacing(16);
-        body.setPadding(new Insets(0, 10, 0, 10));
+        Region body;
+        if (hasInputs && !hasOutputs) {
+            // No outputs to share the row with: let the input column use the full width.
+            inputsBox.setPadding(new Insets(8, 10, 8, 10));
+            body = inputsBox;
+        } else if (hasOutputs && !hasInputs) {
+            outputsBox.setPadding(new Insets(8, 10, 8, 10));
+            body = outputsBox;
+        } else {
+            // A small fixed gap between the columns (matching PortView's own internal
+            // circle/label/field spacing) rather than a greedy spacer Region. Any extra
+            // width the row ends up with (e.g. the title bar needing more room than the
+            // ports do) is instead given to the columns themselves via hgrow, so it
+            // flows down into each PortView's own growable value field instead of
+            // sitting as dead space - see PortView.createValueField().
+            inputsBox.setMaxWidth(Double.MAX_VALUE);
+            outputsBox.setMaxWidth(Double.MAX_VALUE);
+            HBox.setHgrow(inputsBox, Priority.ALWAYS);
+            HBox.setHgrow(outputsBox, Priority.ALWAYS);
+
+            HBox row = new HBox(6, inputsBox, outputsBox);
+            row.setPadding(new Insets(0, 10, 0, 10));
+            body = row;
+        }
         setCenter(body);
 
         if (node instanceof NodeContentProvider contentProvider) {

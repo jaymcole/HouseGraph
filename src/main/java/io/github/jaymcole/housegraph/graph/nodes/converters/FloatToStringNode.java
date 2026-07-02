@@ -10,8 +10,8 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Executable.ExecutableOut
 public class FloatToStringNode extends BaseNode {
 
-    private final NodeVariable<Float> in = new NodeVariable<>("out", Float.class, true);
-    private final NodeVariable<String> out = new NodeVariable<>("in", String.class, true);
+    private final NodeVariable<Float> in = new NodeVariable<>("in", Float.class, false);
+    private final NodeVariable<String> out = new NodeVariable<>("out", String.class, false);
 
 
     @Override

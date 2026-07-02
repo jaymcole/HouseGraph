@@ -8,14 +8,16 @@ import javafx.scene.Group;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 
 /**
  * Visual connection point for a single {@link NodeVariable} on a {@link NodeView}.
  * Edges are created by dragging from one port's circle to another. When a variable is
- * marked {@code manuallyEditable} (and of a supported literal type), an inline field
- * lets the user type a value directly onto it instead of/alongside wiring an edge.
+ * marked {@code manuallyEditable} and its type is registered in {@link ValueEditors},
+ * an inline field lets the user type a value directly onto it instead of/alongside
+ * wiring an edge.
  */
 public class PortView extends HBox {
 
@@ -35,6 +37,7 @@ public class PortView extends HBox {
     private final NodeVariable<?> variable;
     private final Direction direction;
     private final Circle circle = new Circle(RADIUS);
+    private final Label label;
     private final TextField valueField;
 
     private int connectionCount = 0;
@@ -51,7 +54,7 @@ public class PortView extends HBox {
         circle.setOnMouseEntered(event -> setHighlighted(true));
         circle.setOnMouseExited(event -> setHighlighted(false));
 
-        Label label = new Label(variable.name);
+        label = new Label(variable.name);
         label.setStyle("-fx-text-fill: #dddddd; -fx-font-size: 11px;");
 
         valueField = isEditable(variable) ? createValueField() : null;
@@ -75,18 +78,20 @@ public class PortView extends HBox {
     }
 
     private static boolean isEditable(NodeVariable<?> variable) {
-        return variable.manuallyEditable && variable.type == Float.class;
+        return variable.manuallyEditable && ValueEditors.isEditable(variable.type);
     }
 
     private TextField createValueField() {
         TextField field = new TextField();
         field.setPrefWidth(50);
+        field.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(field, Priority.ALWAYS);
         field.setPromptText("0.0");
         field.setStyle("-fx-font-size: 10px; -fx-padding: 1 3 1 3;");
 
         Object currentValue = variable.getValue();
         if (currentValue != null) {
-            field.setText(String.valueOf(currentValue));
+            field.setText(formatValue(currentValue));
         }
 
         field.setOnAction(event -> commitValue());
@@ -106,12 +111,18 @@ public class PortView extends HBox {
             return;
         }
         try {
-            Float parsed = Float.parseFloat(text);
+            Object parsed = ValueEditors.editorFor(variable.type).parse(text);
             ((NodeVariable<Object>) variable).setValue(parsed);
-        } catch (NumberFormatException e) {
+        } catch (RuntimeException e) {
             Object currentValue = variable.getValue();
-            valueField.setText(currentValue == null ? "" : String.valueOf(currentValue));
+            valueField.setText(currentValue == null ? "" : formatValue(currentValue));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String formatValue(Object value) {
+        ValueEditors.Editor<Object> editor = (ValueEditors.Editor<Object>) ValueEditors.editorFor(variable.type);
+        return editor != null ? editor.format(value) : String.valueOf(value);
     }
 
     /** Marks this port as connected to one more edge, hiding the manual-entry field. */
@@ -136,6 +147,12 @@ public class PortView extends HBox {
         boolean showField = direction == Direction.OUTPUT || connectionCount == 0;
         valueField.setVisible(showField);
         valueField.setManaged(showField);
+
+        // The name label and the value field would otherwise compete for the same
+        // cramped row (truncating into "..."); the field already makes the variable's
+        // purpose clear, so hide the label whenever the field is the one showing.
+        label.setVisible(!showField);
+        label.setManaged(!showField);
     }
 
     /**

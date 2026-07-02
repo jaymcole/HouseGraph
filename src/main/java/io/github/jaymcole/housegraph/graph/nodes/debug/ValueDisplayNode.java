@@ -19,7 +19,7 @@ import javafx.scene.control.Label;
 @Executable.ExecutableOut
 public class ValueDisplayNode extends BaseNode implements NodeContentProvider {
 
-    private final NodeVariable<Float> value = new NodeVariable<>("Value", Float.class);
+    private final NodeVariable<String> value = new NodeVariable<>("Value", String.class);
     private Label valueLabel;
 
     @Override
@@ -49,7 +49,7 @@ public class ValueDisplayNode extends BaseNode implements NodeContentProvider {
         }
     }
 
-    private static String format(Float f) {
+    private static String format(String f) {
         return f == null ? "—" : String.valueOf(f);
     }
 }
