@@ -9,6 +9,10 @@ build/
 *.ipr
 out/
 
+# Secrets
+.env
+.env.*
+
 # OS
 .DS_Store
 Thumbs.db
