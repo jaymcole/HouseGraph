@@ -70,6 +70,28 @@ public final class NodeRegistry {
         }
     }
 
+    /**
+     * Creates a fresh instance of the same node type as {@code source}, with its
+     * current input/output values copied over by position. Used for copy/paste: no
+     * per-node-type clone() is needed since {@code configureInputs()}/{@code configureOutputs()}
+     * always build the same list shape for a given class.
+     */
+    public static BaseNode duplicate(BaseNode source) {
+        BaseNode copy = instantiate(source.getClass());
+        if (copy != null) {
+            copyValues(source.getInputs(), copy.getInputs());
+            copyValues(source.getOutputs(), copy.getOutputs());
+        }
+        return copy;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void copyValues(List<NodeVariable> from, List<NodeVariable> to) {
+        for (int i = 0; i < Math.min(from.size(), to.size()); i++) {
+            to.get(i).setValue(from.get(i).getValue());
+        }
+    }
+
     private static void scanDirectory(File directory, String packageName, List<Entry> out) {
         File[] files = directory.listFiles();
         if (files == null) {

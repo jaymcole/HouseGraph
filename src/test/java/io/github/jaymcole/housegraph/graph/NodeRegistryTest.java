@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NodeRegistryTest {
@@ -52,5 +53,34 @@ class NodeRegistryTest {
     void instantiateBuildsAWorkingNode() {
         BaseNode node = NodeRegistry.instantiate(AddNode.class);
         assertTrue(node instanceof AddNode);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void duplicateCopiesInputAndOutputValuesByPosition() {
+        AddNode original = new AddNode();
+        original.getInputs().get(0).setValue(3f);
+        original.getOutputs().get(0).setValue(99f);
+
+        BaseNode copy = NodeRegistry.duplicate(original);
+
+        assertTrue(copy instanceof AddNode);
+        assertEquals(3f, copy.getInputs().get(0).getValue());
+        assertEquals(99f, copy.getOutputs().get(0).getValue());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void duplicateIsIndependentFromTheOriginal() {
+        ConstantFloatNode original = new ConstantFloatNode();
+        original.getOutputs().get(0).setValue(1f);
+
+        BaseNode copy = NodeRegistry.duplicate(original);
+        assertNotSame(original, copy);
+
+        copy.getOutputs().get(0).setValue(2f);
+
+        assertEquals(1f, original.getOutputs().get(0).getValue());
+        assertEquals(2f, copy.getOutputs().get(0).getValue());
     }
 }
