@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.graph;
 
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,6 +22,11 @@ import java.util.jar.JarFile;
  * package/folder structure instead of maintaining a hardcoded list. Dropping a new
  * node class anywhere under that package — in whatever subpackage/folder makes sense
  * — is enough for it to show up; nothing else needs to be registered.
+ * <p>
+ * A class annotated {@code @Node.Disabled} is skipped by {@link #discover()} (and so
+ * never appears in the "Add Node" menu), but is still resolvable via
+ * {@link #resolveClass} — a graph saved while the node type was enabled can still be
+ * loaded even after it's since been disabled.
  */
 public final class NodeRegistry {
 
@@ -139,7 +145,8 @@ public final class NodeRegistry {
     private static void tryAdd(String className, List<Entry> out) {
         try {
             Class<?> type = Class.forName(className, false, Thread.currentThread().getContextClassLoader());
-            if (BaseNode.class.isAssignableFrom(type) && !type.isInterface() && !Modifier.isAbstract(type.getModifiers())) {
+            if (BaseNode.class.isAssignableFrom(type) && !type.isInterface() && !Modifier.isAbstract(type.getModifiers())
+                    && !type.isAnnotationPresent(Node.Disabled.class)) {
                 @SuppressWarnings("unchecked")
                 Class<? extends BaseNode> nodeClass = (Class<? extends BaseNode>) type;
                 out.add(new Entry(nodeClass, categoryOf(nodeClass), displayNameOf(nodeClass)));

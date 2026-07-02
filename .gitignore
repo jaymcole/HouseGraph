@@ -12,6 +12,7 @@ out/
 # Secrets
 .env
 .env.*
+!.env.example
 
 # OS
 .DS_Store
