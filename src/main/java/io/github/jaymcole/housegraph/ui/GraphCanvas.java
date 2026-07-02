@@ -3,8 +3,10 @@ package io.github.jaymcole.housegraph.ui;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowEdge;
+import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import javafx.application.Platform;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
@@ -46,7 +48,7 @@ import java.util.function.Function;
  * dragging from one data port's circle to another; flow edges by dragging between the
  * triangular flow anchors at the top corners of each node.
  */
-public class GraphCanvas extends Pane implements NodeView.DragController {
+public class GraphCanvas extends Pane implements NodeView.DragController, GraphExecutionListener {
 
     private static final KeyCodeCombination COPY_COMBO = new KeyCodeCombination(KeyCode.C, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination PASTE_COMBO = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN);
@@ -76,6 +78,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     private final List<PortView> ports = new ArrayList<>();
     private final List<FlowPortView> flowPorts = new ArrayList<>();
     private final List<NodeView> nodeViews = new ArrayList<>();
+    private final Map<BaseNode, NodeView> nodeViewByNode = new HashMap<>();
     private final Map<Edge, EdgeView> edgeViews = new HashMap<>();
     private final Map<FlowEdge, FlowEdgeView> flowEdgeViews = new HashMap<>();
 
@@ -113,6 +116,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
         setFocusTraversable(true);
+        // Lets this canvas flash a node/edge whenever the graph actually runs it,
+        // without NodeGraph needing to know anything about JavaFX.
+        graph.addExecutionListener(this);
+        // NodeGraph runs triggers on a background thread so a slow node can't freeze
+        // the UI; this is what makes its callbacks (onExecuted(), the listener above)
+        // actually land back on the FX Application Thread instead of that background one.
+        graph.setCallbackExecutor(Platform::runLater);
         // Built once and reused: the set of node types on the classpath doesn't change
         // during a run.
         contextMenu = buildContextMenu();
@@ -179,6 +189,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         graph.addNode(nodeView.getNode());
         content.getChildren().add(nodeView);
         nodeViews.add(nodeView);
+        nodeViewByNode.put(nodeView.getNode(), nodeView);
         ports.addAll(nodeView.getInputPorts());
         ports.addAll(nodeView.getOutputPorts());
 
@@ -205,6 +216,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         graph.removeNode(nodeView.getNode());
         content.getChildren().remove(nodeView);
         nodeViews.remove(nodeView);
+        nodeViewByNode.remove(nodeView.getNode());
         ports.removeAll(nodeView.getInputPorts());
         ports.removeAll(nodeView.getOutputPorts());
         if (nodeView.getFlowInPort() != null) {
@@ -473,6 +485,41 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         flowEdgeViewRef[0] = flowEdgeView;
         flowEdgeViews.put(flowEdge, flowEdgeView);
         content.getChildren().add(flowEdgeView);
+    }
+
+    // --- Execution animations ----------------------------------------------------
+
+    @Override
+    public void onNodeStarted(BaseNode node) {
+        NodeView nodeView = nodeViewByNode.get(node);
+        if (nodeView != null) {
+            nodeView.setProcessing(true);
+        }
+    }
+
+    @Override
+    public void onNodeExecuted(BaseNode node) {
+        NodeView nodeView = nodeViewByNode.get(node);
+        if (nodeView != null) {
+            nodeView.setProcessing(false);
+            nodeView.pulse();
+        }
+    }
+
+    @Override
+    public void onDataEdgeTraversed(Edge edge) {
+        EdgeView edgeView = edgeViews.get(edge);
+        if (edgeView != null) {
+            edgeView.pulse();
+        }
+    }
+
+    @Override
+    public void onFlowEdgeTraversed(FlowEdge edge) {
+        FlowEdgeView flowEdgeView = flowEdgeViews.get(edge);
+        if (flowEdgeView != null) {
+            flowEdgeView.pulse();
+        }
     }
 
     // --- Node drag / selection ---------------------------------------------------

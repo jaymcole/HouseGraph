@@ -1,16 +1,21 @@
 package io.github.jaymcole.housegraph.ui;
 
+import javafx.animation.PauseTransition;
 import javafx.geometry.Point2D;
 import javafx.scene.Group;
 import javafx.scene.control.Button;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.CubicCurve;
+import javafx.util.Duration;
 
 /**
  * Visual curve connecting an output {@link PortView} to an input {@link PortView},
  * with a small button at its midpoint to delete the connection.
  */
 public class EdgeView extends Group implements ConnectionView {
+
+    private static final Color PULSE_STROKE = Color.web("#61dafb");
+    private static final Duration PULSE_DURATION = Duration.millis(400);
 
     private final PortView source;
     private final PortView target;
@@ -20,6 +25,7 @@ public class EdgeView extends Group implements ConnectionView {
     private final Button deleteButton = new Button("x");
 
     private boolean selected = false;
+    private PauseTransition pulseRevert;
 
     public EdgeView(PortView source, PortView target, Group content, Runnable onDelete) {
         this.source = source;
@@ -91,5 +97,17 @@ public class EdgeView extends Group implements ConnectionView {
     private void applyCurveStyle() {
         curve.setStroke(selected ? Color.web("#e5c07b") : Color.web("#61afef"));
         curve.setStrokeWidth(selected ? 3 : 2);
+    }
+
+    /** Briefly flashes the curve to show a value was just propagated across it, then reverts to its normal style. */
+    public void pulse() {
+        curve.setStroke(PULSE_STROKE);
+        curve.setStrokeWidth(4);
+        if (pulseRevert != null) {
+            pulseRevert.stop();
+        }
+        pulseRevert = new PauseTransition(PULSE_DURATION);
+        pulseRevert.setOnFinished(event -> applyCurveStyle());
+        pulseRevert.play();
     }
 }

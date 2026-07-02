@@ -3,6 +3,10 @@ package io.github.jaymcole.housegraph.ui;
 import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.PauseTransition;
+import javafx.animation.Timeline;
 import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
@@ -17,6 +21,9 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
+import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,8 +56,21 @@ public class NodeView extends BorderPane {
     private final FlowPortView flowInPort;
     private final FlowPortView flowOutPort;
 
+    private static final String PULSE_BORDER_COLOR = "#61dafb";
+    private static final Color PROCESSING_STRIPE_COLOR = Color.web("#e5a561");
+    private static final Duration PULSE_DURATION = Duration.millis(400);
+    private static final double PROCESSING_STRIPE_WIDTH = 4;
+    private static final double PROCESSING_DASH_LENGTH = 10;
+    private static final double PROCESSING_GAP_LENGTH = 8;
+    private static final double PROCESSING_CYCLE_LENGTH = PROCESSING_DASH_LENGTH + PROCESSING_GAP_LENGTH;
+
+    private final Rectangle processingStripes;
+    private final Timeline processingAnimation;
+
     private Point2D lastDragContentPoint;
     private boolean selected = false;
+    private boolean processing = false;
+    private PauseTransition pulseRevert;
 
     public NodeView(BaseNode node, Group content, DragController dragController) {
         this.node = node;
@@ -159,6 +179,30 @@ public class NodeView extends BorderPane {
         // Prevent clicks elsewhere on the node from panning/rubber-band-selecting the canvas underneath it.
         setOnMousePressed(Event::consume);
         setOnMouseDragged(Event::consume);
+
+        // "Marching ants" overlay for the processing state: a dashed rectangle drawn
+        // over the whole node, with its dash offset animated so the stripes appear to
+        // crawl around the border. The gaps between orange dashes just show whatever's
+        // underneath (the node's own dark background/border), which is what gives the
+        // alternating orange/dark candy-cane look without needing a second shape.
+        // Added last (BorderPane extends Pane, so extra children beyond the five named
+        // slots are allowed) so it paints on top of the title bar, body, and everything else.
+        processingStripes = new Rectangle();
+        processingStripes.setFill(null);
+        processingStripes.setStroke(PROCESSING_STRIPE_COLOR);
+        processingStripes.setStrokeWidth(PROCESSING_STRIPE_WIDTH);
+        processingStripes.getStrokeDashArray().setAll(PROCESSING_DASH_LENGTH, PROCESSING_GAP_LENGTH);
+        processingStripes.widthProperty().bind(widthProperty());
+        processingStripes.heightProperty().bind(heightProperty());
+        processingStripes.setMouseTransparent(true);
+        processingStripes.setVisible(false);
+        processingStripes.setManaged(false);
+        getChildren().add(processingStripes);
+
+        processingAnimation = new Timeline(
+                new KeyFrame(Duration.ZERO, new KeyValue(processingStripes.strokeDashOffsetProperty(), 0)),
+                new KeyFrame(Duration.seconds(0.6), new KeyValue(processingStripes.strokeDashOffsetProperty(), PROCESSING_CYCLE_LENGTH)));
+        processingAnimation.setCycleCount(Timeline.INDEFINITE);
     }
 
     private void handleDragStart(MouseEvent event) {
@@ -197,6 +241,33 @@ public class NodeView extends BorderPane {
         String borderColor = selected ? "#e5c07b" : "#555555";
         String borderWidth = selected ? "2" : "1";
         setStyle("-fx-background-color: #3c3f41; -fx-border-color: " + borderColor + "; -fx-border-width: " + borderWidth + ";");
+    }
+
+    /** Briefly flashes the border to show this node was just triggered, then reverts to its normal (selected or not) style. */
+    public void pulse() {
+        setStyle("-fx-background-color: #3c3f41; -fx-border-color: " + PULSE_BORDER_COLOR + "; -fx-border-width: 3;");
+        if (pulseRevert != null) {
+            pulseRevert.stop();
+        }
+        pulseRevert = new PauseTransition(PULSE_DURATION);
+        pulseRevert.setOnFinished(event -> applyBorderStyle());
+        pulseRevert.play();
+    }
+
+    /** Shows (or hides) the animated candy-cane-striped overlay while this node's process() is actually running. */
+    public void setProcessing(boolean processing) {
+        this.processing = processing;
+        processingStripes.setVisible(processing);
+        processingStripes.setManaged(processing);
+        if (processing) {
+            processingAnimation.play();
+        } else {
+            processingAnimation.stop();
+        }
+    }
+
+    public boolean isProcessing() {
+        return processing;
     }
 
     public BaseNode getNode() {

@@ -2,24 +2,10 @@
   "nodes": [
     {
       "outputs": [],
-      "inputs": [],
-      "x": 40,
-      "y": 40,
-      "type": "io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode"
-    },
-    {
-      "outputs": [1],
-      "inputs": [],
-      "x": 43,
-      "y": 124,
-      "type": "io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode"
-    },
-    {
-      "outputs": [2],
-      "inputs": [],
-      "x": 41,
-      "y": 202,
-      "type": "io.github.jaymcole.housegraph.graph.nodes.math.ConstantFloatNode"
+      "inputs": [2],
+      "x": 9,
+      "y": 52,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.control.TriggerRepeatingNode"
     },
     {
       "outputs": [3],
@@ -27,89 +13,148 @@
         1,
         2
       ],
-      "x": 300,
-      "y": 62,
+      "x": 520,
+      "y": 266,
       "type": "io.github.jaymcole.housegraph.graph.nodes.math.AddNode"
     },
     {
+      "outputs": [1],
+      "inputs": [],
+      "x": 187,
+      "y": 209,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode"
+    },
+    {
+      "outputs": [2],
+      "inputs": [],
+      "x": 185,
+      "y": 279,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode"
+    },
+    {
       "outputs": [],
+      "inputs": ["3.0"],
+      "x": 885,
+      "y": 268,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode"
+    },
+    {
+      "outputs": ["3.0"],
       "inputs": [3],
-      "x": 546,
-      "y": 60,
-      "type": "io.github.jaymcole.housegraph.graph.nodes.debug.ValueDisplayNode"
+      "x": 678,
+      "y": 266,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.converters.FloatToStringNode"
     },
     {
-      "outputs": [6],
+      "outputs": [3],
       "inputs": [
-        3,
-        3
+        1,
+        2
       ],
-      "x": 745,
-      "y": 164,
+      "x": 516,
+      "y": 163,
       "type": "io.github.jaymcole.housegraph.graph.nodes.math.AddNode"
     },
     {
+      "outputs": ["3.0"],
+      "inputs": [3],
+      "x": 674,
+      "y": 163,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.converters.FloatToStringNode"
+    },
+    {
       "outputs": [],
-      "inputs": [6],
-      "x": 971,
-      "y": 164,
-      "type": "io.github.jaymcole.housegraph.graph.nodes.debug.ValueDisplayNode"
+      "inputs": ["3.0"],
+      "x": 881,
+      "y": 165,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode"
+    },
+    {
+      "outputs": [],
+      "inputs": [900],
+      "x": 287,
+      "y": 40,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.debug.DebugDelayNode"
     }
   ],
   "flowEdges": [
     {
-      "sourceNode": 5,
-      "targetNode": 6
-    },
-    {
-      "sourceNode": 3,
-      "targetNode": 4
-    },
-    {
-      "sourceNode": 4,
+      "sourceNode": 1,
       "targetNode": 5
     },
     {
+      "sourceNode": 6,
+      "targetNode": 7
+    },
+    {
+      "sourceNode": 5,
+      "targetNode": 4
+    },
+    {
       "sourceNode": 0,
-      "targetNode": 3
+      "targetNode": 9
+    },
+    {
+      "sourceNode": 7,
+      "targetNode": 8
+    },
+    {
+      "sourceNode": 9,
+      "targetNode": 6
+    },
+    {
+      "sourceNode": 0,
+      "targetNode": 1
     }
   ],
   "dataEdges": [
     {
-      "targetVariable": 1,
-      "sourceNode": 2,
-      "sourceVariable": 0,
-      "targetNode": 3
-    },
-    {
-      "targetVariable": 0,
-      "sourceNode": 3,
-      "sourceVariable": 0,
-      "targetNode": 5
-    },
-    {
-      "targetVariable": 1,
-      "sourceNode": 3,
-      "sourceVariable": 0,
-      "targetNode": 5
-    },
-    {
       "targetVariable": 0,
       "sourceNode": 5,
+      "sourceVariable": 0,
+      "targetNode": 4
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 6,
+      "sourceVariable": 0,
+      "targetNode": 7
+    },
+    {
+      "targetVariable": 1,
+      "sourceNode": 3,
       "sourceVariable": 0,
       "targetNode": 6
     },
     {
       "targetVariable": 0,
-      "sourceNode": 3,
+      "sourceNode": 7,
       "sourceVariable": 0,
-      "targetNode": 4
+      "targetNode": 8
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 2,
+      "sourceVariable": 0,
+      "targetNode": 1
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 2,
+      "sourceVariable": 0,
+      "targetNode": 6
     },
     {
       "targetVariable": 0,
       "sourceNode": 1,
       "sourceVariable": 0,
-      "targetNode": 3
+      "targetNode": 5
+    },
+    {
+      "targetVariable": 1,
+      "sourceNode": 3,
+      "sourceVariable": 0,
+      "targetNode": 1
     }
   ]
 }

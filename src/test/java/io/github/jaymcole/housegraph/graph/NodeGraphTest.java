@@ -75,7 +75,11 @@ class NodeGraphTest {
         graph.registerEdge(new Edge(constant, output(constant), add, input(add, "V1")));
         graph.registerFlowEdge(new FlowEdge(trigger, add));
 
+        // execute() now runs on a background thread and returns immediately (see
+        // NodeGraph's class Javadoc); awaitIdle() blocks until that background work
+        // is done, so the assertion below sees its effects.
         trigger.execute();
+        graph.awaitIdle();
 
         assertEquals(4f, output(add).getValue(), "add was reached only via a flow edge, with no direct trigger->add data edge");
     }
@@ -91,7 +95,11 @@ class NodeGraphTest {
         graph.registerFlowEdge(new FlowEdge(a, b));
         graph.registerFlowEdge(new FlowEdge(b, a));
 
-        assertDoesNotThrow(a::execute);
+        // A cycle in the flow graph must be deduped (each node cascaded through once
+        // per pass) rather than infinite-looping - awaitIdle() returning at all,
+        // rather than hanging, is the real assertion here.
+        a.execute();
+        assertDoesNotThrow(graph::awaitIdle);
     }
 
     @Test
