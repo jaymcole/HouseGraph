@@ -1,18 +1,12 @@
 package io.github.jaymcole.housegraph;
 
 import io.github.jaymcole.housegraph.graph.NodeGraph;
-import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
-import io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode;
-import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
-import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.GraphFileIO;
-import io.github.jaymcole.housegraph.ui.NodeView;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.Separator;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
 import javafx.stage.FileChooser;
@@ -30,18 +24,6 @@ public class App extends Application {
     public void start(Stage stage) {
         NodeGraph graph = new NodeGraph();
         GraphCanvas canvas = new GraphCanvas(graph);
-
-        Button addConstantButton = new Button("Add Constant");
-        addConstantButton.setOnAction(e -> canvas.addNode(new NodeView(new ConstantFloatNode(), canvas.getContent(), canvas)));
-
-        Button addSumButton = new Button("Add Sum");
-        addSumButton.setOnAction(e -> canvas.addNode(new NodeView(new AddNode(), canvas.getContent(), canvas)));
-
-        Button addTriggerButton = new Button("Add Trigger");
-        addTriggerButton.setOnAction(e -> canvas.addNode(new NodeView(new TriggerNode(), canvas.getContent(), canvas)));
-
-        Button addDisplayButton = new Button("Add Display");
-        addDisplayButton.setOnAction(e -> canvas.addNode(new NodeView(new TextViewerNode(), canvas.getContent(), canvas)));
 
         Button saveButton = new Button("Save");
         saveButton.setOnAction(e -> {
@@ -69,8 +51,7 @@ public class App extends Application {
             }
         });
 
-        ToolBar toolBar = new ToolBar(addConstantButton, addSumButton, addTriggerButton, addDisplayButton,
-                new Separator(), saveButton, loadButton);
+        ToolBar toolBar = new ToolBar(saveButton, loadButton);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);
