@@ -30,7 +30,7 @@ public class TriggerNode extends BaseNode implements NodeContentProvider {
 
     @Override
     public Node createNodeContent() {
-        Button triggerButton = new Button("Trigger");
+        Button triggerButton = new Button("Start");
         triggerButton.setOnAction(e -> execute());
         return triggerButton;
     }

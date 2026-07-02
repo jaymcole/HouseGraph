@@ -25,6 +25,7 @@ public final class ValueEditors {
     static {
         register(Float.class, Float::parseFloat, String::valueOf);
         register(String.class, String::valueOf, String::valueOf);
+        register(Integer.class, Integer::parseInt, String::valueOf);
     }
 
     private ValueEditors() {
