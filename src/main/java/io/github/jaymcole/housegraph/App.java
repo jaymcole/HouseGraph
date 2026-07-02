@@ -2,7 +2,7 @@ package io.github.jaymcole.housegraph;
 
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
-import io.github.jaymcole.housegraph.graph.nodes.debug.ValueDisplayNode;
+import io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
@@ -41,7 +41,7 @@ public class App extends Application {
         addTriggerButton.setOnAction(e -> canvas.addNode(new NodeView(new TriggerNode(), canvas.getContent(), canvas)));
 
         Button addDisplayButton = new Button("Add Display");
-        addDisplayButton.setOnAction(e -> canvas.addNode(new NodeView(new ValueDisplayNode(), canvas.getContent(), canvas)));
+        addDisplayButton.setOnAction(e -> canvas.addNode(new NodeView(new TextViewerNode(), canvas.getContent(), canvas)));
 
         Button saveButton = new Button("Save");
         saveButton.setOnAction(e -> {
