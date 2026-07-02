@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -33,10 +36,25 @@ import java.util.concurrent.Executors;
  * {@link #resolve}/{@link BaseNode#beginProcessing()} still behaves synchronously to
  * its caller — some callers need the result the instant it returns — but now runs
  * through that same background thread rather than in-place, so it can never race with
- * a concurrently-running {@link #execute}. Every method that touches this graph's
- * shared state is {@code synchronized} on top of that, so a UI-thread edit (deleting a
- * node, wiring an edge) can't interleave with an in-flight background traversal and
- * corrupt it — worst case, such an edit briefly blocks until the current run finishes.
+ * a concurrently-running {@link #execute}.
+ * <p>
+ * Within one {@link #execute} pass, sibling branches of a control-flow fan-out (a node
+ * with more than one outgoing {@link FlowEdge}) run concurrently on independent virtual
+ * threads, so a slow branch (e.g. a deliberately-delayed node) can never hold up an
+ * unrelated sibling branch — {@link #execute} itself only returns once every branch of
+ * the cascade has finished. A node reached from two different branches (its data pulled
+ * through a shared upstream dependency) is only ever processed once: {@link #resolveInternal}
+ * takes that node's own intrinsic lock for the duration of its resolution, so a second
+ * branch arriving concurrently simply waits for the first to finish and then observes
+ * its already-{@code SUCCESS}/{@code FAILED} status instead of re-running it. That same
+ * lock, reentrant per-thread, is also what still turns a data cycle into a clean
+ * {@link IllegalStateException} rather than a stack overflow or a stall.
+ * <p>
+ * Structural methods (adding/removing nodes and edges, reading the topology) stay
+ * {@code synchronized} on this instance for their own brief critical section, but that
+ * lock is never held for an entire pass — so a UI-thread edit is no longer forced to
+ * wait out a slow in-flight trigger the way it would if the whole traversal shared one
+ * lock.
  * <p>
  * This class never imports anything from JavaFX: node/edge execution callbacks
  * ({@link BaseNode#onExecuted()}, {@link GraphExecutionListener}) are dispatched
@@ -53,17 +71,33 @@ public class NodeGraph {
     private final Map<BaseNode, Set<FlowEdge>> outgoingFlowEdges = new HashMap<>();
     private final Map<BaseNode, Set<FlowEdge>> incomingFlowEdges = new HashMap<>();
 
-    /** Tracks which nodes have already been cascaded through during the current execute() pass. */
-    private final Set<BaseNode> flowVisited = new HashSet<>();
+    /**
+     * Tracks which nodes have already been cascaded through during the current
+     * execute() pass. Concurrent sibling branches (see class Javadoc) can race to
+     * claim the same node, so this needs to be a thread-safe set, not a plain HashSet.
+     */
+    private final Set<BaseNode> flowVisited = ConcurrentHashMap.newKeySet();
 
     private final List<GraphExecutionListener> executionListeners = new ArrayList<>();
 
-    /** All graph reads/writes and traversal happen on this single thread, so nothing ever races. */
+    /**
+     * Every top-level resolve()/execute() call is submitted here, so two separate
+     * calls (e.g. two triggers firing close together) never run at the same time —
+     * the second simply waits in queue behind the first.
+     */
     private final ExecutorService executionExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "housegraph-execution");
         thread.setDaemon(true);
         return thread;
     });
+
+    /**
+     * Sibling flow-edge branches within a single execute() pass are each dispatched
+     * here so they can make progress independently. Virtual threads are a natural fit:
+     * cheap enough to spin up one per branch, and a branch that blocks (e.g. a debug
+     * delay node sleeping) doesn't tie up a scarce platform thread.
+     */
+    private final ExecutorService branchExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private volatile Executor callbackExecutor = Runnable::run;
 
@@ -193,18 +227,25 @@ public class NodeGraph {
             try {
                 executeEntry(node);
             } catch (RuntimeException e) {
-                System.err.println("Triggered execution of \"" + node.getName() + "\" failed: " + e);
+                Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
+                System.err.println("Triggered execution of \"" + node.getName() + "\" failed: " + cause);
             }
         });
     }
 
-    private synchronized void resolveEntry(BaseNode node) {
+    /**
+     * Not {@code synchronized} — see class Javadoc. Exclusivity between separate
+     * top-level resolve()/execute() calls instead comes from both sharing the single
+     * {@link #executionExecutor} thread, and per-node exclusivity within a pass comes
+     * from the intrinsic lock {@link #resolveInternal} takes on each node.
+     */
+    private void resolveEntry(BaseNode node) {
         requireRegistered(node);
         resetAllStatuses();
         resolveInternal(node);
     }
 
-    private synchronized void executeEntry(BaseNode node) {
+    private void executeEntry(BaseNode node) {
         requireRegistered(node);
         resetAllStatuses();
         flowVisited.clear();
@@ -231,42 +272,64 @@ public class NodeGraph {
             return;
         }
         resolveInternal(node);
+
+        // Fan out to every outgoing flow edge concurrently, each on its own virtual
+        // thread, rather than recursing straight through them one at a time - a slow
+        // sibling branch (e.g. behind a debug delay node) must not hold up the others.
+        // This call still doesn't return - i.e. the cascade isn't considered done -
+        // until every branch has finished, same as the old fully-sequential version.
+        List<CompletableFuture<Void>> branches = new ArrayList<>();
         for (FlowEdge flowEdge : getOutgoingFlowEdges(node)) {
             callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
-            executeInternal(flowEdge.getTargetNode());
+            branches.add(CompletableFuture.runAsync(() -> executeInternal(flowEdge.getTargetNode()), branchExecutor));
+        }
+        for (CompletableFuture<Void> branch : branches) {
+            branch.join();
         }
     }
 
+    /**
+     * Resolving a node is scoped to that node's own intrinsic lock, reentrant per
+     * thread. That gives two things at once: two concurrent flow branches that happen
+     * to share a data dependency can't both run that shared node's process() - the
+     * second simply blocks here until the first finishes, then sees its now-complete
+     * status and returns without re-running it - and a single thread revisiting a node
+     * it's already in the middle of resolving (a data cycle) still hits the
+     * IN_PROGRESS check below rather than deadlocking on itself, exactly as it did
+     * back when this whole traversal only ever ran on one thread.
+     */
     private void resolveInternal(BaseNode node) {
-        NodeProcessingStatus status = node.getStatus();
-        if (status == NodeProcessingStatus.IN_PROGRESS) {
-            throw new IllegalStateException("Cycle detected in data graph at node: " + node.getName());
-        }
-        if (status.isComplete()) {
-            return;
-        }
+        synchronized (node) {
+            NodeProcessingStatus status = node.getStatus();
+            if (status == NodeProcessingStatus.IN_PROGRESS) {
+                throw new IllegalStateException("Cycle detected in data graph at node: " + node.getName());
+            }
+            if (status.isComplete()) {
+                return;
+            }
 
-        node.setStatus(NodeProcessingStatus.IN_PROGRESS);
-        for (Edge edge : getIncomingDataEdges(node)) {
-            resolveInternal(edge.getSourceNode());
-            propagateValue(edge);
-            callbackExecutor.execute(() -> notifyDataEdgeTraversed(edge));
-        }
+            node.setStatus(NodeProcessingStatus.IN_PROGRESS);
+            for (Edge edge : getIncomingDataEdges(node)) {
+                resolveInternal(edge.getSourceNode());
+                propagateValue(edge);
+                callbackExecutor.execute(() -> notifyDataEdgeTraversed(edge));
+            }
 
-        callbackExecutor.execute(() -> notifyNodeStarted(node));
-        try {
-            node.process();
-            node.setStatus(NodeProcessingStatus.SUCCESS);
-            node.setLastError(null);
-        } catch (Exception e) {
-            node.setStatus(NodeProcessingStatus.FAILED);
-            node.setLastError(e);
-            System.err.println("Node \"" + node.getName() + "\" failed to process: " + e);
+            callbackExecutor.execute(() -> notifyNodeStarted(node));
+            try {
+                node.process();
+                node.setStatus(NodeProcessingStatus.SUCCESS);
+                node.setLastError(null);
+            } catch (Exception e) {
+                node.setStatus(NodeProcessingStatus.FAILED);
+                node.setLastError(e);
+                System.err.println("Node \"" + node.getName() + "\" failed to process: " + e);
+            }
+            callbackExecutor.execute(() -> {
+                node.onExecuted();
+                notifyNodeExecuted(node);
+            });
         }
-        callbackExecutor.execute(() -> {
-            node.onExecuted();
-            notifyNodeExecuted(node);
-        });
     }
 
     @SuppressWarnings("unchecked")
@@ -299,7 +362,10 @@ public class NodeGraph {
     }
 
     private void resetAllStatuses() {
-        for (BaseNode node : nodes) {
+        // getNodes() (not the raw field) since a structural edit from another thread
+        // can now interleave with this - see class Javadoc - and iterating the live
+        // mutable set directly would risk a ConcurrentModificationException.
+        for (BaseNode node : getNodes()) {
             node.setStatus(NodeProcessingStatus.NOT_STARTED);
         }
     }
@@ -317,7 +383,14 @@ public class NodeGraph {
 
     // --- Helpers ----------------------------------------------------------------
 
-    private void requireRegistered(BaseNode node) {
+    /**
+     * {@code synchronized} even though most callers (registerEdge/registerFlowEdge)
+     * already hold this instance's monitor themselves (reentrant, so no extra cost
+     * there) - resolveEntry/executeEntry do NOT, since they're no longer synchronized
+     * for their whole duration (see class Javadoc), so this method has to protect its
+     * own read of the shared nodes set.
+     */
+    private synchronized void requireRegistered(BaseNode node) {
         if (!nodes.contains(node)) {
             throw new IllegalStateException(node.getName() + " must be added to the graph before it can be wired or run");
         }

@@ -5,6 +5,9 @@ import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -100,6 +103,64 @@ class NodeGraphTest {
         // rather than hanging, is the real assertion here.
         a.execute();
         assertDoesNotThrow(graph::awaitIdle);
+    }
+
+    @Test
+    void independentFlowBranchesDontBlockOnEachOther() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        BaseNode fastBranch = new AddNode();
+        CountDownLatch slowBranchStarted = new CountDownLatch(1);
+        CountDownLatch releaseSlowBranch = new CountDownLatch(1);
+        BlockingNode slowBranch = new BlockingNode(slowBranchStarted, releaseSlowBranch);
+        graph.addNode(trigger);
+        graph.addNode(fastBranch);
+        graph.addNode(slowBranch);
+        graph.registerFlowEdge(new FlowEdge(trigger, fastBranch));
+        graph.registerFlowEdge(new FlowEdge(trigger, slowBranch));
+
+        trigger.execute();
+
+        // Proves the two branches actually run side by side rather than one after the
+        // other: the slow branch has reached process() and is deliberately still
+        // blocked there, yet the fast, independent sibling branch has already finished
+        // - which could never be observed reliably if a slow branch held up its
+        // siblings the way a single fully-sequential traversal would.
+        assertTrue(slowBranchStarted.await(2, TimeUnit.SECONDS), "slow branch never started");
+        assertTrue(fastBranch.getStatus().isComplete(), "fast branch should not wait behind its slow sibling");
+
+        releaseSlowBranch.countDown();
+        graph.awaitIdle();
+        assertTrue(slowBranch.getStatus().isComplete());
+    }
+
+    /** A node whose process() blocks until released, for deterministically testing concurrent flow branches. */
+    private static final class BlockingNode extends BaseNode {
+        private final CountDownLatch started;
+        private final CountDownLatch release;
+
+        BlockingNode(CountDownLatch started, CountDownLatch release) {
+            this.started = started;
+            this.release = release;
+        }
+
+        @Override
+        public void process() {
+            started.countDown();
+            try {
+                assertTrue(release.await(2, TimeUnit.SECONDS), "test never released the blocking node");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
     }
 
     @Test
