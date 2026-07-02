@@ -100,7 +100,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
     private Rectangle selectionRectangle;
     private Point2D selectionStartContent;
 
-    private final ContextMenu addNodeMenu;
+    private final ContextMenu contextMenu;
     private Point2D pendingDropPoint = Point2D.ZERO;
 
     private List<ClipboardNode> clipboardNodes = List.of();
@@ -115,7 +115,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         setFocusTraversable(true);
         // Built once and reused: the set of node types on the classpath doesn't change
         // during a run.
-        addNodeMenu = buildAddNodeMenu();
+        contextMenu = buildContextMenu();
         // ContextMenu's built-in autoHide is focus-based and doesn't reliably fire for
         // clicks elsewhere in the same window, and NodeView/PortView consume their own
         // mouse-press events before they'd ever bubble up to this canvas's own handler.
@@ -125,8 +125,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene != null) {
                 newScene.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
-                    if (addNodeMenu.isShowing() && event.getButton() == MouseButton.PRIMARY) {
-                        addNodeMenu.hide();
+                    if (contextMenu.isShowing() && event.getButton() == MouseButton.PRIMARY) {
+                        contextMenu.hide();
                     }
                 });
             }
@@ -744,17 +744,28 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
         }
     }
 
-    // --- Add-node context menu ----------------------------------------------------
+    // --- Right-click context menu ----------------------------------------------------
 
     private void handleContextMenuRequested(ContextMenuEvent event) {
         pendingDropPoint = content.sceneToLocal(event.getSceneX(), event.getSceneY());
-        addNodeMenu.hide();
-        addNodeMenu.show(this, event.getScreenX(), event.getScreenY());
+        contextMenu.hide();
+        contextMenu.show(this, event.getScreenX(), event.getScreenY());
         event.consume();
     }
 
-    private ContextMenu buildAddNodeMenu() {
+    /**
+     * Root right-click menu. Node types live under a single "Add Node" submenu rather
+     * than at the top level, so other unrelated actions can be added alongside it here
+     * later without getting mixed in among the (potentially long) list of node types.
+     */
+    private ContextMenu buildContextMenu() {
         ContextMenu menu = new ContextMenu();
+        menu.getItems().add(buildAddNodeMenu());
+        return menu;
+    }
+
+    private Menu buildAddNodeMenu() {
+        Menu addNodeMenu = new Menu("Add Node");
         Map<String, Menu> categoryMenus = new TreeMap<>();
 
         for (NodeRegistry.Entry entry : NodeRegistry.discover()) {
@@ -766,20 +777,20 @@ public class GraphCanvas extends Pane implements NodeView.DragController {
                 }
             });
 
-            Menu categoryMenu = resolveCategoryMenu(menu, categoryMenus, entry.categoryPath());
-            (categoryMenu == null ? menu.getItems() : categoryMenu.getItems()).add(item);
+            Menu categoryMenu = resolveCategoryMenu(addNodeMenu, categoryMenus, entry.categoryPath());
+            (categoryMenu == null ? addNodeMenu.getItems() : categoryMenu.getItems()).add(item);
         }
 
-        if (menu.getItems().isEmpty()) {
+        if (addNodeMenu.getItems().isEmpty()) {
             MenuItem none = new MenuItem("(no node types found)");
             none.setDisable(true);
-            menu.getItems().add(none);
+            addNodeMenu.getItems().add(none);
         }
-        return menu;
+        return addNodeMenu;
     }
 
     /** Finds (creating as needed) the Menu for a dot-separated category path, nesting under its parent categories. */
-    private Menu resolveCategoryMenu(ContextMenu root, Map<String, Menu> categoryMenus, String categoryPath) {
+    private Menu resolveCategoryMenu(Menu root, Map<String, Menu> categoryMenus, String categoryPath) {
         if (categoryPath.isEmpty()) {
             return null;
         }
