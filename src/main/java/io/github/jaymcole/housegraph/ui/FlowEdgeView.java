@@ -88,6 +88,14 @@ public class FlowEdgeView extends Group implements ConnectionView {
         return target == port;
     }
 
+    public FlowPortView getSourcePort() {
+        return source;
+    }
+
+    public FlowPortView getTargetPort() {
+        return target;
+    }
+
     @Override
     public void setSelected(boolean selected) {
         this.selected = selected;

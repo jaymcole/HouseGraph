@@ -44,6 +44,9 @@ public class NodeView extends BorderPane {
         void onNodePressed(NodeView node);
 
         void onNodeDragged(double deltaContentX, double deltaContentY);
+
+        /** The drag gesture (mouse button released) finished - a good point to record it as one undo step. */
+        void onNodeReleased();
     }
 
     private final BaseNode node;
@@ -175,6 +178,7 @@ public class NodeView extends BorderPane {
 
         titleBar.setOnMousePressed(this::handleDragStart);
         titleBar.setOnMouseDragged(this::handleDragging);
+        titleBar.setOnMouseReleased(this::handleDragEnd);
 
         // Prevent clicks elsewhere on the node from panning/rubber-band-selecting the canvas underneath it.
         setOnMousePressed(Event::consume);
@@ -224,6 +228,13 @@ public class NodeView extends BorderPane {
         } else {
             setLayoutX(getLayoutX() + deltaX);
             setLayoutY(getLayoutY() + deltaY);
+        }
+        event.consume();
+    }
+
+    private void handleDragEnd(MouseEvent event) {
+        if (dragController != null) {
+            dragController.onNodeReleased();
         }
         event.consume();
     }

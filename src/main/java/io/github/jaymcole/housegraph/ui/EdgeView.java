@@ -85,6 +85,14 @@ public class EdgeView extends Group implements ConnectionView {
         return target == port;
     }
 
+    public PortView getSourcePort() {
+        return source;
+    }
+
+    public PortView getTargetPort() {
+        return target;
+    }
+
     public void setSelected(boolean selected) {
         this.selected = selected;
         applyCurveStyle();
