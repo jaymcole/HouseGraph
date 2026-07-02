@@ -29,6 +29,8 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
     private Button startButton;
     private Button stopButton;
     private Label statusLabel;
+    private int intervalValue;
+    private int remainingSeconds;
 
     @Override
     public void process() {
@@ -76,13 +78,18 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
             return;
         }
 
-        timeline = new Timeline(new KeyFrame(Duration.seconds(seconds), event -> tick()));
+        intervalValue = seconds;
+        remainingSeconds = seconds;
+        updateCountdownLabel();
+
+        // One-second ticks driving a countdown, rather than a single seconds-long
+        // KeyFrame, so the remaining time can be shown and updated live.
+        timeline = new Timeline(new KeyFrame(Duration.seconds(1), event -> countdownTick()));
         timeline.setCycleCount(Timeline.INDEFINITE);
         timeline.play();
 
         startButton.setDisable(true);
         stopButton.setDisable(false);
-        statusLabel.setText("Running every " + seconds + "s");
     }
 
     private void stop() {
@@ -93,6 +100,23 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
         startButton.setDisable(false);
         stopButton.setDisable(true);
         statusLabel.setText("Stopped");
+    }
+
+    private void countdownTick() {
+        remainingSeconds--;
+        if (remainingSeconds <= 0) {
+            remainingSeconds = intervalValue;
+            tick();
+        }
+        if (timeline != null) {
+            // tick() may have called stop() (e.g. the node was removed mid-run);
+            // don't stomp its "Stopped" label back to a countdown in that case.
+            updateCountdownLabel();
+        }
+    }
+
+    private void updateCountdownLabel() {
+        statusLabel.setText("Next trigger in " + remainingSeconds + "s");
     }
 
     private void tick() {
