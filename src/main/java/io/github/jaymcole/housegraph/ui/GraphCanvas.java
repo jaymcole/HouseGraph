@@ -677,6 +677,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             placed.add(nodeView);
         }
 
+        // A brand-new NodeView hasn't been through a layout pass yet, so its ports'
+        // on-screen positions aren't accurate until one happens - normally that just
+        // happens on the next pulse, but EdgeView/FlowEdgeView compute their path
+        // immediately in their constructor (below), via each port's localToScene().
+        // Forcing the layout pass now, before any edges are created, is what makes a
+        // freshly loaded/pasted edge render in the right place immediately instead of
+        // only after something else (e.g. dragging a node) triggers a later layout.
+        content.applyCss();
+        content.layout();
+
         for (ClipboardDataEdge dataEdge : snapshot.dataEdges()) {
             NodeView sourceView = placed.get(dataEdge.sourceNodeIndex());
             NodeView targetView = placed.get(dataEdge.targetNodeIndex());
