@@ -1,8 +1,8 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.animation.KeyFrame;
@@ -20,7 +20,6 @@ import javafx.util.Duration;
  * cancels it. Purely a flow source - no data outputs of its own.
  */
 @Display.Name("Repeating Trigger")
-@Executable.ExecutableOut
 public class TriggerRepeatingNode extends BaseNode implements NodeContentProvider {
 
     private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true);
@@ -43,6 +42,11 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
 
     @Override
     public void configureOutputs() {
+    }
+
+    @Override
+    public void configureFlowOutputs() {
+        addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
     }
 
     @Override

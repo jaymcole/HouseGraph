@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.ui;
 
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import javafx.geometry.Point2D;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
@@ -15,13 +16,13 @@ import javafx.scene.shape.StrokeType;
  * top-right (OUT) corner of a {@link NodeView}'s title bar. Dragging from one flow
  * port to another wires a {@link io.github.jaymcole.housegraph.graph.FlowEdge},
  * letting a node be triggered directly instead of only via data edges.
+ * <p>
+ * Backed by a {@link FlowPort} on the node model, which is the stable identity a
+ * wired {@link io.github.jaymcole.housegraph.graph.FlowEdge} refers to — important
+ * now that a node can expose more than one out-port and the engine needs to tell
+ * them apart.
  */
 public class FlowPortView extends Polygon {
-
-    public enum Direction {
-        IN,
-        OUT
-    }
 
     private static final Color FILL = Color.web("#98c379");
     private static final Color INVALID_FILL = Color.web("#e06c75");
@@ -36,14 +37,14 @@ public class FlowPortView extends Polygon {
             new DropShadow(BlurType.GAUSSIAN, Color.web("#ffffff", 0.8), 7, 0.4, 0, 0);
 
     private final NodeView owner;
-    private final Direction direction;
+    private final FlowPort flowPort;
     private boolean highlighted = false;
     private boolean invalid = false;
 
-    public FlowPortView(NodeView owner, Direction direction) {
+    public FlowPortView(NodeView owner, FlowPort flowPort) {
         super(0.0, 0.0, 10.0, 5.0, 0.0, 10.0);
         this.owner = owner;
-        this.direction = direction;
+        this.flowPort = flowPort;
 
         setFill(FILL);
         setStroke(BASE_STROKE);
@@ -98,7 +99,12 @@ public class FlowPortView extends Polygon {
         return owner;
     }
 
-    public Direction getDirection() {
-        return direction;
+    /** The node-model port this view anchors — the identity a wired FlowEdge is built from. */
+    public FlowPort getFlowPort() {
+        return flowPort;
+    }
+
+    public FlowPort.Direction getDirection() {
+        return flowPort.direction;
     }
 }

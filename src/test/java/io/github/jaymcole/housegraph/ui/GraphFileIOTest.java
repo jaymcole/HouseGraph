@@ -62,18 +62,23 @@ class GraphFileIOTest {
         AddNode a = new AddNode();
         AddNode b = new AddNode();
 
+        // Non-zero source port index (as a decider's second branch would have) to prove
+        // the specific port an edge leaves from survives the round trip, not just the nodes.
         GraphCanvas.GraphSnapshot snapshot = new GraphCanvas.GraphSnapshot(
                 List.of(
                         new GraphCanvas.ClipboardNode(a, 0.0, 0.0),
                         new GraphCanvas.ClipboardNode(b, 50.0, 0.0)),
                 List.of(),
-                List.of(new GraphCanvas.ClipboardFlowEdge(0, 1)));
+                List.of(new GraphCanvas.ClipboardFlowEdge(0, 1, 1, 0)));
 
         GraphCanvas.GraphSnapshot roundTripped = roundTrip(snapshot);
 
         assertEquals(1, roundTripped.flowEdges().size());
-        assertEquals(0, roundTripped.flowEdges().get(0).sourceNodeIndex());
-        assertEquals(1, roundTripped.flowEdges().get(0).targetNodeIndex());
+        GraphCanvas.ClipboardFlowEdge flowEdge = roundTripped.flowEdges().get(0);
+        assertEquals(0, flowEdge.sourceNodeIndex());
+        assertEquals(1, flowEdge.sourcePortIndex());
+        assertEquals(1, flowEdge.targetNodeIndex());
+        assertEquals(0, flowEdge.targetPortIndex());
     }
 
     @Test

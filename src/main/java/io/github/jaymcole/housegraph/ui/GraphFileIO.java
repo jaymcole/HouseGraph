@@ -68,7 +68,9 @@ public final class GraphFileIO {
         for (GraphCanvas.ClipboardFlowEdge edge : snapshot.flowEdges()) {
             JSONObject edgeJson = new JSONObject();
             edgeJson.put("sourceNode", edge.sourceNodeIndex());
+            edgeJson.put("sourcePort", edge.sourcePortIndex());
             edgeJson.put("targetNode", edge.targetNodeIndex());
+            edgeJson.put("targetPort", edge.targetPortIndex());
             flowEdgesJson.put(edgeJson);
         }
 
@@ -112,7 +114,11 @@ public final class GraphFileIO {
         JSONArray flowEdgesJson = root.getJSONArray("flowEdges");
         for (int i = 0; i < flowEdgesJson.length(); i++) {
             JSONObject edgeJson = flowEdgesJson.getJSONObject(i);
-            flowEdges.add(new GraphCanvas.ClipboardFlowEdge(edgeJson.getInt("sourceNode"), edgeJson.getInt("targetNode")));
+            // sourcePort/targetPort default to 0 so a save file written before flow
+            // ports had identity (every node had a single port) still loads correctly.
+            flowEdges.add(new GraphCanvas.ClipboardFlowEdge(
+                    edgeJson.getInt("sourceNode"), edgeJson.optInt("sourcePort", 0),
+                    edgeJson.getInt("targetNode"), edgeJson.optInt("targetPort", 0)));
         }
 
         return new GraphCanvas.GraphSnapshot(nodes, dataEdges, flowEdges);

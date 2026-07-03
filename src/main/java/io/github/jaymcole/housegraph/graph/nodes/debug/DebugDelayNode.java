@@ -1,8 +1,8 @@
 package io.github.jaymcole.housegraph.graph.nodes.debug;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 /**
@@ -13,8 +13,6 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
  * (see {@link io.github.jaymcole.housegraph.graph.NodeGraph}'s class Javadoc).
  */
 @Display.Name("Debug Delay")
-@Executable.ExecutableIn
-@Executable.ExecutableOut
 public class DebugDelayNode extends BaseNode {
 
     private final NodeVariable<Integer> delayMillis = new NodeVariable<>("Delay (ms)", Integer.class, true);
@@ -39,5 +37,15 @@ public class DebugDelayNode extends BaseNode {
 
     @Override
     public void configureOutputs() {
+    }
+
+    @Override
+    public void configureFlowInputs() {
+        addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+    }
+
+    @Override
+    public void configureFlowOutputs() {
+        addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
     }
 }

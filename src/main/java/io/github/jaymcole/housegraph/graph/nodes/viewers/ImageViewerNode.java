@@ -1,8 +1,8 @@
 package io.github.jaymcole.housegraph.graph.nodes.viewers;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.scene.Node;
@@ -10,8 +10,6 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 
 @Display.Name("Image Viewer")
-@Executable.ExecutableIn
-@Executable.ExecutableOut
 public class ImageViewerNode extends BaseNode implements NodeContentProvider  {
 
     private static final double MAX_SIZE = 160;
@@ -39,6 +37,16 @@ public class ImageViewerNode extends BaseNode implements NodeContentProvider  {
     @Override
     public void configureOutputs() {
 
+    }
+
+    @Override
+    public void configureFlowInputs() {
+        addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+    }
+
+    @Override
+    public void configureFlowOutputs() {
+        addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
     }
 
     @Override

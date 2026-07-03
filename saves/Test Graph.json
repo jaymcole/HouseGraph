@@ -3,15 +3,15 @@
     {
       "outputs": [],
       "inputs": [2],
-      "x": 9,
-      "y": 52,
+      "x": -118.77600479125977,
+      "y": 55.99300003051758,
       "type": "io.github.jaymcole.housegraph.graph.nodes.control.TriggerRepeatingNode"
     },
     {
-      "outputs": [3],
+      "outputs": [1],
       "inputs": [
         1,
-        2
+        0
       ],
       "x": 520,
       "y": 266,
@@ -20,51 +20,51 @@
     {
       "outputs": [1],
       "inputs": [],
-      "x": 187,
-      "y": 209,
+      "x": 209.62698364257812,
+      "y": 220.97900390625,
       "type": "io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode"
     },
     {
-      "outputs": [2],
+      "outputs": [0],
       "inputs": [],
-      "x": 185,
-      "y": 279,
+      "x": 271.51499938964844,
+      "y": 297.6340026855469,
       "type": "io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode"
     },
     {
       "outputs": [],
-      "inputs": ["3.0"],
+      "inputs": ["1.0"],
       "x": 885,
       "y": 268,
       "type": "io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode"
     },
     {
-      "outputs": ["3.0"],
-      "inputs": [3],
+      "outputs": ["1.0"],
+      "inputs": [1],
       "x": 678,
       "y": 266,
       "type": "io.github.jaymcole.housegraph.graph.nodes.converters.FloatToStringNode"
     },
     {
-      "outputs": [3],
+      "outputs": [1],
       "inputs": [
         1,
-        2
+        0
       ],
       "x": 516,
       "y": 163,
       "type": "io.github.jaymcole.housegraph.graph.nodes.math.AddNode"
     },
     {
-      "outputs": ["3.0"],
-      "inputs": [3],
+      "outputs": ["1.0"],
+      "inputs": [1],
       "x": 674,
       "y": 163,
       "type": "io.github.jaymcole.housegraph.graph.nodes.converters.FloatToStringNode"
     },
     {
       "outputs": [],
-      "inputs": ["3.0"],
+      "inputs": ["1.0"],
       "x": 881,
       "y": 165,
       "type": "io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode"
@@ -75,51 +75,92 @@
       "x": 287,
       "y": 40,
       "type": "io.github.jaymcole.housegraph.graph.nodes.debug.DebugDelayNode"
+    },
+    {
+      "outputs": [],
+      "inputs": [0],
+      "x": 488.79998779296875,
+      "y": 375.8999938964844,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.control.IfNode"
+    },
+    {
+      "outputs": [],
+      "inputs": ["3.0"],
+      "x": 696,
+      "y": 416,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode"
+    },
+    {
+      "outputs": [],
+      "inputs": ["3.0"],
+      "x": 700,
+      "y": 519,
+      "type": "io.github.jaymcole.housegraph.graph.nodes.viewers.TextViewerNode"
     }
   ],
   "flowEdges": [
     {
-      "sourceNode": 1,
-      "targetNode": 5
-    },
-    {
-      "sourceNode": 6,
-      "targetNode": 7
-    },
-    {
-      "sourceNode": 5,
-      "targetNode": 4
-    },
-    {
-      "sourceNode": 0,
-      "targetNode": 9
-    },
-    {
-      "sourceNode": 7,
-      "targetNode": 8
-    },
-    {
+      "sourcePort": 0,
       "sourceNode": 9,
-      "targetNode": 6
+      "targetNode": 6,
+      "targetPort": 0
     },
     {
+      "sourcePort": 0,
       "sourceNode": 0,
-      "targetNode": 1
+      "targetNode": 1,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 7,
+      "targetNode": 8,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 5,
+      "targetNode": 4,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 0,
+      "targetNode": 9,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 6,
+      "targetNode": 7,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 10,
+      "targetNode": 11,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 1,
+      "sourceNode": 10,
+      "targetNode": 12,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 0,
+      "targetNode": 10,
+      "targetPort": 0
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 1,
+      "targetNode": 5,
+      "targetPort": 0
     }
   ],
   "dataEdges": [
-    {
-      "targetVariable": 0,
-      "sourceNode": 5,
-      "sourceVariable": 0,
-      "targetNode": 4
-    },
-    {
-      "targetVariable": 0,
-      "sourceNode": 6,
-      "sourceVariable": 0,
-      "targetNode": 7
-    },
     {
       "targetVariable": 1,
       "sourceNode": 3,
@@ -128,15 +169,15 @@
     },
     {
       "targetVariable": 0,
-      "sourceNode": 7,
-      "sourceVariable": 0,
-      "targetNode": 8
-    },
-    {
-      "targetVariable": 0,
       "sourceNode": 2,
       "sourceVariable": 0,
       "targetNode": 1
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 3,
+      "sourceVariable": 0,
+      "targetNode": 10
     },
     {
       "targetVariable": 0,
@@ -149,6 +190,24 @@
       "sourceNode": 1,
       "sourceVariable": 0,
       "targetNode": 5
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 5,
+      "sourceVariable": 0,
+      "targetNode": 4
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 7,
+      "sourceVariable": 0,
+      "targetNode": 8
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 6,
+      "sourceVariable": 0,
+      "targetNode": 7
     },
     {
       "targetVariable": 1,

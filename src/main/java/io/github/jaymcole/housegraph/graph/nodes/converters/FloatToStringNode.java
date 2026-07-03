@@ -1,13 +1,11 @@
 package io.github.jaymcole.housegraph.graph.nodes.converters;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 @Display.Name("Float to String")
-@Executable.ExecutableIn
-@Executable.ExecutableOut
 public class FloatToStringNode extends BaseNode {
 
     private final NodeVariable<Float> in = new NodeVariable<>("in", Float.class, false);
@@ -27,5 +25,15 @@ public class FloatToStringNode extends BaseNode {
     @Override
     public void configureOutputs() {
         addOutput(out);
+    }
+
+    @Override
+    public void configureFlowInputs() {
+        addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+    }
+
+    @Override
+    public void configureFlowOutputs() {
+        addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
     }
 }

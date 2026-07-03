@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.ui;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowEdge;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
@@ -70,8 +71,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     record ClipboardDataEdge(int sourceNodeIndex, int sourceVariableIndex, int targetNodeIndex, int targetVariableIndex) {
     }
 
-    /** A flow edge between two snapshotted nodes, referenced by index into the node list. */
-    record ClipboardFlowEdge(int sourceNodeIndex, int targetNodeIndex) {
+    /**
+     * A flow edge between two snapshotted nodes, referenced by index into the node list,
+     * plus which flow port on each (index into the node's flow-out / flow-in list) so a
+     * multi-branch node's edges reconnect to the right ports.
+     */
+    record ClipboardFlowEdge(int sourceNodeIndex, int sourcePortIndex, int targetNodeIndex, int targetPortIndex) {
     }
 
     /** A self-contained slice of the graph (some or all of its nodes, plus the edges between them). */
@@ -213,15 +218,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             wirePort(port);
         }
 
-        // Flow anchors are gated by @Executable.ExecutableIn/Out on the node's class,
-        // so either (or both) may be absent for a given node.
-        if (nodeView.getFlowInPort() != null) {
-            flowPorts.add(nodeView.getFlowInPort());
-            wireFlowPort(nodeView.getFlowInPort());
+        // A node exposes zero or more flow anchors per side (see NodeView); wire each.
+        for (FlowPortView flowPort : nodeView.getFlowInPorts()) {
+            flowPorts.add(flowPort);
+            wireFlowPort(flowPort);
         }
-        if (nodeView.getFlowOutPort() != null) {
-            flowPorts.add(nodeView.getFlowOutPort());
-            wireFlowPort(nodeView.getFlowOutPort());
+        for (FlowPortView flowPort : nodeView.getFlowOutPorts()) {
+            flowPorts.add(flowPort);
+            wireFlowPort(flowPort);
         }
     }
 
@@ -232,12 +236,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         nodeViewByNode.remove(nodeView.getNode());
         ports.removeAll(nodeView.getInputPorts());
         ports.removeAll(nodeView.getOutputPorts());
-        if (nodeView.getFlowInPort() != null) {
-            flowPorts.remove(nodeView.getFlowInPort());
-        }
-        if (nodeView.getFlowOutPort() != null) {
-            flowPorts.remove(nodeView.getFlowOutPort());
-        }
+        flowPorts.removeAll(nodeView.getFlowInPorts());
+        flowPorts.removeAll(nodeView.getFlowOutPorts());
     }
 
     // --- Data ports / edges -----------------------------------------------------
@@ -497,8 +497,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     FlowEdgeView createFlowEdge(FlowPortView a, FlowPortView b) {
-        FlowPortView outPort = a.getDirection() == FlowPortView.Direction.OUT ? a : b;
-        FlowPortView inPort = a.getDirection() == FlowPortView.Direction.OUT ? b : a;
+        FlowPortView outPort = a.getDirection() == FlowPort.Direction.OUT ? a : b;
+        FlowPortView inPort = a.getDirection() == FlowPort.Direction.OUT ? b : a;
 
         // A flow-in can only ever be fed by one edge; wiring a new one replaces the old.
         for (FlowEdgeView existing : new ArrayList<>(flowEdgeViews.values())) {
@@ -507,7 +507,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             }
         }
 
-        FlowEdge flowEdge = new FlowEdge(outPort.getOwner().getNode(), inPort.getOwner().getNode());
+        FlowEdge flowEdge = new FlowEdge(
+                outPort.getOwner().getNode(), outPort.getFlowPort(),
+                inPort.getOwner().getNode(), inPort.getFlowPort());
         graph.registerFlowEdge(flowEdge);
 
         FlowEdgeView[] flowEdgeViewRef = new FlowEdgeView[1];
@@ -753,7 +755,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             if (sourceIndex == null || targetIndex == null) {
                 continue;
             }
-            flowEdges.add(new ClipboardFlowEdge(sourceIndex, targetIndex));
+            int sourcePortIndex = flowEdge.getSourceNode().getFlowOutputs().indexOf(flowEdge.getSourcePort());
+            int targetPortIndex = flowEdge.getTargetNode().getFlowInputs().indexOf(flowEdge.getTargetPort());
+            flowEdges.add(new ClipboardFlowEdge(sourceIndex, sourcePortIndex, targetIndex, targetPortIndex));
         }
 
         return new GraphSnapshot(nodes, dataEdges, flowEdges);
@@ -803,12 +807,19 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         for (ClipboardFlowEdge flowEdge : snapshot.flowEdges()) {
             NodeView sourceView = placed.get(flowEdge.sourceNodeIndex());
             NodeView targetView = placed.get(flowEdge.targetNodeIndex());
-            if (sourceView.getFlowOutPort() != null && targetView.getFlowInPort() != null) {
-                createFlowEdge(sourceView.getFlowOutPort(), targetView.getFlowInPort());
+            FlowPortView sourcePort = flowPortAt(sourceView.getFlowOutPorts(), flowEdge.sourcePortIndex());
+            FlowPortView targetPort = flowPortAt(targetView.getFlowInPorts(), flowEdge.targetPortIndex());
+            if (sourcePort != null && targetPort != null) {
+                createFlowEdge(sourcePort, targetPort);
             }
         }
 
         return placed;
+    }
+
+    /** The flow port at {@code index}, or null if out of range (e.g. a save file from when the node had a different port count). */
+    private static FlowPortView flowPortAt(List<FlowPortView> ports, int index) {
+        return index >= 0 && index < ports.size() ? ports.get(index) : null;
     }
 
     /** Snapshots the currently selected nodes (works for a single selected node too). */

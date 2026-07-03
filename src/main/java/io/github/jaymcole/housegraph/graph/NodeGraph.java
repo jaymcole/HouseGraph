@@ -273,13 +273,21 @@ public class NodeGraph {
         }
         resolveInternal(node);
 
-        // Fan out to every outgoing flow edge concurrently, each on its own virtual
-        // thread, rather than recursing straight through them one at a time - a slow
-        // sibling branch (e.g. behind a debug delay node) must not hold up the others.
-        // This call still doesn't return - i.e. the cascade isn't considered done -
-        // until every branch has finished, same as the old fully-sequential version.
+        // Which out-ports fired: whatever process() activated, or - if it activated
+        // nothing - all of them (see BaseNode.activate). A branch/decider node narrows
+        // the cascade to just its chosen port(s) simply by activating them.
+        Set<FlowPort> activated = node.getActivatedOutputs();
+
+        // Fan out to the chosen outgoing flow edges concurrently, each on its own
+        // virtual thread, rather than recursing straight through them one at a time - a
+        // slow sibling branch (e.g. behind a debug delay node) must not hold up the
+        // others. This call still doesn't return - i.e. the cascade isn't considered
+        // done - until every branch has finished, same as the old sequential version.
         List<CompletableFuture<Void>> branches = new ArrayList<>();
         for (FlowEdge flowEdge : getOutgoingFlowEdges(node)) {
+            if (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort())) {
+                continue;
+            }
             callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
             branches.add(CompletableFuture.runAsync(() -> executeInternal(flowEdge.getTargetNode()), branchExecutor));
         }
@@ -317,6 +325,9 @@ public class NodeGraph {
 
             callbackExecutor.execute(() -> notifyNodeStarted(node));
             try {
+                // Reset here (not at pass start) so it's cleared no matter how this
+                // node is reached, right before the process() that may re-populate it.
+                node.clearActivatedOutputs();
                 node.process();
                 node.setStatus(NodeProcessingStatus.SUCCESS);
                 node.setLastError(null);

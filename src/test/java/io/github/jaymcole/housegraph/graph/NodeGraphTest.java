@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph;
 
+import io.github.jaymcole.housegraph.graph.nodes.control.IfNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
@@ -76,7 +77,7 @@ class NodeGraphTest {
 
         output(constant).setValue(4f);
         graph.registerEdge(new Edge(constant, output(constant), add, input(add, "V1")));
-        graph.registerFlowEdge(new FlowEdge(trigger, add));
+        graph.registerFlowEdge(flowEdge(trigger, add));
 
         // execute() now runs on a background thread and returns immediately (see
         // NodeGraph's class Javadoc); awaitIdle() blocks until that background work
@@ -95,8 +96,8 @@ class NodeGraphTest {
         graph.addNode(a);
         graph.addNode(b);
 
-        graph.registerFlowEdge(new FlowEdge(a, b));
-        graph.registerFlowEdge(new FlowEdge(b, a));
+        graph.registerFlowEdge(flowEdge(a, b));
+        graph.registerFlowEdge(flowEdge(b, a));
 
         // A cycle in the flow graph must be deduped (each node cascaded through once
         // per pass) rather than infinite-looping - awaitIdle() returning at all,
@@ -116,8 +117,8 @@ class NodeGraphTest {
         graph.addNode(trigger);
         graph.addNode(fastBranch);
         graph.addNode(slowBranch);
-        graph.registerFlowEdge(new FlowEdge(trigger, fastBranch));
-        graph.registerFlowEdge(new FlowEdge(trigger, slowBranch));
+        graph.registerFlowEdge(flowEdge(trigger, fastBranch));
+        graph.registerFlowEdge(flowEdge(trigger, slowBranch));
 
         trigger.execute();
 
@@ -161,6 +162,46 @@ class NodeGraphTest {
         @Override
         public void configureOutputs() {
         }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+    }
+
+    @Test
+    void ifNodeRoutesToTrueOrFalseBranchByCondition() {
+        assertTrue(ifNodeTookTrueBranch(1f), "a non-zero condition should cascade down the True branch only");
+        assertFalse(ifNodeTookTrueBranch(0f), "a zero condition should cascade down the False branch only");
+    }
+
+    /**
+     * Runs an {@link IfNode} with the given condition, wired to a distinct target on
+     * each branch, and returns whether the True branch's target ran. Asserts exactly
+     * one branch ran (proving selective cascade, not just that the right one fired).
+     */
+    private static boolean ifNodeTookTrueBranch(float condition) {
+        NodeGraph graph = new NodeGraph();
+        IfNode ifNode = new IfNode();
+        BaseNode trueTarget = new AddNode();
+        BaseNode falseTarget = new AddNode();
+        graph.addNode(ifNode);
+        graph.addNode(trueTarget);
+        graph.addNode(falseTarget);
+
+        FlowPort truePort = ifNode.getFlowOutputs().get(0);
+        FlowPort falsePort = ifNode.getFlowOutputs().get(1);
+        graph.registerFlowEdge(new FlowEdge(ifNode, truePort, trueTarget, trueTarget.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(ifNode, falsePort, falseTarget, falseTarget.getFlowInputs().get(0)));
+
+        input(ifNode, "Condition").setValue(condition);
+        ifNode.execute();
+        graph.awaitIdle();
+
+        boolean trueRan = trueTarget.getStatus().isComplete();
+        boolean falseRan = falseTarget.getStatus().isComplete();
+        assertTrue(trueRan != falseRan, "exactly one branch should run, not both/neither");
+        return trueRan;
     }
 
     @Test
@@ -207,6 +248,11 @@ class NodeGraphTest {
     void runningBeforeBeingAddedToAGraphFailsClearly() {
         AddNode add = new AddNode();
         assertThrows(IllegalStateException.class, add::beginProcessing);
+    }
+
+    /** A flow edge between two nodes' first (single) flow ports - the common single-flow-port shape. */
+    private static FlowEdge flowEdge(BaseNode source, BaseNode target) {
+        return new FlowEdge(source, source.getFlowOutputs().get(0), target, target.getFlowInputs().get(0));
     }
 
     @SuppressWarnings("unchecked")

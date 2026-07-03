@@ -1,8 +1,8 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -13,7 +13,6 @@ import javafx.scene.control.Button;
  * {@link #execute()} directly — see {@link NodeContentProvider}.
  */
 @Display.Name("Trigger")
-@Executable.ExecutableOut
 public class TriggerNode extends BaseNode implements NodeContentProvider {
 
     @Override
@@ -26,6 +25,11 @@ public class TriggerNode extends BaseNode implements NodeContentProvider {
 
     @Override
     public void configureOutputs() {
+    }
+
+    @Override
+    public void configureFlowOutputs() {
+        addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
     }
 
     @Override

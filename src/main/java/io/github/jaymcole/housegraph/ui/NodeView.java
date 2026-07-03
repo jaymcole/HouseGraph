@@ -1,7 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
-import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
@@ -34,9 +34,9 @@ import java.util.List;
  * around the canvas, and hosting the flow-in/flow-out anchors at its corners) plus a
  * left column of input ports and a right column of output ports.
  * <p>
- * The flow-in anchor only appears if the node's class is annotated
- * {@link Executable.ExecutableIn}, and the flow-out anchor only if annotated
- * {@link Executable.ExecutableOut}; a node with neither gets no flow anchors at all.
+ * Flow anchors come straight from the node's {@link BaseNode#getFlowInputs()} /
+ * {@link BaseNode#getFlowOutputs()} — a node with no flow ports gets no anchors, and a
+ * node exposing several out-ports (e.g. a branch/decider) gets one anchor each.
  */
 public class NodeView extends BorderPane {
 
@@ -56,9 +56,9 @@ public class NodeView extends BorderPane {
     private final List<PortView> inputPorts = new ArrayList<>();
     private final List<PortView> outputPorts = new ArrayList<>();
 
-    /** Null if the node's class isn't annotated for that direction; see the class Javadoc. */
-    private final FlowPortView flowInPort;
-    private final FlowPortView flowOutPort;
+    /** One anchor per model flow port; either list may be empty. See the class Javadoc. */
+    private final List<FlowPortView> flowInPorts = new ArrayList<>();
+    private final List<FlowPortView> flowOutPorts = new ArrayList<>();
 
     private static final Color SELECTED_BORDER_COLOR = Color.web("#e5c07b");
     private static final Color PULSE_BORDER_COLOR = Color.web("#61dafb");
@@ -97,11 +97,12 @@ public class NodeView extends BorderPane {
         // overlay below, which layout ignores entirely.
         setStyle("-fx-background-color: #3c3f41; -fx-border-color: #555555; -fx-border-width: 1;");
 
-        Class<?> nodeClass = node.getClass();
-        flowInPort = nodeClass.isAnnotationPresent(Executable.ExecutableIn.class)
-                ? new FlowPortView(this, FlowPortView.Direction.IN) : null;
-        flowOutPort = nodeClass.isAnnotationPresent(Executable.ExecutableOut.class)
-                ? new FlowPortView(this, FlowPortView.Direction.OUT) : null;
+        for (FlowPort flowPort : node.getFlowInputs()) {
+            flowInPorts.add(new FlowPortView(this, flowPort));
+        }
+        for (FlowPort flowPort : node.getFlowOutputs()) {
+            flowOutPorts.add(new FlowPortView(this, flowPort));
+        }
 
         Label title = new Label(node.getName());
         title.setMaxWidth(Double.MAX_VALUE);
@@ -109,13 +110,20 @@ public class NodeView extends BorderPane {
         title.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
         HBox.setHgrow(title, Priority.ALWAYS);
 
+        // The title bar carries only the label-less "default" flow anchors (the common
+        // one-per-side case) at its corners. Named ports - e.g. a decider's True/False -
+        // are laid out down the port columns below instead, where there's room for a label.
         HBox titleBar = new HBox(6);
-        if (flowInPort != null) {
-            titleBar.getChildren().add(flowInPort);
+        for (FlowPortView flowInPort : flowInPorts) {
+            if (flowInPort.getFlowPort().name.isBlank()) {
+                titleBar.getChildren().add(flowInPort);
+            }
         }
         titleBar.getChildren().add(title);
-        if (flowOutPort != null) {
-            titleBar.getChildren().add(flowOutPort);
+        for (FlowPortView flowOutPort : flowOutPorts) {
+            if (flowOutPort.getFlowPort().name.isBlank()) {
+                titleBar.getChildren().add(flowOutPort);
+            }
         }
         titleBar.setAlignment(Pos.CENTER);
         titleBar.setPadding(new Insets(6, 8, 6, 8));
@@ -149,8 +157,23 @@ public class NodeView extends BorderPane {
             }
         }
 
-        boolean hasInputs = !inputPorts.isEmpty();
-        boolean hasOutputs = !outputPorts.isEmpty();
+        // Named flow ports sit in the port columns below any data ports on the same
+        // side: flow-in on the left, flow-out (a decider's branches) on the right.
+        for (FlowPortView flowInPort : flowInPorts) {
+            if (!flowInPort.getFlowPort().name.isBlank()) {
+                inputsBox.getChildren().add(labeledFlowAnchor(flowInPort, false));
+            }
+        }
+        for (FlowPortView flowOutPort : flowOutPorts) {
+            if (!flowOutPort.getFlowPort().name.isBlank()) {
+                outputsBox.getChildren().add(labeledFlowAnchor(flowOutPort, true));
+            }
+        }
+
+        // Based on actual column contents (which now include named flow ports), not
+        // just the data ports, so a node with only flow-out branches still gets a column.
+        boolean hasInputs = !inputsBox.getChildren().isEmpty();
+        boolean hasOutputs = !outputsBox.getChildren().isEmpty();
 
         Region body;
         if (hasInputs && !hasOutputs) {
@@ -234,6 +257,25 @@ public class NodeView extends BorderPane {
                 new KeyFrame(Duration.ZERO, new KeyValue(processingStripes.strokeDashOffsetProperty(), 0)),
                 new KeyFrame(Duration.seconds(0.6), new KeyValue(processingStripes.strokeDashOffsetProperty(), PROCESSING_CYCLE_LENGTH)));
         processingAnimation.setCycleCount(Timeline.INDEFINITE);
+    }
+
+    /**
+     * Wraps a named flow anchor with its label for the port columns, matching a
+     * {@link PortView}'s look: label beside the anchor, anchor on the outer edge
+     * ({@code outputSide} puts it on the right). The anchor itself stays the drag
+     * target — the label is just decoration.
+     */
+    private Node labeledFlowAnchor(FlowPortView anchor, boolean outputSide) {
+        Label label = new Label(anchor.getFlowPort().name);
+        label.setStyle("-fx-text-fill: #dddddd; -fx-font-size: 11px;");
+        HBox row = new HBox(6);
+        row.setAlignment(outputSide ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+        if (outputSide) {
+            row.getChildren().addAll(label, anchor);
+        } else {
+            row.getChildren().addAll(anchor, label);
+        }
+        return row;
     }
 
     private void handleDragStart(MouseEvent event) {
@@ -328,11 +370,11 @@ public class NodeView extends BorderPane {
         return outputPorts;
     }
 
-    public FlowPortView getFlowInPort() {
-        return flowInPort;
+    public List<FlowPortView> getFlowInPorts() {
+        return flowInPorts;
     }
 
-    public FlowPortView getFlowOutPort() {
-        return flowOutPort;
+    public List<FlowPortView> getFlowOutPorts() {
+        return flowOutPorts;
     }
 }

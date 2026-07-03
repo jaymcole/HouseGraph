@@ -1,5 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
+import io.github.jaymcole.housegraph.graph.FlowPort;
+
 /** Reversible creation of a flow edge by dragging between two flow ports - see {@link CreateEdgeCommand}, same idea for flow ports. */
 class CreateFlowEdgeCommand implements Command {
 
@@ -18,7 +20,7 @@ class CreateFlowEdgeCommand implements Command {
 
     @Override
     public void execute() {
-        FlowPortView inPort = a.getDirection() == FlowPortView.Direction.OUT ? b : a;
+        FlowPortView inPort = a.getDirection() == FlowPort.Direction.OUT ? b : a;
         FlowEdgeView replaced = canvas.findFlowEdgeViewTargeting(inPort);
         replacedSource = replaced == null ? null : replaced.getSourcePort();
         replacedTarget = replaced == null ? null : replaced.getTargetPort();

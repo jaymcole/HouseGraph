@@ -1,8 +1,8 @@
 package io.github.jaymcole.housegraph.graph.nodes.viewers;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Executable;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.scene.Node;
@@ -15,8 +15,6 @@ import javafx.scene.control.Label;
  * {@link #onExecuted()}; nothing else in the codebase needs to change.
  */
 @Display.Name("Text Viewer")
-@Executable.ExecutableIn
-@Executable.ExecutableOut
 public class TextViewerNode extends BaseNode implements NodeContentProvider {
 
     private final NodeVariable<String> value = new NodeVariable<>("Value", String.class);
@@ -33,6 +31,16 @@ public class TextViewerNode extends BaseNode implements NodeContentProvider {
 
     @Override
     public void configureOutputs() {
+    }
+
+    @Override
+    public void configureFlowInputs() {
+        addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+    }
+
+    @Override
+    public void configureFlowOutputs() {
+        addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
     }
 
     @Override
