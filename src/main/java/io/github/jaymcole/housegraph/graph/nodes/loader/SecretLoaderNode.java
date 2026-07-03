@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.graph.nodes.loader;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.storage.AppDirectories;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.scene.Node;
 import javafx.scene.control.ComboBox;
@@ -16,14 +17,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Resolves a named secret at process() time: checks a ".env" file (KEY=VALUE lines,
- * looked up in the current working directory) first, then falls back to a real OS
- * environment variable of the same name. The file is re-read fresh every call rather
- * than cached, so an edited .env is picked up on the next trigger.
+ * Resolves a named secret at process() time from ".env" files (KEY=VALUE lines), then
+ * falls back to a real OS environment variable of the same name. Two .env files are
+ * consulted: one in the current working directory, and the managed one under
+ * {@link AppDirectories#secrets()} — the managed location wins where both define a key.
+ * Files are re-read fresh every call rather than cached, so an edit is picked up on the
+ * next trigger.
  * <p>
- * The key is chosen from a dropdown populated with whatever's currently in the .env
- * file, refreshed each time it's opened, rather than typed or wired in — so this node
- * has no inputs and, since there's nothing to trigger, no flow ports either.
+ * The key is chosen from a dropdown populated with whatever's currently in those files,
+ * refreshed each time it's opened, rather than typed or wired in — so this node has no
+ * inputs and, since there's nothing to trigger, no flow ports either.
  */
 @Display.Name("Secret Loader")
 public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
@@ -76,9 +79,16 @@ public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
 
     private static Map<String, String> readDotEnv() {
         Map<String, String> values = new HashMap<>();
-        File file = new File(System.getProperty("user.dir"), ".env");
+        // Working-directory .env first (the legacy/fallback location), then the managed
+        // secrets .env on top so a key defined there wins over a stray project-local one.
+        readInto(values, new File(System.getProperty("user.dir"), ".env"));
+        readInto(values, AppDirectories.get().secrets().resolve(".env").toFile());
+        return values;
+    }
+
+    private static void readInto(Map<String, String> values, File file) {
         if (!file.isFile()) {
-            return values;
+            return;
         }
         try {
             for (String line : Files.readAllLines(file.toPath())) {
@@ -95,9 +105,8 @@ public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
                 values.put(parsedKey, parsedValue);
             }
         } catch (IOException e) {
-            System.err.println("Failed to read .env file: " + e);
+            System.err.println("Failed to read .env file " + file + ": " + e);
         }
-        return values;
     }
 
     private static String unquote(String value) {
