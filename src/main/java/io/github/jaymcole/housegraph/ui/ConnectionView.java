@@ -18,4 +18,11 @@ public interface ConnectionView {
     boolean touchesNode(NodeView node);
 
     Bounds getBoundsInParent();
+
+    /**
+     * Whether the connection's actual rendered line passes through {@code rect} (in
+     * content coordinates), for rubber-band selection — as opposed to the looser
+     * {@link #getBoundsInParent()} box, which for a curved edge is mostly empty space.
+     */
+    boolean intersects(Bounds rect);
 }

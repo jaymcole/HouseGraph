@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
 import javafx.animation.PauseTransition;
+import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
@@ -50,6 +51,8 @@ abstract class AbstractEdgeView extends Group implements ConnectionView {
      * already has one), which it wouldn't be if a 12px band blanketed it.
      */
     private static final double HIT_ENDPOINT_INSET = 16;
+    /** Samples per cubic segment when flattening the curve for rubber-band hit-testing — enough to stay within a pixel or two of the drawn line. */
+    private static final int FLATTEN_STEPS_PER_SEGMENT = 12;
 
     protected final EdgeAnchor source;
     protected final EdgeAnchor target;
@@ -176,13 +179,27 @@ abstract class AbstractEdgeView extends Group implements ConnectionView {
         for (int i = 1; i < points.size(); i++) {
             Point2D from = points.get(i - 1);
             Point2D to = points.get(i);
-            double offset = Math.max(50, Math.abs(to.getX() - from.getX()) / 2);
+            Point2D[] controls = controlPoints(from, to);
             elements.add(new CubicCurveTo(
-                    from.getX() + offset, from.getY(),
-                    to.getX() - offset, to.getY(),
+                    controls[0].getX(), controls[0].getY(),
+                    controls[1].getX(), controls[1].getY(),
                     to.getX(), to.getY()));
         }
         return elements;
+    }
+
+    /**
+     * The two cubic control points for the segment {@code from}→{@code to}, pushed
+     * horizontally by a fixed offset so the curve leaves and enters each point on a
+     * horizontal tangent. Shared by rendering ({@link #buildRoute}) and hit-testing
+     * ({@link #flatten}) so selection is tested against the very same curve that's drawn.
+     */
+    private static Point2D[] controlPoints(Point2D from, Point2D to) {
+        double offset = Math.max(50, Math.abs(to.getX() - from.getX()) / 2);
+        return new Point2D[]{
+                new Point2D(from.getX() + offset, from.getY()),
+                new Point2D(to.getX() - offset, to.getY())
+        };
     }
 
     private void addWaypoint(Point2D point) {
@@ -294,6 +311,79 @@ abstract class AbstractEdgeView extends Group implements ConnectionView {
     @Override
     public boolean touchesNode(NodeView node) {
         return source.getOwner() == node || target.getOwner() == node;
+    }
+
+    @Override
+    public boolean intersects(Bounds rect) {
+        // Cheap bounding-box reject first: if the loose box misses, the curve can't hit,
+        // so an edge nowhere near the band never pays for flattening.
+        if (!getBoundsInParent().intersects(rect)) {
+            return false;
+        }
+        List<Point2D> flat = flatten(routePoints());
+        for (int i = 1; i < flat.size(); i++) {
+            if (segmentIntersectsRect(flat.get(i - 1), flat.get(i), rect)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Samples the cubic route into a dense polyline, so geometry tests run against (a close approximation of) the drawn curve. */
+    private static List<Point2D> flatten(List<Point2D> route) {
+        List<Point2D> flat = new ArrayList<>();
+        flat.add(route.get(0));
+        for (int i = 1; i < route.size(); i++) {
+            Point2D from = route.get(i - 1);
+            Point2D to = route.get(i);
+            Point2D[] controls = controlPoints(from, to);
+            for (int step = 1; step <= FLATTEN_STEPS_PER_SEGMENT; step++) {
+                flat.add(cubicPoint(from, controls[0], controls[1], to, (double) step / FLATTEN_STEPS_PER_SEGMENT));
+            }
+        }
+        return flat;
+    }
+
+    /** Point on the cubic Bézier (p0,p1,p2,p3) at parameter t. */
+    private static Point2D cubicPoint(Point2D p0, Point2D p1, Point2D p2, Point2D p3, double t) {
+        double u = 1 - t;
+        double w0 = u * u * u;
+        double w1 = 3 * u * u * t;
+        double w2 = 3 * u * t * t;
+        double w3 = t * t * t;
+        return new Point2D(
+                w0 * p0.getX() + w1 * p1.getX() + w2 * p2.getX() + w3 * p3.getX(),
+                w0 * p0.getY() + w1 * p1.getY() + w2 * p2.getY() + w3 * p3.getY());
+    }
+
+    /** Whether segment a–b touches the rectangle: an endpoint inside, or a crossing of any of the four sides. */
+    private static boolean segmentIntersectsRect(Point2D a, Point2D b, Bounds rect) {
+        if (rect.contains(a) || rect.contains(b)) {
+            return true;
+        }
+        Point2D topLeft = new Point2D(rect.getMinX(), rect.getMinY());
+        Point2D topRight = new Point2D(rect.getMaxX(), rect.getMinY());
+        Point2D bottomRight = new Point2D(rect.getMaxX(), rect.getMaxY());
+        Point2D bottomLeft = new Point2D(rect.getMinX(), rect.getMaxY());
+        return segmentsCross(a, b, topLeft, topRight)
+                || segmentsCross(a, b, topRight, bottomRight)
+                || segmentsCross(a, b, bottomRight, bottomLeft)
+                || segmentsCross(a, b, bottomLeft, topLeft);
+    }
+
+    /** Proper-crossing test for segments p1–p2 and p3–p4 (collinear touching is treated as no-cross; fine for selection). */
+    private static boolean segmentsCross(Point2D p1, Point2D p2, Point2D p3, Point2D p4) {
+        double d1 = cross(p3, p4, p1);
+        double d2 = cross(p3, p4, p2);
+        double d3 = cross(p1, p2, p3);
+        double d4 = cross(p1, p2, p4);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0))
+                && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+    }
+
+    /** Z-component of (b−a)×(c−a): the signed area / orientation of the turn a→b→c. */
+    private static double cross(Point2D a, Point2D b, Point2D c) {
+        return (b.getX() - a.getX()) * (c.getY() - a.getY()) - (b.getY() - a.getY()) * (c.getX() - a.getX());
     }
 
     @Override

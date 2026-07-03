@@ -1050,7 +1050,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             }
         }
         for (ConnectionView connection : allConnections()) {
-            if (connection.getBoundsInParent().intersects(rect)) {
+            if (connection.intersects(rect)) {
                 selectConnection(connection);
             } else {
                 deselectConnection(connection);
