@@ -85,6 +85,11 @@ public final class AppDirectories {
         return ensure(nodes().resolve(sanitize(key)));
     }
 
+    /** Default location for user-saved graph files (the save/open dialog starts here). */
+    public Path saves() {
+        return ensure(root.resolve("saves"));
+    }
+
     /** Preferences / UX state (recent files, window layout, …). */
     public Path config() {
         return ensure(root.resolve("config"));

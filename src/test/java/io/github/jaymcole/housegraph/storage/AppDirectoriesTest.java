@@ -69,6 +69,7 @@ class AppDirectoriesTest {
         assertEquals(temp.resolve("HouseGraph").resolve("secrets"), dirs.secrets());
         assertTrue(Files.isDirectory(dirs.secrets()));
         assertTrue(Files.isDirectory(dirs.nodes()));
+        assertTrue(Files.isDirectory(dirs.saves()));
         assertTrue(Files.isDirectory(dirs.config()));
         assertTrue(Files.isDirectory(dirs.cache()));
     }
