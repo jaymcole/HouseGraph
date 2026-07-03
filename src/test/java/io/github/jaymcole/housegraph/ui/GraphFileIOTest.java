@@ -1,15 +1,21 @@
 package io.github.jaymcole.housegraph.ui;
 
+import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
+import io.github.jaymcole.housegraph.graph.nodes.loader.SecretLoaderNode;
 import javafx.geometry.Point2D;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -104,8 +110,56 @@ class GraphFileIOTest {
         assertTrue(snapshot.nodes().isEmpty());
     }
 
+    @Test
+    void aSecretMarkedValueIsNeverWrittenToTheSaveFile() {
+        SecretHolder node = new SecretHolder();
+        node.plain.setValue("visible");
+        node.secret.setValue("TOP_SECRET");
+
+        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
+
+        JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
+        assertEquals("visible", outputs.get(0), "a normal value is still written");
+        assertTrue(outputs.isNull(1), "the secret's slot is null");
+        assertFalse(json.toString().contains("TOP_SECRET"), "the secret value must appear nowhere in the file");
+    }
+
+    @Test
+    void nodeStateRoundTripsThroughSaveAndLoad() {
+        // The Secret Loader persists which key it points at (never the secret) via node state.
+        SecretLoaderNode source = new SecretLoaderNode();
+        source.loadState(Map.of("key", "API_KEY"));
+
+        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(source, 0.0, 0.0)), List.of(), List.of()));
+
+        assertEquals(1, roundTripped.nodes().size());
+        assertEquals(Map.of("key", "API_KEY"), roundTripped.nodes().get(0).node().saveState());
+    }
+
     private static GraphCanvas.GraphSnapshot roundTrip(GraphCanvas.GraphSnapshot snapshot) {
         String text = GraphFileIO.toJson(snapshot).toString();
         return GraphFileIO.fromJson(new JSONObject(new JSONTokener(text)));
+    }
+
+    /** A node with one normal and one secret output, for checking secrets don't get serialised. */
+    private static final class SecretHolder extends BaseNode {
+        final NodeVariable<String> plain = new NodeVariable<>("Plain", String.class);
+        final NodeVariable<String> secret = new NodeVariable<>("Secret", String.class).markSecret();
+
+        @Override
+        public void process() {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+            addOutput(plain);
+            addOutput(secret);
+        }
     }
 }

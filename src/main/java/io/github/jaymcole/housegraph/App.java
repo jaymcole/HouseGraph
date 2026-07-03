@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.GraphFileIO;
+import io.github.jaymcole.housegraph.ui.SecretsEditor;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -51,7 +52,10 @@ public class App extends Application {
             }
         });
 
-        ToolBar toolBar = new ToolBar(saveButton, loadButton);
+        Button secretsButton = new Button("Secrets…");
+        secretsButton.setOnAction(e -> SecretsEditor.show(stage));
+
+        ToolBar toolBar = new ToolBar(saveButton, loadButton, secretsButton);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);

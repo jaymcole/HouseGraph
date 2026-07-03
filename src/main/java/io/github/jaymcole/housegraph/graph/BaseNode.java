@@ -5,6 +5,7 @@ import io.github.jaymcole.housegraph.annotations.Display;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -99,6 +100,20 @@ public abstract class BaseNode {
      * pushing a freshly-computed value into a Label it built.
      */
     protected void onExecuted() {
+    }
+
+    /**
+     * Node-specific configuration to persist in a save file, beyond input/output
+     * values — e.g. a dropdown selection or a chosen key. Empty by default. The values
+     * are stored verbatim, so this must never contain a secret (persist the reference,
+     * not the secret; see {@link NodeVariable#markSecret()}).
+     */
+    public Map<String, String> saveState() {
+        return Map.of();
+    }
+
+    /** Restores what {@link #saveState()} produced when a graph is loaded. No-op by default. */
+    public void loadState(Map<String, String> state) {
     }
 
     protected void addInput(NodeVariable variable) {

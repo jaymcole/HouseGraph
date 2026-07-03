@@ -9,6 +9,7 @@ public class NodeVariable<T> {
     public final Class<T> type;
     public final boolean manuallyEditable;
     private T value;
+    private boolean secret = false;
 
     public NodeVariable(String variableName, Class<T> type, String variableId, boolean manuallyEditable) {
         this.name = variableName;
@@ -31,6 +32,21 @@ public class NodeVariable<T> {
 
     public T getValue() {
         return value;
+    }
+
+    /**
+     * Marks this variable as holding a secret, so persistence never writes its value to
+     * disk (see the graph's file IO). Fluent, for use at field initialisation:
+     * {@code new NodeVariable<>("Value", String.class).markSecret()}.
+     */
+    public NodeVariable<T> markSecret() {
+        this.secret = true;
+        return this;
+    }
+
+    /** Whether this variable's value must be kept out of save files. */
+    public boolean isSecret() {
+        return secret;
     }
 
 }

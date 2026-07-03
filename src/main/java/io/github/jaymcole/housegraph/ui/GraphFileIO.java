@@ -13,7 +13,9 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Saves/loads a {@link GraphCanvas}'s entire contents to/from a JSON file, reusing the
@@ -52,6 +54,10 @@ public final class GraphFileIO {
             nodeJson.put("y", entry.y());
             nodeJson.put("inputs", valuesToJson(node.getInputs()));
             nodeJson.put("outputs", valuesToJson(node.getOutputs()));
+            Map<String, String> state = node.saveState();
+            if (!state.isEmpty()) {
+                nodeJson.put("state", new JSONObject(state));
+            }
             nodesJson.put(nodeJson);
         }
 
@@ -101,6 +107,9 @@ public final class GraphFileIO {
             }
             applyValues(node.getInputs(), nodeJson.getJSONArray("inputs"));
             applyValues(node.getOutputs(), nodeJson.getJSONArray("outputs"));
+            if (nodeJson.has("state")) {
+                node.loadState(readState(nodeJson.getJSONObject("state")));
+            }
             nodes.add(new GraphCanvas.ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));
         }
 
@@ -157,10 +166,20 @@ public final class GraphFileIO {
     private static JSONArray valuesToJson(List<NodeVariable> variables) {
         JSONArray array = new JSONArray();
         for (NodeVariable variable : variables) {
-            Object value = variable.getValue();
+            // A secret's value is never written to disk - only null is stored in its slot,
+            // so position-based load still lines up. The node re-resolves it at run time.
+            Object value = variable.isSecret() ? null : variable.getValue();
             array.put(value == null ? JSONObject.NULL : value);
         }
         return array;
+    }
+
+    private static Map<String, String> readState(JSONObject stateJson) {
+        Map<String, String> state = new HashMap<>();
+        for (String stateKey : stateJson.keySet()) {
+            state.put(stateKey, stateJson.getString(stateKey));
+        }
+        return state;
     }
 
     @SuppressWarnings("unchecked")
