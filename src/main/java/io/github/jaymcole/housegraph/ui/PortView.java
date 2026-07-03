@@ -20,7 +20,7 @@ import javafx.scene.shape.StrokeType;
  * an inline field lets the user type a value directly onto it instead of/alongside
  * wiring an edge.
  */
-public class PortView extends HBox {
+public class PortView extends HBox implements EdgeAnchor {
 
     public enum Direction {
         INPUT,

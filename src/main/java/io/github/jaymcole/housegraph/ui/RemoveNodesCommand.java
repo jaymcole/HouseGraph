@@ -1,5 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
+import javafx.geometry.Point2D;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -9,11 +11,12 @@ import java.util.List;
  * connections to a node that ISN'T being deleted, e.g. a data edge into a node outside
  * the selection). Ports are the stable identity captured here, not the connection's
  * BaseNode/Edge objects, since undo re-creates fresh Edge/EdgeView instances (an edge's
- * only observable state is which two ports it joins).
+ * only observable state is which two ports it joins, plus its manual routing waypoints).
  * <p>
- * Repeatable across multiple undo/redo cycles: execute() always deletes whichever live
- * EdgeView/FlowEdgeView currently represents a captured port pair, and undo() replaces
- * that reference with the freshly-recreated one for next time.
+ * Repeatable across multiple undo/redo cycles: execute() captures each edge's current
+ * waypoints and deletes whichever live EdgeView/FlowEdgeView represents a captured port
+ * pair, and undo() recreates it, restores those waypoints, and stores the fresh view
+ * reference for next time.
  */
 class RemoveNodesCommand implements Command {
 
@@ -21,6 +24,7 @@ class RemoveNodesCommand implements Command {
         final PortView source;
         final PortView target;
         EdgeView view;
+        List<Point2D> waypoints = List.of();
 
         CapturedDataEdge(PortView source, PortView target, EdgeView view) {
             this.source = source;
@@ -33,6 +37,7 @@ class RemoveNodesCommand implements Command {
         final FlowPortView source;
         final FlowPortView target;
         FlowEdgeView view;
+        List<Point2D> waypoints = List.of();
 
         CapturedFlowEdge(FlowPortView source, FlowPortView target, FlowEdgeView view) {
             this.source = source;
@@ -78,11 +83,15 @@ class RemoveNodesCommand implements Command {
         // Deselect before removing: execute() can run again on redo, potentially while
         // the (just-restored-by-undo) nodes have since been manually re-selected, and a
         // removed NodeView must never linger as a stale reference in the selection.
+        // Capture routing before deleting so undo can restore it (re-runs on redo too,
+        // picking up any re-routing done while the edge was restored between cycles).
         for (CapturedDataEdge edge : dataEdges) {
+            edge.waypoints = edge.view.getWaypoints();
             canvas.deselectConnection(edge.view);
             edge.view.delete();
         }
         for (CapturedFlowEdge edge : flowEdges) {
+            edge.waypoints = edge.view.getWaypoints();
             canvas.deselectConnection(edge.view);
             edge.view.delete();
         }
@@ -103,9 +112,11 @@ class RemoveNodesCommand implements Command {
         canvas.forceLayout();
         for (CapturedDataEdge edge : dataEdges) {
             edge.view = canvas.createEdge(edge.source, edge.target);
+            edge.view.setWaypoints(edge.waypoints);
         }
         for (CapturedFlowEdge edge : flowEdges) {
             edge.view = canvas.createFlowEdge(edge.source, edge.target);
+            edge.view.setWaypoints(edge.waypoints);
         }
     }
 }

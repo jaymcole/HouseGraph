@@ -51,7 +51,7 @@ import java.util.function.Function;
  * one data port's circle to another; flow edges by dragging between the triangular
  * flow anchors at the top corners of each node.
  */
-public class GraphCanvas extends Pane implements NodeView.DragController, GraphExecutionListener {
+public class GraphCanvas extends Pane implements NodeView.DragController, GraphExecutionListener, EdgeInteractionListener {
 
     private static final KeyCodeCombination COPY_COMBO = new KeyCodeCombination(KeyCode.C, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination PASTE_COMBO = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN);
@@ -67,16 +67,22 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     record ClipboardNode(BaseNode node, double x, double y) {
     }
 
-    /** A data edge between two snapshotted nodes, referenced by index into the node list and variable list. */
-    record ClipboardDataEdge(int sourceNodeIndex, int sourceVariableIndex, int targetNodeIndex, int targetVariableIndex) {
+    /**
+     * A data edge between two snapshotted nodes, referenced by index into the node list
+     * and variable list, plus its manual routing {@code waypoints} (content coordinates,
+     * empty for a straight edge) so re-routing survives copy/paste and save/load.
+     */
+    record ClipboardDataEdge(int sourceNodeIndex, int sourceVariableIndex, int targetNodeIndex, int targetVariableIndex,
+                             List<Point2D> waypoints) {
     }
 
     /**
      * A flow edge between two snapshotted nodes, referenced by index into the node list,
      * plus which flow port on each (index into the node's flow-out / flow-in list) so a
-     * multi-branch node's edges reconnect to the right ports.
+     * multi-branch node's edges reconnect to the right ports, and its routing waypoints.
      */
-    record ClipboardFlowEdge(int sourceNodeIndex, int sourcePortIndex, int targetNodeIndex, int targetPortIndex) {
+    record ClipboardFlowEdge(int sourceNodeIndex, int sourcePortIndex, int targetNodeIndex, int targetPortIndex,
+                             List<Point2D> waypoints) {
     }
 
     /** A self-contained slice of the graph (some or all of its nodes, plus the edges between them). */
@@ -372,13 +378,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         inputPort.connect();
 
         EdgeView[] edgeViewRef = new EdgeView[1];
-        EdgeView edgeView = new EdgeView(outputPort, inputPort, content, () -> {
-            graph.removeEdge(edge);
-            edgeViews.remove(edge);
-            outputPort.disconnect();
-            inputPort.disconnect();
-            selectedConnections.remove(edgeViewRef[0]);
-        });
+        EdgeView edgeView = new EdgeView(outputPort, inputPort, content,
+                this,
+                () -> {
+                    graph.removeEdge(edge);
+                    edgeViews.remove(edge);
+                    outputPort.disconnect();
+                    inputPort.disconnect();
+                    selectedConnections.remove(edgeViewRef[0]);
+                });
         edgeViewRef[0] = edgeView;
         edgeViews.put(edge, edgeView);
         content.getChildren().add(edgeView);
@@ -513,11 +521,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         graph.registerFlowEdge(flowEdge);
 
         FlowEdgeView[] flowEdgeViewRef = new FlowEdgeView[1];
-        FlowEdgeView flowEdgeView = new FlowEdgeView(outPort, inPort, content, () -> {
-            graph.removeFlowEdge(flowEdge);
-            flowEdgeViews.remove(flowEdge);
-            selectedConnections.remove(flowEdgeViewRef[0]);
-        });
+        FlowEdgeView flowEdgeView = new FlowEdgeView(outPort, inPort, content,
+                this,
+                () -> {
+                    graph.removeFlowEdge(flowEdge);
+                    flowEdgeViews.remove(flowEdge);
+                    selectedConnections.remove(flowEdgeViewRef[0]);
+                });
         flowEdgeViewRef[0] = flowEdgeView;
         flowEdgeViews.put(flowEdge, flowEdgeView);
         content.getChildren().add(flowEdgeView);
@@ -632,6 +642,30 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         }
     }
 
+    /**
+     * Selects just this connection, replacing the current selection - what a single
+     * click on an edge does. Also takes keyboard focus so it can then be deleted with
+     * Delete/Backspace (the edge's own delete button is gone).
+     */
+    void selectOnlyConnection(ConnectionView connection) {
+        requestFocus();
+        clearSelection();
+        selectConnection(connection);
+    }
+
+    // --- EdgeInteractionListener (edges reporting back to the canvas) --------------
+
+    @Override
+    public void selectEdge(AbstractEdgeView edge) {
+        selectOnlyConnection(edge);
+    }
+
+    @Override
+    public void waypointsChanged(AbstractEdgeView edge, List<Point2D> before, List<Point2D> after) {
+        // The edge already applied the change live, so just record it as an undo step.
+        undoManager.record(new SetWaypointsCommand(edge, before, after));
+    }
+
     /** Package-visible (not just private) so a Command can make sure whatever it removes doesn't linger in the selection. */
     void deselectConnection(ConnectionView connection) {
         if (selectedConnections.remove(connection)) {
@@ -737,7 +771,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         }
 
         List<ClipboardDataEdge> dataEdges = new ArrayList<>();
-        for (Edge edge : edgeViews.keySet()) {
+        for (Map.Entry<Edge, EdgeView> entry : edgeViews.entrySet()) {
+            Edge edge = entry.getKey();
             Integer sourceIndex = indexOf.get(edge.getSourceNode());
             Integer targetIndex = indexOf.get(edge.getTargetNode());
             if (sourceIndex == null || targetIndex == null) {
@@ -745,11 +780,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             }
             int sourceVarIndex = edge.getSourceNode().getOutputs().indexOf(edge.getSourceVariable());
             int targetVarIndex = edge.getTargetNode().getInputs().indexOf(edge.getTargetVariable());
-            dataEdges.add(new ClipboardDataEdge(sourceIndex, sourceVarIndex, targetIndex, targetVarIndex));
+            dataEdges.add(new ClipboardDataEdge(sourceIndex, sourceVarIndex, targetIndex, targetVarIndex,
+                    entry.getValue().getWaypoints()));
         }
 
         List<ClipboardFlowEdge> flowEdges = new ArrayList<>();
-        for (FlowEdge flowEdge : flowEdgeViews.keySet()) {
+        for (Map.Entry<FlowEdge, FlowEdgeView> entry : flowEdgeViews.entrySet()) {
+            FlowEdge flowEdge = entry.getKey();
             Integer sourceIndex = indexOf.get(flowEdge.getSourceNode());
             Integer targetIndex = indexOf.get(flowEdge.getTargetNode());
             if (sourceIndex == null || targetIndex == null) {
@@ -757,7 +794,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             }
             int sourcePortIndex = flowEdge.getSourceNode().getFlowOutputs().indexOf(flowEdge.getSourcePort());
             int targetPortIndex = flowEdge.getTargetNode().getFlowInputs().indexOf(flowEdge.getTargetPort());
-            flowEdges.add(new ClipboardFlowEdge(sourceIndex, sourcePortIndex, targetIndex, targetPortIndex));
+            flowEdges.add(new ClipboardFlowEdge(sourceIndex, sourcePortIndex, targetIndex, targetPortIndex,
+                    entry.getValue().getWaypoints()));
         }
 
         return new GraphSnapshot(nodes, dataEdges, flowEdges);
@@ -801,7 +839,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             NodeView targetView = placed.get(dataEdge.targetNodeIndex());
             PortView sourcePort = sourceView.getOutputPorts().get(dataEdge.sourceVariableIndex());
             PortView targetPort = targetView.getInputPorts().get(dataEdge.targetVariableIndex());
-            createEdge(sourcePort, targetPort);
+            EdgeView edgeView = createEdge(sourcePort, targetPort);
+            edgeView.setWaypoints(offsetPoints(dataEdge.waypoints(), offsetX, offsetY));
         }
 
         for (ClipboardFlowEdge flowEdge : snapshot.flowEdges()) {
@@ -810,11 +849,21 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             FlowPortView sourcePort = flowPortAt(sourceView.getFlowOutPorts(), flowEdge.sourcePortIndex());
             FlowPortView targetPort = flowPortAt(targetView.getFlowInPorts(), flowEdge.targetPortIndex());
             if (sourcePort != null && targetPort != null) {
-                createFlowEdge(sourcePort, targetPort);
+                FlowEdgeView flowEdgeView = createFlowEdge(sourcePort, targetPort);
+                flowEdgeView.setWaypoints(offsetPoints(flowEdge.waypoints(), offsetX, offsetY));
             }
         }
 
         return placed;
+    }
+
+    /** Shifts each waypoint by the paste offset, so a pasted edge's routing lands relative to its pasted nodes (offset is 0 for save/load). */
+    private static List<Point2D> offsetPoints(List<Point2D> points, double offsetX, double offsetY) {
+        List<Point2D> shifted = new ArrayList<>(points.size());
+        for (Point2D point : points) {
+            shifted.add(new Point2D(point.getX() + offsetX, point.getY() + offsetY));
+        }
+        return shifted;
     }
 
     /** The flow port at {@code index}, or null if out of range (e.g. a save file from when the node had a different port count). */

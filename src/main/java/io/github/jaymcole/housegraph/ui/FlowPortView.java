@@ -22,7 +22,7 @@ import javafx.scene.shape.StrokeType;
  * now that a node can expose more than one out-port and the engine needs to tell
  * them apart.
  */
-public class FlowPortView extends Polygon {
+public class FlowPortView extends Polygon implements EdgeAnchor {
 
     private static final Color FILL = Color.web("#98c379");
     private static final Color INVALID_FILL = Color.web("#e06c75");

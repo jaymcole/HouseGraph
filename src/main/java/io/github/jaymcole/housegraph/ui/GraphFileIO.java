@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.ui;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import javafx.geometry.Point2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
@@ -61,6 +62,7 @@ public final class GraphFileIO {
             edgeJson.put("sourceVariable", edge.sourceVariableIndex());
             edgeJson.put("targetNode", edge.targetNodeIndex());
             edgeJson.put("targetVariable", edge.targetVariableIndex());
+            edgeJson.put("waypoints", waypointsToJson(edge.waypoints()));
             dataEdgesJson.put(edgeJson);
         }
 
@@ -71,6 +73,7 @@ public final class GraphFileIO {
             edgeJson.put("sourcePort", edge.sourcePortIndex());
             edgeJson.put("targetNode", edge.targetNodeIndex());
             edgeJson.put("targetPort", edge.targetPortIndex());
+            edgeJson.put("waypoints", waypointsToJson(edge.waypoints()));
             flowEdgesJson.put(edgeJson);
         }
 
@@ -107,7 +110,8 @@ public final class GraphFileIO {
             JSONObject edgeJson = dataEdgesJson.getJSONObject(i);
             dataEdges.add(new GraphCanvas.ClipboardDataEdge(
                     edgeJson.getInt("sourceNode"), edgeJson.getInt("sourceVariable"),
-                    edgeJson.getInt("targetNode"), edgeJson.getInt("targetVariable")));
+                    edgeJson.getInt("targetNode"), edgeJson.getInt("targetVariable"),
+                    waypointsFromJson(edgeJson)));
         }
 
         List<GraphCanvas.ClipboardFlowEdge> flowEdges = new ArrayList<>();
@@ -118,10 +122,35 @@ public final class GraphFileIO {
             // ports had identity (every node had a single port) still loads correctly.
             flowEdges.add(new GraphCanvas.ClipboardFlowEdge(
                     edgeJson.getInt("sourceNode"), edgeJson.optInt("sourcePort", 0),
-                    edgeJson.getInt("targetNode"), edgeJson.optInt("targetPort", 0)));
+                    edgeJson.getInt("targetNode"), edgeJson.optInt("targetPort", 0),
+                    waypointsFromJson(edgeJson)));
         }
 
         return new GraphCanvas.GraphSnapshot(nodes, dataEdges, flowEdges);
+    }
+
+    private static JSONArray waypointsToJson(List<Point2D> waypoints) {
+        JSONArray array = new JSONArray();
+        for (Point2D point : waypoints) {
+            JSONObject json = new JSONObject();
+            json.put("x", point.getX());
+            json.put("y", point.getY());
+            array.put(json);
+        }
+        return array;
+    }
+
+    /** Reads an edge's "waypoints" array, or an empty list if the key is absent (a save from before routing existed). */
+    private static List<Point2D> waypointsFromJson(JSONObject edgeJson) {
+        List<Point2D> points = new ArrayList<>();
+        JSONArray array = edgeJson.optJSONArray("waypoints");
+        if (array != null) {
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject json = array.getJSONObject(i);
+                points.add(new Point2D(json.getDouble("x"), json.getDouble("y")));
+            }
+        }
+        return points;
     }
 
     @SuppressWarnings("unchecked")

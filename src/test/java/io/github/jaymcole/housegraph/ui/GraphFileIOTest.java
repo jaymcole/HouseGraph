@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
+import javafx.geometry.Point2D;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ class GraphFileIOTest {
                 List.of(
                         new GraphCanvas.ClipboardNode(constant, 10.0, 20.0),
                         new GraphCanvas.ClipboardNode(add, 100.0, 20.0)),
-                List.of(new GraphCanvas.ClipboardDataEdge(0, 0, 1, 0)),
+                List.of(new GraphCanvas.ClipboardDataEdge(0, 0, 1, 0, List.of())),
                 List.of());
 
         GraphCanvas.GraphSnapshot roundTripped = roundTrip(snapshot);
@@ -63,13 +64,15 @@ class GraphFileIOTest {
         AddNode b = new AddNode();
 
         // Non-zero source port index (as a decider's second branch would have) to prove
-        // the specific port an edge leaves from survives the round trip, not just the nodes.
+        // the specific port an edge leaves from survives the round trip, not just the
+        // nodes; and a couple of waypoints to prove manual routing survives too.
         GraphCanvas.GraphSnapshot snapshot = new GraphCanvas.GraphSnapshot(
                 List.of(
                         new GraphCanvas.ClipboardNode(a, 0.0, 0.0),
                         new GraphCanvas.ClipboardNode(b, 50.0, 0.0)),
                 List.of(),
-                List.of(new GraphCanvas.ClipboardFlowEdge(0, 1, 1, 0)));
+                List.of(new GraphCanvas.ClipboardFlowEdge(0, 1, 1, 0,
+                        List.of(new Point2D(12.5, 34.0), new Point2D(60.0, -8.0)))));
 
         GraphCanvas.GraphSnapshot roundTripped = roundTrip(snapshot);
 
@@ -79,6 +82,7 @@ class GraphFileIOTest {
         assertEquals(1, flowEdge.sourcePortIndex());
         assertEquals(1, flowEdge.targetNodeIndex());
         assertEquals(0, flowEdge.targetPortIndex());
+        assertEquals(List.of(new Point2D(12.5, 34.0), new Point2D(60.0, -8.0)), flowEdge.waypoints());
     }
 
     @Test

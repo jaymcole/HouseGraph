@@ -101,119 +101,141 @@
   "flowEdges": [
     {
       "sourcePort": 0,
-      "sourceNode": 9,
-      "targetNode": 6,
-      "targetPort": 0
-    },
-    {
-      "sourcePort": 0,
-      "sourceNode": 0,
-      "targetNode": 1,
-      "targetPort": 0
-    },
-    {
-      "sourcePort": 0,
-      "sourceNode": 7,
-      "targetNode": 8,
-      "targetPort": 0
-    },
-    {
-      "sourcePort": 0,
-      "sourceNode": 5,
-      "targetNode": 4,
-      "targetPort": 0
-    },
-    {
-      "sourcePort": 0,
-      "sourceNode": 0,
-      "targetNode": 9,
-      "targetPort": 0
-    },
-    {
-      "sourcePort": 0,
       "sourceNode": 6,
       "targetNode": 7,
-      "targetPort": 0
-    },
-    {
-      "sourcePort": 0,
-      "sourceNode": 10,
-      "targetNode": 11,
-      "targetPort": 0
-    },
-    {
-      "sourcePort": 1,
-      "sourceNode": 10,
-      "targetNode": 12,
-      "targetPort": 0
+      "targetPort": 0,
+      "waypoints": []
     },
     {
       "sourcePort": 0,
       "sourceNode": 0,
       "targetNode": 10,
-      "targetPort": 0
+      "targetPort": 0,
+      "waypoints": [{
+        "x": 169,
+        "y": 457
+      }]
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 5,
+      "targetNode": 4,
+      "targetPort": 0,
+      "waypoints": []
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 0,
+      "targetNode": 9,
+      "targetPort": 0,
+      "waypoints": []
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 0,
+      "targetNode": 1,
+      "targetPort": 0,
+      "waypoints": []
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 10,
+      "targetNode": 11,
+      "targetPort": 0,
+      "waypoints": []
+    },
+    {
+      "sourcePort": 1,
+      "sourceNode": 10,
+      "targetNode": 12,
+      "targetPort": 0,
+      "waypoints": []
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 9,
+      "targetNode": 6,
+      "targetPort": 0,
+      "waypoints": []
+    },
+    {
+      "sourcePort": 0,
+      "sourceNode": 7,
+      "targetNode": 8,
+      "targetPort": 0,
+      "waypoints": []
     },
     {
       "sourcePort": 0,
       "sourceNode": 1,
       "targetNode": 5,
-      "targetPort": 0
+      "targetPort": 0,
+      "waypoints": []
     }
   ],
   "dataEdges": [
     {
+      "targetVariable": 0,
+      "sourceNode": 3,
+      "sourceVariable": 0,
+      "targetNode": 10,
+      "waypoints": []
+    },
+    {
       "targetVariable": 1,
       "sourceNode": 3,
       "sourceVariable": 0,
-      "targetNode": 6
+      "targetNode": 1,
+      "waypoints": []
     },
     {
       "targetVariable": 0,
       "sourceNode": 2,
       "sourceVariable": 0,
-      "targetNode": 1
-    },
-    {
-      "targetVariable": 0,
-      "sourceNode": 3,
-      "sourceVariable": 0,
-      "targetNode": 10
-    },
-    {
-      "targetVariable": 0,
-      "sourceNode": 2,
-      "sourceVariable": 0,
-      "targetNode": 6
+      "targetNode": 1,
+      "waypoints": []
     },
     {
       "targetVariable": 0,
       "sourceNode": 1,
       "sourceVariable": 0,
-      "targetNode": 5
-    },
-    {
-      "targetVariable": 0,
-      "sourceNode": 5,
-      "sourceVariable": 0,
-      "targetNode": 4
-    },
-    {
-      "targetVariable": 0,
-      "sourceNode": 7,
-      "sourceVariable": 0,
-      "targetNode": 8
+      "targetNode": 5,
+      "waypoints": []
     },
     {
       "targetVariable": 0,
       "sourceNode": 6,
       "sourceVariable": 0,
-      "targetNode": 7
+      "targetNode": 7,
+      "waypoints": []
     },
     {
       "targetVariable": 1,
       "sourceNode": 3,
       "sourceVariable": 0,
-      "targetNode": 1
+      "targetNode": 6,
+      "waypoints": []
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 7,
+      "sourceVariable": 0,
+      "targetNode": 8,
+      "waypoints": []
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 5,
+      "sourceVariable": 0,
+      "targetNode": 4,
+      "waypoints": []
+    },
+    {
+      "targetVariable": 0,
+      "sourceNode": 2,
+      "sourceVariable": 0,
+      "targetNode": 6,
+      "waypoints": []
     }
   ]
 }
