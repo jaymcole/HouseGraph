@@ -250,6 +250,70 @@ class NodeGraphTest {
         assertThrows(IllegalStateException.class, add::beginProcessing);
     }
 
+    @Test
+    void addingAndRemovingANodeFiresItsLifecycleHooks() {
+        NodeGraph graph = new NodeGraph();
+        LifecycleNode node = new LifecycleNode();
+
+        graph.addNode(node);
+        assertEquals(1, node.activatedCount, "onActivated fires when the node joins the graph");
+
+        graph.removeNode(node);
+        assertEquals(1, node.removedCount, "onRemoved fires when the node leaves the graph");
+    }
+
+    @Test
+    void removingAnAbsentNodeDoesNotFireOnRemoved() {
+        NodeGraph graph = new NodeGraph();
+        LifecycleNode node = new LifecycleNode();
+
+        graph.removeNode(node); // never added
+        assertEquals(0, node.removedCount);
+    }
+
+    @Test
+    void disposeCleansUpEveryNode() {
+        NodeGraph graph = new NodeGraph();
+        LifecycleNode a = new LifecycleNode();
+        LifecycleNode b = new LifecycleNode();
+        graph.addNode(a);
+        graph.addNode(b);
+
+        graph.dispose();
+
+        assertEquals(1, a.removedCount);
+        assertEquals(1, b.removedCount);
+        assertTrue(graph.getNodes().isEmpty());
+    }
+
+    /** A node that counts its lifecycle-hook calls, for asserting activate/dispose behaviour. */
+    private static final class LifecycleNode extends BaseNode {
+        int activatedCount = 0;
+        int removedCount = 0;
+
+        @Override
+        protected void onActivated() {
+            activatedCount++;
+        }
+
+        @Override
+        protected void onRemoved() {
+            removedCount++;
+        }
+
+        @Override
+        public void process() {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+    }
+
     /** A flow edge between two nodes' first (single) flow ports - the common single-flow-port shape. */
     private static FlowEdge flowEdge(BaseNode source, BaseNode target) {
         return new FlowEdge(source, source.getFlowOutputs().get(0), target, target.getFlowInputs().get(0));

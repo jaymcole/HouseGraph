@@ -103,6 +103,26 @@ public abstract class BaseNode {
     }
 
     /**
+     * Called once when this node becomes part of a live graph (added to a
+     * {@link NodeGraph}). A no-op for ordinary transform nodes; a node that owns a
+     * long-lived resource can use it to hook up (e.g. subscribe to something). Note
+     * this fires on load too, as each saved node is re-added. It is <em>not</em> where a
+     * connection should be opened — a resource's liveness is user-driven (a Connect
+     * button), not tied to being on the canvas.
+     */
+    protected void onActivated() {
+    }
+
+    /**
+     * Called once when this node leaves a live graph — deleted, replaced by a load, or
+     * on app shutdown ({@link NodeGraph#dispose()}). This is the place to release
+     * anything long-lived (timers, sockets, threads) so it can't leak or keep running
+     * as a zombie. Must be idempotent and safe even if the node's UI was never built.
+     */
+    protected void onRemoved() {
+    }
+
+    /**
      * Node-specific configuration to persist in a save file, beyond input/output
      * values — e.g. a dropdown selection or a chosen key. Empty by default. The values
      * are stored verbatim, so this must never contain a secret (persist the reference,

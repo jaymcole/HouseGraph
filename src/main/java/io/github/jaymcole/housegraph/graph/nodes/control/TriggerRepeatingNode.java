@@ -110,27 +110,26 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
         remainingSeconds--;
         if (remainingSeconds <= 0) {
             remainingSeconds = intervalValue;
-            tick();
+            execute();
         }
-        if (timeline != null) {
-            // tick() may have called stop() (e.g. the node was removed mid-run);
-            // don't stomp its "Stopped" label back to a countdown in that case.
-            updateCountdownLabel();
-        }
+        updateCountdownLabel();
     }
 
     private void updateCountdownLabel() {
         statusLabel.setText("Next trigger in " + remainingSeconds + "s");
     }
 
-    private void tick() {
-        try {
-            execute();
-        } catch (IllegalStateException e) {
-            // The node was removed from the canvas (no longer attached to a
-            // NodeGraph) while the timer was still running; stop firing instead of
-            // leaving a zombie timer that errors every interval forever.
-            stop();
+    /**
+     * Stops the timer when the node is removed from the graph (deleted, replaced by a
+     * load, or app shutdown) so it can't keep firing as a zombie. Only the timer is
+     * touched — not the buttons/label — since the node's UI is going away and, in a
+     * headless context, may never have been built.
+     */
+    @Override
+    protected void onRemoved() {
+        if (timeline != null) {
+            timeline.stop();
+            timeline = null;
         }
     }
 }

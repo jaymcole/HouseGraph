@@ -112,18 +112,36 @@ public class NodeGraph {
 
     // --- Node lifecycle ---------------------------------------------------------
 
-    public synchronized void addNode(BaseNode node) {
+    public void addNode(BaseNode node) {
         Objects.requireNonNull(node, "node");
+        // The lifecycle hook runs outside the lock so a node's onActivated() can do work
+        // (subscribe, look something up) without blocking the whole graph.
+        if (attach(node)) {
+            node.onActivated();
+        }
+    }
+
+    private synchronized boolean attach(BaseNode node) {
         if (node.getGraph() != null && node.getGraph() != this) {
             throw new IllegalStateException(node.getName() + " already belongs to another NodeGraph");
         }
         if (nodes.add(node)) {
             node.setGraph(this);
+            return true;
+        }
+        return false;
+    }
+
+    public void removeNode(BaseNode node) {
+        Objects.requireNonNull(node, "node");
+        // onRemoved() runs outside the lock too - resource teardown (closing a socket,
+        // stopping a timer) mustn't be held up by, or hold up, the graph lock.
+        if (detach(node)) {
+            node.onRemoved();
         }
     }
 
-    public synchronized void removeNode(BaseNode node) {
-        Objects.requireNonNull(node, "node");
+    private synchronized boolean detach(BaseNode node) {
         for (Edge edge : new ArrayList<>(getOutgoingDataEdges(node))) {
             removeEdge(edge);
         }
@@ -140,12 +158,30 @@ public class NodeGraph {
         incomingDataEdges.remove(node);
         outgoingFlowEdges.remove(node);
         incomingFlowEdges.remove(node);
-        nodes.remove(node);
+        boolean present = nodes.remove(node);
         node.setGraph(null);
+        return present;
     }
 
     public synchronized Set<BaseNode> getNodes() {
         return Collections.unmodifiableSet(new LinkedHashSet<>(nodes));
+    }
+
+    /**
+     * Removes and disposes every node (so long-lived resources get cleaned up via
+     * {@link BaseNode#onRemoved()}) and stops the execution threads. Intended for app
+     * shutdown; the graph shouldn't be used afterward.
+     */
+    public void dispose() {
+        List<BaseNode> current;
+        synchronized (this) {
+            current = new ArrayList<>(nodes);
+        }
+        for (BaseNode node : current) {
+            removeNode(node);
+        }
+        executionExecutor.shutdownNow();
+        branchExecutor.shutdownNow();
     }
 
     // --- Data edges ---------------------------------------------------------------

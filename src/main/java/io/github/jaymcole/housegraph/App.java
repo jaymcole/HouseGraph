@@ -24,10 +24,11 @@ import java.io.IOException;
 public class App extends Application {
 
     private final AppPreferences preferences = AppPreferences.load();
+    private NodeGraph graph;
 
     @Override
     public void start(Stage stage) {
-        NodeGraph graph = new NodeGraph();
+        graph = new NodeGraph();
         GraphCanvas canvas = new GraphCanvas(graph);
 
         Button saveButton = new Button("Save");
@@ -72,6 +73,15 @@ public class App extends Application {
         stage.show();
 
         loadLastFileInto(canvas);
+    }
+
+    @Override
+    public void stop() {
+        // App is closing: dispose the graph so any long-lived node resources (timers,
+        // connections) are shut down cleanly rather than leaked.
+        if (graph != null) {
+            graph.dispose();
+        }
     }
 
     /** Records the just-saved/opened file as the one to reopen on the next launch. */
