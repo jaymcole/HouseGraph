@@ -110,10 +110,16 @@ class NodeGraphTest {
     void independentFlowBranchesDontBlockOnEachOther() throws InterruptedException {
         NodeGraph graph = new NodeGraph();
         TriggerNode trigger = new TriggerNode();
-        BaseNode fastBranch = new AddNode();
-        CountDownLatch slowBranchStarted = new CountDownLatch(1);
-        CountDownLatch releaseSlowBranch = new CountDownLatch(1);
-        BlockingNode slowBranch = new BlockingNode(slowBranchStarted, releaseSlowBranch);
+
+        CountDownLatch slowStarted = new CountDownLatch(1);
+        CountDownLatch releaseSlow = new CountDownLatch(1);
+        BlockingNode slowBranch = new BlockingNode(slowStarted, releaseSlow);
+
+        // The fast branch's release latch starts already open, so it runs to completion
+        // as soon as its process() is entered.
+        CountDownLatch fastStarted = new CountDownLatch(1);
+        BlockingNode fastBranch = new BlockingNode(fastStarted, new CountDownLatch(0));
+
         graph.addNode(trigger);
         graph.addNode(fastBranch);
         graph.addNode(slowBranch);
@@ -122,16 +128,17 @@ class NodeGraphTest {
 
         trigger.execute();
 
-        // Proves the two branches actually run side by side rather than one after the
-        // other: the slow branch has reached process() and is deliberately still
-        // blocked there, yet the fast, independent sibling branch has already finished
-        // - which could never be observed reliably if a slow branch held up its
-        // siblings the way a single fully-sequential traversal would.
-        assertTrue(slowBranchStarted.await(2, TimeUnit.SECONDS), "slow branch never started");
-        assertTrue(fastBranch.getStatus().isComplete(), "fast branch should not wait behind its slow sibling");
+        // The two branches must run side by side, not one after the other: we wait for the
+        // slow branch to reach (and stay blocked in) process(), and for the fast branch to
+        // run in that same window. If a slow branch held up its siblings, the fast branch's
+        // latch would never fire and the await below would time out - so this can't pass by
+        // luck the way an immediate status check could.
+        assertTrue(slowStarted.await(2, TimeUnit.SECONDS), "slow branch should have started");
+        assertTrue(fastStarted.await(2, TimeUnit.SECONDS), "fast branch should run while the slow one is still blocked");
 
-        releaseSlowBranch.countDown();
+        releaseSlow.countDown();
         graph.awaitIdle();
+        assertTrue(fastBranch.getStatus().isComplete());
         assertTrue(slowBranch.getStatus().isComplete());
     }
 

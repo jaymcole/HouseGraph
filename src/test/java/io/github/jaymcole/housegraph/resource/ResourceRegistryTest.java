@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,12 +39,22 @@ class ResourceRegistryTest {
     @Test
     void activeNamesAreSortedAndUnregisterRemovesThem() {
         ResourceRegistry registry = new ResourceRegistry();
-        registry.register("bravo");
-        registry.register("alpha");
+        registry.register("bravo", new Object());
+        registry.register("alpha", new Object());
         assertEquals(List.of("alpha", "bravo"), registry.activeNames());
 
         registry.unregister("alpha");
         assertEquals(List.of("bravo"), registry.activeNames());
+    }
+
+    @Test
+    void findReturnsAResourceOnlyWhenTheTypeMatches() {
+        ResourceRegistry registry = new ResourceRegistry();
+        registry.register("bot", "a string resource");
+
+        assertEquals(Optional.of("a string resource"), registry.find("bot", String.class));
+        assertEquals(Optional.empty(), registry.find("bot", Integer.class));
+        assertEquals(Optional.empty(), registry.find("absent", String.class));
     }
 
     @Test

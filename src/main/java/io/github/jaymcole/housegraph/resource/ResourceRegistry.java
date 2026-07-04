@@ -3,52 +3,63 @@ package io.github.jaymcole.housegraph.resource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Optional;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * A small name-keyed event bus that lets long-lived resource nodes be referenced from
- * anywhere on the graph — not by wiring, but by name (the pattern from the design
- * discussion, à la Node-RED config nodes).
+ * The coordination hub that lets long-lived resource nodes be referenced from anywhere
+ * on the graph by name — not by wiring (the pattern from the design discussion, à la
+ * Node-RED config nodes). It offers two complementary lookups, both keyed by name:
  * <ul>
- *   <li>A resource node {@link #register}s a name while it's live, so pickers can list it.</li>
- *   <li>It {@link #publish}es events under that name.</li>
- *   <li>Any node {@link #subscribe}s to a name to be driven by those events.</li>
+ *   <li><b>Object lookup</b> ({@link #register}/{@link #find}) — a resource publishes
+ *       itself so action nodes can fetch it and call methods (e.g. a send-message node
+ *       finding its bot).</li>
+ *   <li><b>Event pub/sub</b> ({@link #publish}/{@link #subscribe}) — a resource pushes
+ *       events under its name so trigger nodes are driven by them. Subscription is by
+ *       name, not by instance, so order doesn't matter (you can listen before the
+ *       resource exists) and a resource reconnecting doesn't break listeners.</li>
  * </ul>
- * Subscription is by name, not by resource instance, so ordering doesn't matter (you can
- * listen before the resource exists) and a resource restarting doesn't break listeners.
- * <p>
  * Thread-safe: events may be published from a resource's own thread while nodes
- * subscribe/unsubscribe from the UI thread. A single app-wide {@link #shared()} instance
- * is used today; it could become per-document later without touching callers.
+ * register/subscribe from the UI thread. A single app-wide {@link #shared()} instance is
+ * used today; it could become per-document later without touching callers.
  */
 public final class ResourceRegistry {
 
     private static final ResourceRegistry SHARED = new ResourceRegistry();
 
-    private final Set<String> active = ConcurrentHashMap.newKeySet();
+    private final Map<String, Object> resources = new ConcurrentHashMap<>();
     private final Map<String, CopyOnWriteArrayList<Consumer<String>>> subscribers = new ConcurrentHashMap<>();
 
     public static ResourceRegistry shared() {
         return SHARED;
     }
 
-    /** Announces a live resource under {@code name}, so listeners can discover it via {@link #activeNames()}. */
-    public void register(String name) {
-        active.add(name);
+    // --- Object lookup ------------------------------------------------------------
+
+    /** Publishes a live resource under {@code name} so other nodes can {@link #find} it. */
+    public void register(String name, Object resource) {
+        resources.put(name, resource);
     }
 
     public void unregister(String name) {
-        active.remove(name);
+        resources.remove(name);
     }
 
-    /** The names of currently-live resources, sorted — for populating a picker. */
-    public List<String> activeNames() {
-        return new ArrayList<>(new TreeSet<>(active));
+    /** The registered resource under {@code name}, if it's of the expected type. */
+    public <T> Optional<T> find(String name, Class<T> type) {
+        Object resource = resources.get(name);
+        return type.isInstance(resource) ? Optional.of(type.cast(resource)) : Optional.empty();
     }
+
+    /** The names of currently-registered resources, sorted — for populating a picker. */
+    public List<String> activeNames() {
+        return new ArrayList<>(new TreeSet<>(resources.keySet()));
+    }
+
+    // --- Event pub/sub ------------------------------------------------------------
 
     /** Delivers {@code payload} to every listener currently subscribed to {@code name}. */
     public void publish(String name, String payload) {

@@ -102,7 +102,7 @@ public class EchoResourceNode extends BaseNode implements NodeContentProvider {
         nameField.setDisable(true);
         startButton.setDisable(true);
         stopButton.setDisable(false);
-        ResourceRegistry.shared().register(resourceName);
+        ResourceRegistry.shared().register(resourceName, this);
 
         timeline = new Timeline(new KeyFrame(Duration.seconds(1), e -> emit()));
         timeline.setCycleCount(Timeline.INDEFINITE);
