@@ -27,6 +27,10 @@ application {
 
 dependencies {
     implementation 'org.json:json:20231013'
+    implementation('net.dv8tion:JDA:5.2.1') {
+        exclude module: 'opus-java' // no voice — drop the native audio dependency
+    }
+    implementation 'org.slf4j:slf4j-simple:2.0.13'
 
     testImplementation platform('org.junit:junit-bom:5.10.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
