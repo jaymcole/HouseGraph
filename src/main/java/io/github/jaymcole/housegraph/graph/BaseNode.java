@@ -65,6 +65,16 @@ public abstract class BaseNode {
         requireGraph().execute(this);
     }
 
+    /**
+     * Like {@link #execute()}, but {@code prepare} runs on the execution thread at the
+     * start of the pass — for an event-source node to set its outputs from the triggering
+     * event's data, captured per-trigger so a burst of events can't overwrite each
+     * other's values. See {@link NodeGraph#execute(BaseNode, Runnable)}.
+     */
+    protected void execute(Runnable prepare) {
+        requireGraph().execute(this, prepare);
+    }
+
     private NodeGraph requireGraph() {
         if (graph == null) {
             throw new IllegalStateException(getName() + " has not been added to a NodeGraph yet");

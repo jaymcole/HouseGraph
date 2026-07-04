@@ -14,7 +14,7 @@ class ResourceRegistryTest {
     @Test
     void publishReachesOnlySubscribersOfThatName() {
         ResourceRegistry registry = new ResourceRegistry();
-        List<String> received = new ArrayList<>();
+        List<Object> received = new ArrayList<>();
         registry.subscribe("echo", received::add);
 
         registry.publish("echo", "tick 1");
@@ -26,7 +26,7 @@ class ResourceRegistryTest {
     @Test
     void aCancelledSubscriptionStopsReceiving() {
         ResourceRegistry registry = new ResourceRegistry();
-        List<String> received = new ArrayList<>();
+        List<Object> received = new ArrayList<>();
         Subscription subscription = registry.subscribe("echo", received::add);
 
         registry.publish("echo", "1");

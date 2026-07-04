@@ -101,6 +101,9 @@ public class NodeGraph {
 
     private volatile Executor callbackExecutor = Runnable::run;
 
+    private static final Runnable NO_PREPARATION = () -> {
+    };
+
     public synchronized void addExecutionListener(GraphExecutionListener listener) {
         executionListeners.add(Objects.requireNonNull(listener, "listener"));
     }
@@ -259,8 +262,22 @@ public class NodeGraph {
      * path is that a slow node in the graph doesn't block whoever called this.
      */
     public void execute(BaseNode node) {
+        execute(node, NO_PREPARATION);
+    }
+
+    /**
+     * Triggers {@code node} (see the single-arg overload) after running {@code prepare}
+     * on the execution thread, at the very start of the pass. This is how an event source
+     * hands its per-event data to exactly one pass: the payload is captured in
+     * {@code prepare} and applied to the node's outputs <em>inside</em> the serialized
+     * pass, so a burst of events can't clobber one another's values through a shared
+     * field (which they could if the value were written from the event thread before the
+     * pass ran).
+     */
+    public void execute(BaseNode node, Runnable prepare) {
         executionExecutor.execute(() -> {
             try {
+                prepare.run();
                 executeEntry(node);
             } catch (RuntimeException e) {
                 Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;

@@ -6,6 +6,9 @@ import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -255,6 +258,75 @@ class NodeGraphTest {
     void runningBeforeBeingAddedToAGraphFailsClearly() {
         AddNode add = new AddNode();
         assertThrows(IllegalStateException.class, add::beginProcessing);
+    }
+
+    @Test
+    void eachTriggerAppliesItsOwnPayloadSoRapidEventsDontClobber() {
+        NodeGraph graph = new NodeGraph();
+        PayloadSourceNode source = new PayloadSourceNode();
+        RecorderNode recorder = new RecorderNode();
+        graph.addNode(source);
+        graph.addNode(recorder);
+        graph.registerEdge(new Edge(source, source.out, recorder, recorder.in));
+        graph.registerFlowEdge(flowEdge(source, recorder));
+
+        // Two triggers submitted back-to-back, each with its own payload applied inside
+        // the pass. If the value were written from here (the "event" side) before the
+        // passes ran, both passes would see the last value ("b"); per-pass preparation
+        // makes each pass see its own.
+        graph.execute(source, () -> source.out.setValue("a"));
+        graph.execute(source, () -> source.out.setValue("b"));
+        graph.awaitIdle();
+
+        assertEquals(List.of("a", "b"), recorder.received);
+    }
+
+    /** A trigger-style source whose String output is set per-pass by the trigger's prepare step. */
+    private static final class PayloadSourceNode extends BaseNode {
+        final NodeVariable<String> out = new NodeVariable<>("Out", String.class);
+
+        @Override
+        public void process() {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+            addOutput(out);
+        }
+
+        @Override
+        public void configureFlowOutputs() {
+            addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
+        }
+    }
+
+    /** Records the value pulled onto its input each time it runs. */
+    private static final class RecorderNode extends BaseNode {
+        final NodeVariable<String> in = new NodeVariable<>("In", String.class);
+        final List<String> received = Collections.synchronizedList(new ArrayList<>());
+
+        @Override
+        public void process() {
+            received.add(in.getValue());
+        }
+
+        @Override
+        public void configureInputs() {
+            addInput(in);
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
     }
 
     @Test

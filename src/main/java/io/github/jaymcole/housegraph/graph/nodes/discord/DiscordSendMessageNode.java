@@ -9,7 +9,6 @@ import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.scene.Node;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 
 import java.util.HashMap;
@@ -18,23 +17,25 @@ import java.util.Map;
 /**
  * Posts a message to a Discord channel when triggered — the action side of the pattern.
  * It looks up its bot by name from the resource registry (rather than being wired to it)
- * and sends its {@code Message} input to a configured channel id. The message can be
- * typed inline or wired from upstream (e.g. a command's {@code Args}), and control flows
- * through so you can chain more work after sending.
+ * and sends its {@code Message} to the channel given by its {@code Channel} input. Both
+ * inputs can be typed in place or wired: wire a command node's {@code Channel} output in
+ * to reply in the channel the command came from, or type a fixed channel id for a set
+ * destination. Control flows through, so you can chain more work after sending.
  */
 @Display.Name("Discord Send Message")
 public class DiscordSendMessageNode extends BaseNode implements NodeContentProvider {
 
     private final NodeVariable<String> message = new NodeVariable<>("Message", String.class, true);
+    private final NodeVariable<String> channel = new NodeVariable<>("Channel", String.class, true);
     private final FlowPort in = new FlowPort("", FlowPort.Direction.IN);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
 
     private String resourceName;
-    private String channelId;
 
     @Override
     public void process() {
         String text = message.getValue();
+        String channelId = channel.getValue();
         if (resourceName == null || channelId == null || channelId.isBlank() || text == null) {
             return;
         }
@@ -45,6 +46,7 @@ public class DiscordSendMessageNode extends BaseNode implements NodeContentProvi
     @Override
     public void configureInputs() {
         addInput(message);
+        addInput(channel);
     }
 
     @Override
@@ -67,16 +69,12 @@ public class DiscordSendMessageNode extends BaseNode implements NodeContentProvi
         if (resourceName != null) {
             state.put("resource", resourceName);
         }
-        if (channelId != null) {
-            state.put("channel", channelId);
-        }
         return state;
     }
 
     @Override
     public void loadState(Map<String, String> state) {
         resourceName = emptyToNull(state.get("resource"));
-        channelId = emptyToNull(state.get("channel"));
     }
 
     @Override
@@ -91,11 +89,7 @@ public class DiscordSendMessageNode extends BaseNode implements NodeContentProvi
         botChooser.setOnShowing(e -> botChooser.getItems().setAll(ResourceRegistry.shared().activeNames()));
         botChooser.setOnAction(e -> resourceName = botChooser.getValue());
 
-        TextField channelField = new TextField(channelId == null ? "" : channelId);
-        channelField.setPromptText("Channel ID");
-        channelField.textProperty().addListener((obs, old, value) -> channelId = value);
-
-        return new VBox(4, botChooser, channelField);
+        return new VBox(4, botChooser);
     }
 
     private static String emptyToNull(String value) {

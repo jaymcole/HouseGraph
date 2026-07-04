@@ -31,7 +31,7 @@ public final class ResourceRegistry {
     private static final ResourceRegistry SHARED = new ResourceRegistry();
 
     private final Map<String, Object> resources = new ConcurrentHashMap<>();
-    private final Map<String, CopyOnWriteArrayList<Consumer<String>>> subscribers = new ConcurrentHashMap<>();
+    private final Map<String, CopyOnWriteArrayList<Consumer<Object>>> subscribers = new ConcurrentHashMap<>();
 
     public static ResourceRegistry shared() {
         return SHARED;
@@ -61,21 +61,25 @@ public final class ResourceRegistry {
 
     // --- Event pub/sub ------------------------------------------------------------
 
-    /** Delivers {@code payload} to every listener currently subscribed to {@code name}. */
-    public void publish(String name, String payload) {
-        CopyOnWriteArrayList<Consumer<String>> listeners = subscribers.get(name);
+    /**
+     * Delivers {@code payload} to every listener currently subscribed to {@code name}.
+     * The payload is an {@code Object} so different resources can carry different event
+     * shapes (a plain String, a {@code DiscordMessage}, …); subscribers type-check it.
+     */
+    public void publish(String name, Object payload) {
+        CopyOnWriteArrayList<Consumer<Object>> listeners = subscribers.get(name);
         if (listeners != null) {
-            for (Consumer<String> listener : listeners) {
+            for (Consumer<Object> listener : listeners) {
                 listener.accept(payload);
             }
         }
     }
 
     /** Subscribes {@code listener} to events published under {@code name}; cancel via the returned handle. */
-    public Subscription subscribe(String name, Consumer<String> listener) {
+    public Subscription subscribe(String name, Consumer<Object> listener) {
         subscribers.computeIfAbsent(name, key -> new CopyOnWriteArrayList<>()).add(listener);
         return () -> {
-            CopyOnWriteArrayList<Consumer<String>> listeners = subscribers.get(name);
+            CopyOnWriteArrayList<Consumer<Object>> listeners = subscribers.get(name);
             if (listeners != null) {
                 listeners.remove(listener);
             }

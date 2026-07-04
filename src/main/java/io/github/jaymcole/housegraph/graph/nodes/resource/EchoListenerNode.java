@@ -81,15 +81,18 @@ public class EchoListenerNode extends BaseNode implements NodeContentProvider {
         }
         resourceName = name;
         if (name != null) {
-            subscription = ResourceRegistry.shared().subscribe(name, this::onEvent);
+            subscription = ResourceRegistry.shared().subscribe(name, payload -> {
+                if (payload instanceof String text) {
+                    onEvent(text);
+                }
+            });
         }
     }
 
     private void onEvent(String payload) {
-        message.setValue(payload);
-        // Fire graph execution from this node — the same background-threaded trigger
-        // path a button uses; if the node was concurrently removed, execute() no-ops.
-        execute();
+        // The payload is captured here and applied inside the pass (on the execution
+        // thread), so rapid events each drive their own pass without clobbering.
+        execute(() -> message.setValue(payload));
     }
 
     @Override

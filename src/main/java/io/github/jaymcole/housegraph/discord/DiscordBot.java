@@ -2,7 +2,7 @@ package io.github.jaymcole.housegraph.discord;
 
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.requests.GatewayIntent;
@@ -29,7 +29,7 @@ public final class DiscordBot {
 
     private final Object lock = new Object();
     private JDA jda;
-    private volatile Consumer<String> messageHandler = message -> {
+    private volatile Consumer<DiscordMessage> messageHandler = message -> {
     };
 
     /**
@@ -66,13 +66,13 @@ public final class DiscordBot {
         }
     }
 
-    /** Sets where incoming (non-bot) message content is delivered. Called back on a JDA thread. */
-    public void setMessageHandler(Consumer<String> handler) {
+    /** Sets where incoming (non-bot) messages are delivered. Called back on a JDA thread. */
+    public void setMessageHandler(Consumer<DiscordMessage> handler) {
         this.messageHandler = handler == null ? message -> {
         } : handler;
     }
 
-    /** Posts {@code text} to the text channel with the given id; a no-op if not connected or the channel isn't found. */
+    /** Posts {@code text} to the message channel with the given id; a no-op if not connected or the channel isn't found. */
     public void sendMessage(String channelId, String text) {
         JDA current;
         synchronized (lock) {
@@ -81,7 +81,7 @@ public final class DiscordBot {
         if (current == null) {
             return;
         }
-        TextChannel channel = current.getTextChannelById(channelId);
+        MessageChannel channel = current.getChannelById(MessageChannel.class, channelId);
         if (channel != null) {
             channel.sendMessage(text).queue();
         }
@@ -93,7 +93,11 @@ public final class DiscordBot {
             if (event.getAuthor().isBot()) {
                 return; // ignore our own and other bots' messages
             }
-            messageHandler.accept(event.getMessage().getContentDisplay());
+            messageHandler.accept(new DiscordMessage(
+                    event.getMessage().getContentDisplay(),
+                    event.getChannel().getId(),
+                    event.getAuthor().getId(),
+                    event.getAuthor().getEffectiveName()));
         }
     }
 }

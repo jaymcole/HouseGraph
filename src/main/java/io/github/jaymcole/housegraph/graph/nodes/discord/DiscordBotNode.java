@@ -76,7 +76,7 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
 
     @Override
     protected void onActivated() {
-        bot.setMessageHandler(content -> ResourceRegistry.shared().publish(resourceName, content));
+        bot.setMessageHandler(message -> ResourceRegistry.shared().publish(resourceName, message));
         ResourceRegistry.shared().register(resourceName, bot);
     }
 

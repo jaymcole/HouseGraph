@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.graph.nodes.discord;
 
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.CommandMatcher;
+import io.github.jaymcole.housegraph.discord.DiscordMessage;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -18,18 +19,23 @@ import java.util.Map;
 
 /**
  * A modular Discord command: listens to a chosen bot and, when a message invokes its
- * trigger (e.g. {@code !deploy}), fires its flow-out with the arguments on its
- * {@code Args} output. Each command node is one self-contained trigger point on the
- * graph — this is the real counterpart to {@code EchoListenerNode}.
+ * trigger (e.g. {@code !deploy}), fires its flow-out with the invocation details on its
+ * outputs — the {@code Args} after the command, plus the {@code Channel} it came from
+ * (wire this into a Send Message node to reply there) and the sender's id and name.
+ * Each command node is one self-contained trigger point on the graph.
  * <p>
  * The bot is referenced by name (survives save/load via node state), and matching is
  * handled by {@link CommandMatcher}. Events arrive on a Discord thread; firing goes
- * through the normal background-threaded trigger path.
+ * through the normal background-threaded trigger path, with all outputs set together for
+ * that one invocation so a burst of commands can't mix their values.
  */
 @Display.Name("Discord Command")
 public class DiscordCommandNode extends BaseNode implements NodeContentProvider {
 
     private final NodeVariable<String> args = new NodeVariable<>("Args", String.class);
+    private final NodeVariable<String> channel = new NodeVariable<>("Channel", String.class);
+    private final NodeVariable<String> senderId = new NodeVariable<>("Sender ID", String.class);
+    private final NodeVariable<String> senderName = new NodeVariable<>("Sender Name", String.class);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
 
     private String resourceName;
@@ -38,7 +44,7 @@ public class DiscordCommandNode extends BaseNode implements NodeContentProvider 
 
     @Override
     public void process() {
-        // Args is set from the incoming message just before execute(); nothing to compute.
+        // Outputs are set from the incoming message just before execute(); nothing to compute.
     }
 
     @Override
@@ -48,6 +54,9 @@ public class DiscordCommandNode extends BaseNode implements NodeContentProvider 
     @Override
     public void configureOutputs() {
         addOutput(args);
+        addOutput(channel);
+        addOutput(senderId);
+        addOutput(senderName);
     }
 
     @Override
@@ -91,17 +100,30 @@ public class DiscordCommandNode extends BaseNode implements NodeContentProvider 
         }
         resourceName = name;
         if (name != null) {
-            subscription = ResourceRegistry.shared().subscribe(name, this::onMessage);
+            subscription = ResourceRegistry.shared().subscribe(name, payload -> {
+                if (payload instanceof DiscordMessage message) {
+                    onMessage(message);
+                }
+            });
         }
     }
 
-    private void onMessage(String content) {
+    private void onMessage(DiscordMessage message) {
+        String content = message.content();
         if (!CommandMatcher.matches(content, command)) {
             return;
         }
-        args.setValue(CommandMatcher.args(content, command));
+        // Capture everything for this specific invocation and apply it together inside
+        // the pass, so a burst of the same command can't mix one call's args with
+        // another's channel/sender.
+        String invocationArgs = CommandMatcher.args(content, command);
         try {
-            execute();
+            execute(() -> {
+                args.setValue(invocationArgs);
+                channel.setValue(message.channelId());
+                senderId.setValue(message.authorId());
+                senderName.setValue(message.authorName());
+            });
         } catch (IllegalStateException e) {
             // The node was removed just as the message arrived (event on a Discord
             // thread, removal on the UI thread); ignore rather than error.
