@@ -14,9 +14,13 @@ import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.resource.Subscription;
 import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.scene.Node;
+import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
 import java.util.ArrayList;
@@ -209,27 +213,61 @@ public class DiscordSlashCommandNode extends BaseNode implements NodeContentProv
             redeclare();
         });
 
-        TextField optionsField = new TextField(formatOptions(options));
-        optionsField.setPromptText("options e.g. env, count:integer");
-        // Apply on commit (Enter or focus lost) rather than per keystroke, since applying
-        // rebuilds this node's ports.
-        optionsField.setOnAction(e -> applyOptions(optionsField.getText()));
-        optionsField.focusedProperty().addListener((obs, was, focused) -> {
-            if (!focused) {
-                applyOptions(optionsField.getText());
-            }
-        });
+        // Options are edited as rows and applied all at once, so the node's ports rebuild
+        // just once (on Apply) rather than jarringly on every keystroke.
+        VBox optionRows = new VBox(3);
+        for (CommandOption option : options) {
+            optionRows.getChildren().add(optionRow(option));
+        }
 
-        return new VBox(4, commandField, botChooser, ephemeralBox, optionsField);
+        Button addButton = new Button("+ Option");
+        addButton.setOnAction(e -> optionRows.getChildren()
+                .add(optionRow(new CommandOption("option" + (optionRows.getChildren().size() + 1), DiscordOptionType.TEXT))));
+
+        Button applyButton = new Button("Apply");
+        applyButton.setOnAction(e -> applyOptionRows(optionRows));
+
+        Label optionsLabel = new Label("Options");
+        optionsLabel.setStyle("-fx-text-fill: #aaaaaa; -fx-font-size: 10px;");
+
+        return new VBox(4, commandField, botChooser, ephemeralBox,
+                optionsLabel, optionRows, new HBox(6, addButton, applyButton));
     }
 
-    private void applyOptions(String text) {
-        List<CommandOption> parsed = parseOptions(text);
-        if (parsed.equals(options)) {
+    /** One editable option row (name, type, remove); read back on Apply. */
+    private HBox optionRow(CommandOption option) {
+        TextField name = new TextField(option.name());
+        name.setPromptText("name");
+        HBox.setHgrow(name, Priority.ALWAYS);
+
+        ComboBox<DiscordOptionType> type = new ComboBox<>();
+        type.getItems().setAll(DiscordOptionType.values());
+        type.setValue(option.type());
+
+        HBox row = new HBox(4, name, type);
+        Button remove = new Button("×");
+        remove.setOnAction(e -> ((VBox) row.getParent()).getChildren().remove(row));
+        row.getChildren().add(remove);
+        return row;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyOptionRows(VBox optionRows) {
+        List<CommandOption> edited = new ArrayList<>();
+        for (Node rowNode : optionRows.getChildren()) {
+            HBox row = (HBox) rowNode;
+            String name = ((TextField) row.getChildren().get(0)).getText();
+            DiscordOptionType type = ((ComboBox<DiscordOptionType>) row.getChildren().get(1)).getValue();
+            String normalized = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+            if (!normalized.isEmpty()) {
+                edited.add(new CommandOption(normalized, type == null ? DiscordOptionType.TEXT : type));
+            }
+        }
+        if (edited.equals(options)) {
             return; // no change - avoid a needless rebuild
         }
         options.clear();
-        options.addAll(parsed);
+        options.addAll(edited);
         redeclare();
         rebuildPorts();
     }
