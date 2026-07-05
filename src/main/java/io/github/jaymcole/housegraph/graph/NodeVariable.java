@@ -10,6 +10,7 @@ public class NodeVariable<T> {
     public final boolean manuallyEditable;
     private T value;
     private boolean secret = false;
+    private boolean transientValue = false;
 
     public NodeVariable(String variableName, Class<T> type, String variableId, boolean manuallyEditable) {
         this.name = variableName;
@@ -47,6 +48,21 @@ public class NodeVariable<T> {
     /** Whether this variable's value must be kept out of save files. */
     public boolean isSecret() {
         return secret;
+    }
+
+    /**
+     * Marks this variable as holding a live runtime object that only makes sense during
+     * one execution pass (e.g. a Discord reply handle) and must never be persisted.
+     * Like {@link #markSecret()}, its value is written as null to save files. Fluent.
+     */
+    public NodeVariable<T> transientValue() {
+        this.transientValue = true;
+        return this;
+    }
+
+    /** Whether this variable's value is runtime-only and must not be written to save files. */
+    public boolean isTransient() {
+        return transientValue;
     }
 
 }

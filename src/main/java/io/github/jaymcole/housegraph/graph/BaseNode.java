@@ -29,6 +29,9 @@ public abstract class BaseNode {
      */
     private final Set<FlowPort> activatedOutputs = ConcurrentHashMap.newKeySet();
 
+    private Runnable portsChangedListener = () -> {
+    };
+
     /**
      * configureInputs()/configureOutputs()/configureFlow*() are deferred until first
      * use rather than called from the constructor, since a subclass's field
@@ -43,6 +46,37 @@ public abstract class BaseNode {
             configureFlowInputs();
             configureFlowOutputs();
         }
+    }
+
+    /**
+     * Rebuilds the input/output/flow-port lists from the node's current configuration —
+     * for nodes whose ports depend on editable settings (e.g. a command node whose
+     * outputs mirror its declared options). Discards the existing ports and re-runs the
+     * configure hooks, so those hooks must read the node's current settings.
+     */
+    public void reconfigure() {
+        inputs.clear();
+        outputs.clear();
+        flowInputs.clear();
+        flowOutputs.clear();
+        configured = false;
+        ensureConfigured();
+    }
+
+    /** Set by the UI so a node can ask its on-canvas view to rebuild after its ports change. */
+    public void setPortsChangedListener(Runnable listener) {
+        this.portsChangedListener = listener == null ? () -> {
+        } : listener;
+    }
+
+    /**
+     * {@link #reconfigure() Reconfigures} this node's ports and asks its view to rebuild
+     * (edges to surviving ports are reconnected by name/position). A node calls this
+     * after a settings change that alters its ports.
+     */
+    protected void rebuildPorts() {
+        reconfigure();
+        portsChangedListener.run();
     }
 
     /**

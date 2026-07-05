@@ -207,10 +207,19 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     /** Adds a node at an explicit position in content (canvas) coordinates, e.g. where a context menu was opened. */
     public void addNode(NodeView nodeView, double contentX, double contentY) {
+        BaseNode node = nodeView.getNode();
+        graph.addNode(node);
+        // Lets a node whose ports depend on its settings ask us to rebuild its view.
+        // Keyed by the node so it stays valid across rebuilds (the view is looked up live).
+        node.setPortsChangedListener(() -> rebuildNodeView(node));
+        addNodeView(nodeView, contentX, contentY);
+    }
+
+    /** The view/wiring half of adding a node — used on its own when a node's view is rebuilt in place (the node stays in the graph). */
+    private void addNodeView(NodeView nodeView, double contentX, double contentY) {
         nodeView.setLayoutX(contentX);
         nodeView.setLayoutY(contentY);
 
-        graph.addNode(nodeView.getNode());
         content.getChildren().add(nodeView);
         nodeViews.add(nodeView);
         nodeViewByNode.put(nodeView.getNode(), nodeView);
@@ -237,6 +246,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     void removeNode(NodeView nodeView) {
         graph.removeNode(nodeView.getNode());
+        removeNodeView(nodeView);
+    }
+
+    /** The view half of removing a node — used on its own when rebuilding a view (the node stays in the graph, so onRemoved must not fire). */
+    private void removeNodeView(NodeView nodeView) {
         content.getChildren().remove(nodeView);
         nodeViews.remove(nodeView);
         nodeViewByNode.remove(nodeView.getNode());
@@ -244,6 +258,109 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         ports.removeAll(nodeView.getOutputPorts());
         flowPorts.removeAll(nodeView.getFlowInPorts());
         flowPorts.removeAll(nodeView.getFlowOutPorts());
+    }
+
+    /**
+     * Rebuilds a node's on-canvas view after its ports changed ({@link BaseNode#reconfigure()}
+     * already ran). Edges touching the node are captured, dropped, and re-created against
+     * the new view: data edges reconnect by port name, flow edges by position; an edge to
+     * a port that no longer exists is quietly dropped. Manual routing (waypoints) is kept.
+     */
+    private void rebuildNodeView(BaseNode node) {
+        NodeView oldView = nodeViewByNode.get(node);
+        if (oldView == null) {
+            return;
+        }
+        double x = oldView.getLayoutX();
+        double y = oldView.getLayoutY();
+
+        List<CapturedRebuildEdge> capturedData = new ArrayList<>();
+        List<CapturedRebuildFlowEdge> capturedFlow = new ArrayList<>();
+        for (EdgeView edgeView : new ArrayList<>(edgeViews.values())) {
+            captureForRebuild(edgeView, oldView, capturedData);
+        }
+        for (FlowEdgeView flowEdgeView : new ArrayList<>(flowEdgeViews.values())) {
+            captureForRebuild(flowEdgeView, oldView, capturedFlow);
+        }
+
+        for (CapturedRebuildEdge captured : capturedData) {
+            captured.view().delete();
+        }
+        for (CapturedRebuildFlowEdge captured : capturedFlow) {
+            captured.view().delete();
+        }
+
+        deselectNode(oldView);
+        removeNodeView(oldView);
+
+        NodeView newView = new NodeView(node, content, this);
+        addNodeView(newView, x, y);
+        forceLayout();
+
+        for (CapturedRebuildEdge captured : capturedData) {
+            PortView port = findPortByName(newView, captured.nodeIsSource(), captured.portName());
+            if (port == null) {
+                continue; // that option/port is gone now
+            }
+            PortView source = captured.nodeIsSource() ? port : captured.otherPort();
+            PortView target = captured.nodeIsSource() ? captured.otherPort() : port;
+            try {
+                createEdge(source, target).setWaypoints(captured.waypoints());
+            } catch (RuntimeException e) {
+                // e.g. the port's type changed and no longer matches - drop just this edge.
+                System.err.println("Could not reconnect edge after rebuild: " + e.getMessage());
+            }
+        }
+        for (CapturedRebuildFlowEdge captured : capturedFlow) {
+            List<FlowPortView> flowPortViews = captured.nodeIsSource() ? newView.getFlowOutPorts() : newView.getFlowInPorts();
+            if (captured.portIndex() < 0 || captured.portIndex() >= flowPortViews.size()) {
+                continue;
+            }
+            FlowPortView port = flowPortViews.get(captured.portIndex());
+            FlowPortView source = captured.nodeIsSource() ? port : captured.otherPort();
+            FlowPortView target = captured.nodeIsSource() ? captured.otherPort() : port;
+            createFlowEdge(source, target).setWaypoints(captured.waypoints());
+        }
+    }
+
+    private void captureForRebuild(EdgeView edgeView, NodeView node, List<CapturedRebuildEdge> out) {
+        PortView source = edgeView.getSourcePort();
+        PortView target = edgeView.getTargetPort();
+        if (source.getOwner() == node) {
+            out.add(new CapturedRebuildEdge(edgeView, target, true, source.getVariable().name, edgeView.getWaypoints()));
+        } else if (target.getOwner() == node) {
+            out.add(new CapturedRebuildEdge(edgeView, source, false, target.getVariable().name, edgeView.getWaypoints()));
+        }
+    }
+
+    private void captureForRebuild(FlowEdgeView flowEdgeView, NodeView node, List<CapturedRebuildFlowEdge> out) {
+        FlowPortView source = flowEdgeView.getSourcePort();
+        FlowPortView target = flowEdgeView.getTargetPort();
+        if (source.getOwner() == node) {
+            out.add(new CapturedRebuildFlowEdge(flowEdgeView, target, true,
+                    node.getFlowOutPorts().indexOf(source), flowEdgeView.getWaypoints()));
+        } else if (target.getOwner() == node) {
+            out.add(new CapturedRebuildFlowEdge(flowEdgeView, source, false,
+                    node.getFlowInPorts().indexOf(target), flowEdgeView.getWaypoints()));
+        }
+    }
+
+    private static PortView findPortByName(NodeView view, boolean output, String name) {
+        for (PortView port : output ? view.getOutputPorts() : view.getInputPorts()) {
+            if (port.getVariable().name.equals(name)) {
+                return port;
+            }
+        }
+        return null;
+    }
+
+    /** A data edge captured before a node's view rebuild: the other (stable) endpoint, plus how to find this node's end again by name. */
+    private record CapturedRebuildEdge(EdgeView view, PortView otherPort, boolean nodeIsSource, String portName,
+                                       List<Point2D> waypoints) {
+    }
+
+    private record CapturedRebuildFlowEdge(FlowEdgeView view, FlowPortView otherPort, boolean nodeIsSource, int portIndex,
+                                           List<Point2D> waypoints) {
     }
 
     // --- Data ports / edges -----------------------------------------------------

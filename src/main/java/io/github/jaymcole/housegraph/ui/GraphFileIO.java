@@ -166,9 +166,10 @@ public final class GraphFileIO {
     private static JSONArray valuesToJson(List<NodeVariable> variables) {
         JSONArray array = new JSONArray();
         for (NodeVariable variable : variables) {
-            // A secret's value is never written to disk - only null is stored in its slot,
-            // so position-based load still lines up. The node re-resolves it at run time.
-            Object value = variable.isSecret() ? null : variable.getValue();
+            // A secret's or transient's value is never written to disk - only null is
+            // stored in its slot, so position-based load still lines up. The node
+            // re-resolves/repopulates it at run time.
+            Object value = variable.isSecret() || variable.isTransient() ? null : variable.getValue();
             array.put(value == null ? JSONObject.NULL : value);
         }
         return array;

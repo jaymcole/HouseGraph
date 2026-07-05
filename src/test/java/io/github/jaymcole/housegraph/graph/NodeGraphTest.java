@@ -393,6 +393,46 @@ class NodeGraphTest {
         }
     }
 
+    @Test
+    void reconfigureRebuildsPortsFromCurrentSettings() {
+        DynamicNode node = new DynamicNode();
+        assertEquals(List.of("a"), outputNames(node));
+
+        node.optionNames = List.of("x", "y");
+        node.reconfigure();
+
+        assertEquals(List.of("x", "y"), outputNames(node), "outputs should mirror the new settings after reconfigure");
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static List<String> outputNames(BaseNode node) {
+        List<String> names = new ArrayList<>();
+        for (NodeVariable variable : node.getOutputs()) {
+            names.add(variable.name);
+        }
+        return names;
+    }
+
+    /** A node whose outputs mirror an editable list, for testing reconfigure(). */
+    private static final class DynamicNode extends BaseNode {
+        List<String> optionNames = List.of("a");
+
+        @Override
+        public void process() {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+            for (String name : optionNames) {
+                addOutput(new NodeVariable<>(name, String.class));
+            }
+        }
+    }
+
     /** A flow edge between two nodes' first (single) flow ports - the common single-flow-port shape. */
     private static FlowEdge flowEdge(BaseNode source, BaseNode target) {
         return new FlowEdge(source, source.getFlowOutputs().get(0), target, target.getFlowInputs().get(0));

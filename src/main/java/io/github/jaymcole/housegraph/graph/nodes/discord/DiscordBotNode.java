@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.graph.nodes.discord;
 
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.DiscordBot;
+import io.github.jaymcole.housegraph.discord.SlashCommandRegistry;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.storage.SecretsStore;
@@ -36,9 +37,11 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
     private final DiscordBot bot = new DiscordBot();
     private String resourceName = "discord";
     private String tokenSecret;
+    private String guildId;
 
     private TextField nameField;
     private ComboBox<String> tokenChooser;
+    private TextField guildField;
     private Button connectButton;
     private Button disconnectButton;
     private Label statusLabel;
@@ -62,6 +65,9 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         if (tokenSecret != null) {
             state.put("token", tokenSecret);
         }
+        if (guildId != null) {
+            state.put("guild", guildId);
+        }
         return state;
     }
 
@@ -72,11 +78,13 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
             resourceName = name;
         }
         tokenSecret = emptyToNull(state.get("token"));
+        guildId = emptyToNull(state.get("guild"));
     }
 
     @Override
     protected void onActivated() {
         bot.setMessageHandler(message -> ResourceRegistry.shared().publish(resourceName, message));
+        bot.setSlashHandler(command -> ResourceRegistry.shared().publish(resourceName, command));
         ResourceRegistry.shared().register(resourceName, bot);
     }
 
@@ -102,6 +110,10 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         tokenChooser.setOnShowing(e -> tokenChooser.getItems().setAll(secretKeys()));
         tokenChooser.setOnAction(e -> tokenSecret = tokenChooser.getValue());
 
+        guildField = new TextField(guildId == null ? "" : guildId);
+        guildField.setPromptText("Guild ID (optional, for instant slash commands)");
+        guildField.textProperty().addListener((obs, old, value) -> guildId = emptyToNull(value));
+
         connectButton = new Button("Connect");
         connectButton.setMaxWidth(Double.MAX_VALUE);
         connectButton.setOnAction(e -> connect());
@@ -115,7 +127,7 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         statusLabel.setStyle("-fx-text-fill: #aaaaaa; -fx-font-size: 10px;");
 
         HBox buttons = new HBox(6, connectButton, disconnectButton);
-        return new VBox(4, nameField, tokenChooser, buttons, statusLabel);
+        return new VBox(4, nameField, tokenChooser, guildField, buttons, statusLabel);
     }
 
     private void rename(String newName) {
@@ -137,6 +149,9 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         Thread thread = new Thread(() -> {
             try {
                 bot.connect(token);
+                // Register the slash commands declared for this bot (see SlashCommandRegistry).
+                bot.setGuildId(guildId);
+                bot.syncCommands(SlashCommandRegistry.shared().commandsFor(resourceName));
                 Platform.runLater(() -> {
                     statusLabel.setText("Connected as \"" + resourceName + "\"");
                     disconnectButton.setDisable(false);
@@ -167,6 +182,7 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
     private void setEditingLocked(boolean locked) {
         nameField.setDisable(locked);
         tokenChooser.setDisable(locked);
+        guildField.setDisable(locked);
     }
 
     private String resolveToken() {
