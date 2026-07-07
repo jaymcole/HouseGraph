@@ -189,23 +189,44 @@ public class NodeGraph {
 
     // --- Data edges ---------------------------------------------------------------
 
-    public synchronized void registerEdge(Edge edge) {
+    public void registerEdge(Edge edge) {
         Objects.requireNonNull(edge, "edge");
+        // The onInputEdgeAdded hook is dispatched through the callback executor rather than
+        // called inline. A node reacting to the wiring may rebuild its ports (and thus its
+        // on-canvas view); the UI's executor (Platform.runLater) defers that to the next FX
+        // pulse, so it can't tear down and rebuild the view while the caller (e.g.
+        // GraphCanvas.createEdge) is still mid-wiring and holding now-stale PortView
+        // references. Headless (Runnable::run) still fires it synchronously.
+        if (attachEdge(edge)) {
+            callbackExecutor.execute(() -> edge.getTargetNode().onInputEdgeAdded(edge));
+        }
+    }
+
+    private synchronized boolean attachEdge(Edge edge) {
         requireRegistered(edge.getSourceNode());
         requireRegistered(edge.getTargetNode());
-        if (edge.getSourceVariable().type != edge.getTargetVariable().type) {
+        if (!edge.getTargetVariable().type.isAssignableFrom(edge.getSourceVariable().type)) {
             throw new IllegalArgumentException(
                     "Cannot connect a " + edge.getSourceVariable().type.getSimpleName() + " output to a "
                             + edge.getTargetVariable().type.getSimpleName() + " input");
         }
-        addToSet(outgoingDataEdges, edge.getSourceNode(), edge);
+        boolean added = addToSet(outgoingDataEdges, edge.getSourceNode(), edge);
         addToSet(incomingDataEdges, edge.getTargetNode(), edge);
+        return added;
     }
 
-    public synchronized void removeEdge(Edge edge) {
+    public void removeEdge(Edge edge) {
         Objects.requireNonNull(edge, "edge");
-        removeFromSet(outgoingDataEdges, edge.getSourceNode(), edge);
+        // Deferred through the callback executor for the same reason as registerEdge.
+        if (detachEdge(edge)) {
+            callbackExecutor.execute(() -> edge.getTargetNode().onInputEdgeRemoved(edge));
+        }
+    }
+
+    private synchronized boolean detachEdge(Edge edge) {
+        boolean removed = removeFromSet(outgoingDataEdges, edge.getSourceNode(), edge);
         removeFromSet(incomingDataEdges, edge.getTargetNode(), edge);
+        return removed;
     }
 
     public synchronized Set<Edge> getOutgoingDataEdges(BaseNode node) {
@@ -460,14 +481,12 @@ public class NodeGraph {
         }
     }
 
-    private static <T> void addToSet(Map<BaseNode, Set<T>> map, BaseNode node, T value) {
-        map.computeIfAbsent(node, key -> new HashSet<>()).add(value);
+    private static <T> boolean addToSet(Map<BaseNode, Set<T>> map, BaseNode node, T value) {
+        return map.computeIfAbsent(node, key -> new HashSet<>()).add(value);
     }
 
-    private static <T> void removeFromSet(Map<BaseNode, Set<T>> map, BaseNode node, T value) {
+    private static <T> boolean removeFromSet(Map<BaseNode, Set<T>> map, BaseNode node, T value) {
         Set<T> set = map.get(node);
-        if (set != null) {
-            set.remove(value);
-        }
+        return set != null && set.remove(value);
     }
 }

@@ -255,6 +255,85 @@ class NodeGraphTest {
     }
 
     @Test
+    void assignableButNotExactTypesAreAccepted() {
+        NodeGraph graph = new NodeGraph();
+        ConstantFloatNode constant = new ConstantFloatNode();
+        EdgeHookNode sink = new EdgeHookNode();
+        graph.addNode(constant);
+        graph.addNode(sink);
+
+        // A Float output into an Object input: not an exact type match, but assignable.
+        Edge edge = new Edge(constant, output(constant), sink, sink.anyInput);
+        assertDoesNotThrow(() -> graph.registerEdge(edge));
+    }
+
+    @Test
+    void registeringAndRemovingAnEdgeFiresTheTargetsEdgeHooks() {
+        NodeGraph graph = new NodeGraph();
+        ConstantFloatNode constant = new ConstantFloatNode();
+        EdgeHookNode sink = new EdgeHookNode();
+        graph.addNode(constant);
+        graph.addNode(sink);
+
+        Edge edge = new Edge(constant, output(constant), sink, sink.anyInput);
+        graph.registerEdge(edge);
+        assertEquals(1, sink.added, "onInputEdgeAdded fires when an edge into the node is registered");
+        assertEquals(edge, sink.lastAdded);
+
+        graph.removeEdge(edge);
+        assertEquals(1, sink.removed, "onInputEdgeRemoved fires when that edge is removed");
+        assertEquals(edge, sink.lastRemoved);
+    }
+
+    @Test
+    void deletingASourceNodeFiresTheTargetsEdgeRemovedHook() {
+        NodeGraph graph = new NodeGraph();
+        ConstantFloatNode constant = new ConstantFloatNode();
+        EdgeHookNode sink = new EdgeHookNode();
+        graph.addNode(constant);
+        graph.addNode(sink);
+        graph.registerEdge(new Edge(constant, output(constant), sink, sink.anyInput));
+
+        graph.removeNode(constant);
+
+        assertEquals(1, sink.removed, "cascading an edge removal via node deletion still notifies the target");
+    }
+
+    /** A node with a single Object input that records its edge-hook calls. */
+    private static final class EdgeHookNode extends BaseNode {
+        final NodeVariable<Object> anyInput = new NodeVariable<>("Any", Object.class);
+        int added = 0;
+        int removed = 0;
+        Edge lastAdded;
+        Edge lastRemoved;
+
+        @Override
+        public void process() {
+        }
+
+        @Override
+        public void configureInputs() {
+            addInput(anyInput);
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        protected void onInputEdgeAdded(Edge edge) {
+            added++;
+            lastAdded = edge;
+        }
+
+        @Override
+        protected void onInputEdgeRemoved(Edge edge) {
+            removed++;
+            lastRemoved = edge;
+        }
+    }
+
+    @Test
     void runningBeforeBeingAddedToAGraphFailsClearly() {
         AddNode add = new AddNode();
         assertThrows(IllegalStateException.class, add::beginProcessing);

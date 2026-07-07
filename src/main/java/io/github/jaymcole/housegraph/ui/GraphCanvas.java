@@ -461,9 +461,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     private boolean isValidConnection(PortView a, PortView b) {
-        return a.getOwner() != b.getOwner()
-                && a.getDirection() != b.getDirection()
-                && a.getVariable().type == b.getVariable().type;
+        if (a.getOwner() == b.getOwner() || a.getDirection() == b.getDirection()) {
+            return false;
+        }
+        // A source's value flows into the input, so the input's type only has to be
+        // assignable from the source's - exact matches still pass, and an Object input
+        // (e.g. the decomposer's) accepts anything. Mirrors NodeGraph.attachEdge.
+        PortView output = a.getDirection() == PortView.Direction.OUTPUT ? a : b;
+        PortView input = output == a ? b : a;
+        return input.getVariable().type.isAssignableFrom(output.getVariable().type);
     }
 
     /** The live edge currently feeding a given input port, if any - e.g. so CreateEdgeCommand can capture what it's about to replace. */

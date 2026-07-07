@@ -167,6 +167,34 @@ public abstract class BaseNode {
     }
 
     /**
+     * Called by {@link NodeGraph} right after a data edge whose target is this node is
+     * registered. No-op by default; a node whose ports depend on what's wired into it
+     * (e.g. the object decomposer) overrides this to grow its outputs from the newly
+     * connected source's type. Runs on whatever thread performed the wiring (the UI
+     * thread for user edits), outside the graph's structural lock.
+     */
+    protected void onInputEdgeAdded(Edge edge) {
+    }
+
+    /**
+     * Called by {@link NodeGraph} right after a data edge whose target is this node is
+     * removed (an explicit disconnect, a replaced input, the source node being deleted,
+     * or a view rebuild). No-op by default; the counterpart to {@link #onInputEdgeAdded}.
+     */
+    protected void onInputEdgeRemoved(Edge edge) {
+    }
+
+    /**
+     * The data edges currently feeding this node, or empty if it isn't in a graph. Lets a
+     * node that reacts to its wiring (see {@link #onInputEdgeAdded}) read its <em>current</em>
+     * inputs rather than trust a single hook's edge argument — the reliable choice when the
+     * hooks are dispatched asynchronously and a rebuild may briefly churn edges.
+     */
+    protected Set<Edge> getIncomingDataEdges() {
+        return graph == null ? Set.of() : graph.getIncomingDataEdges(this);
+    }
+
+    /**
      * Node-specific configuration to persist in a save file, beyond input/output
      * values — e.g. a dropdown selection or a chosen key. Empty by default. The values
      * are stored verbatim, so this must never contain a secret (persist the reference,
