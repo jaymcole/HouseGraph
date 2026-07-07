@@ -165,16 +165,21 @@ public final class CameraConfigStore {
 
     private static JSONObject newEntry(DiscoveredCamera camera) {
         JSONObject entry = new JSONObject();
-        entry.put("name", camera.name() == null ? "" : camera.name());
+        entry.put("name", camera.customName() == null ? "" : camera.customName());
         entry.put("model", camera.model() == null ? "" : camera.model());
         entry.put("lastKnownIp", camera.ip());
         return entry;
     }
 
-    /** Refreshes the camera-authoritative fields, preserving everything else; returns whether anything changed. */
+    /**
+     * Refreshes the camera-authoritative fields, preserving everything else; returns whether
+     * anything changed. The camera's app-set {@code customName} and {@code model} come from an
+     * authenticated ONVIF enrichment, so a password-less sweep leaves them null and must not
+     * wipe values a previous authenticated run stored — {@link #setIfObserved} skips nulls.
+     */
     private static boolean updateEntry(JSONObject entry, DiscoveredCamera camera) {
         boolean changed = false;
-        changed |= setIfObserved(entry, "name", camera.name());
+        changed |= setIfObserved(entry, "name", camera.customName());
         changed |= setIfObserved(entry, "model", camera.model());
         changed |= setIfObserved(entry, "lastKnownIp", camera.ip());
         return changed;

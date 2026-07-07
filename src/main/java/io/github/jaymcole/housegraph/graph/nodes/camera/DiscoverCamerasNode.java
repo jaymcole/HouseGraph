@@ -4,6 +4,7 @@ import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.camera.CameraConfigStore;
 import io.github.jaymcole.housegraph.camera.CameraDiscovery;
 import io.github.jaymcole.housegraph.camera.DiscoveredCamera;
+import io.github.jaymcole.housegraph.camera.OnvifEnrichment;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -24,11 +25,24 @@ import java.util.List;
  * Discovery is slow (a multicast wait, and a port-scan fallback), so it runs on the
  * background execution thread rather than freezing the UI. Outputs the number found and
  * the config path; control flows through so you can chain after it.
+ * <p>
+ * WS-Discovery only reveals a camera's raw scopes; the good values — the clean model and the
+ * app-set custom name — need a second, <em>authenticated</em> ONVIF request. So each discovered
+ * camera is enriched via {@link OnvifEnrichment}: with a <b>Password</b> supplied it reads the
+ * camera's app-set name and clean model, and those authoritative values are merged into the
+ * registry. The password is marked secret so it's never written to a save file; wire a Secret
+ * Loader into it rather than typing it in. A camera whose ONVIF service can't be reached (or
+ * that rejects the login) just keeps its discovery values — one bad camera never fails the sweep.
  */
 @Display.Name("Discover Cameras")
 public class DiscoverCamerasNode extends BaseNode implements NodeContentProvider {
 
+    /** Per-request timeout for the authenticated ONVIF enrichment calls. */
+    private static final int ENRICH_TIMEOUT_SECONDS = 5;
+
     private final NodeVariable<Integer> timeout = new NodeVariable<>("Timeout (s)", Integer.class, true);
+    private final NodeVariable<String> username = new NodeVariable<>("Username", String.class, true);
+    private final NodeVariable<String> password = new NodeVariable<>("Password", String.class, true).markSecret();
     private final NodeVariable<Integer> camerasFound = new NodeVariable<>("Cameras Found", Integer.class);
     private final NodeVariable<String> configPath = new NodeVariable<>("Config Path", String.class);
     private final FlowPort flowIn = new FlowPort("", FlowPort.Direction.IN);
@@ -37,14 +51,33 @@ public class DiscoverCamerasNode extends BaseNode implements NodeContentProvider
     private Label statusLabel;
     private String lastStatus;
 
+    public DiscoverCamerasNode() {
+        // Pre-fill the common case so a deep-config sweep works after just supplying a password.
+        username.setValue("admin");
+    }
+
     @Override
     public void process() {
         List<DiscoveredCamera> cameras = CameraDiscovery.discover(timeoutSeconds());
+        enrichCameras(cameras);
         CameraConfigStore.MergeResult result = CameraConfigStore.merge(cameras);
         camerasFound.setValue(cameras.size());
         configPath.setValue(CameraConfigStore.defaultPath().toString());
         lastStatus = cameras.size() + " found — " + result.added() + " new, " + result.updated() + " updated"
                 + (result.skipped() > 0 ? ", " + result.skipped() + " without MAC" : "");
+    }
+
+    /**
+     * Second pass: enrich each camera with its authenticated ONVIF details (clean model, and —
+     * with a password — the app-set name), replacing the discovery entry in-place. A camera
+     * whose ONVIF service can't be reached is left as its discovery result.
+     */
+    private void enrichCameras(List<DiscoveredCamera> cameras) {
+        String user = username.getValue();
+        String pass = password.getValue();
+        for (int i = 0; i < cameras.size(); i++) {
+            cameras.set(i, OnvifEnrichment.enrich(cameras.get(i), user, pass, ENRICH_TIMEOUT_SECONDS));
+        }
     }
 
     private int timeoutSeconds() {
@@ -55,6 +88,8 @@ public class DiscoverCamerasNode extends BaseNode implements NodeContentProvider
     @Override
     public void configureInputs() {
         addInput(timeout);
+        addInput(username);
+        addInput(password);
     }
 
     @Override

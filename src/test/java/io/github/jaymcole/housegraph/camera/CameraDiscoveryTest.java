@@ -6,9 +6,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CameraDiscoveryTest {
 
@@ -34,19 +31,6 @@ class CameraDiscoveryTest {
     @Test
     void normalizesMacToUppercaseColons() {
         assertEquals("BC:09:B9:E5:9C:3C", CameraDiscovery.normalizeMac("bc-09-b9-e5-9c-3c"));
-    }
-
-    @Test
-    void pullsValuesAndReolinkFlagFromScopes() {
-        List<String> scopes = List.of(
-                "onvif://www.onvif.org/name/Reolink",
-                "onvif://www.onvif.org/hardware/RLC-810A",
-                "onvif://www.onvif.org/manufacturer/Reolink");
-        assertEquals("Reolink", CameraDiscovery.scopeValue(scopes, "name"));
-        assertEquals("RLC-810A", CameraDiscovery.scopeValue(scopes, "hardware"));
-        assertNull(CameraDiscovery.scopeValue(scopes, "location"));
-        assertTrue(CameraDiscovery.looksReolink(scopes));
-        assertFalse(CameraDiscovery.looksReolink(List.of("onvif://www.onvif.org/name/SomeCam")));
     }
 
     @Test

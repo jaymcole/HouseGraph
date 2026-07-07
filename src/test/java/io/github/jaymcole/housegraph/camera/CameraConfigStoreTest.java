@@ -21,7 +21,7 @@ class CameraConfigStoreTest {
     void addsANewCameraWithoutStoringCredentials(@TempDir Path dir) throws IOException {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.MergeResult result = CameraConfigStore.merge(
-                List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
+                List.of(enriched("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A")), file);
 
         assertEquals(1, result.added());
         JSONObject entry = registry(file).getJSONObject("BC:09:B9:E5:9C:3C");
@@ -35,7 +35,7 @@ class CameraConfigStoreTest {
     void refreshesIpButPreservesHandAddedFields(@TempDir Path dir) throws IOException {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.merge(
-                List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
+                List.of(enriched("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A")), file);
         // The user annotates the entry by hand with a non-secret field.
         JSONObject data = new JSONObject(Files.readString(file, StandardCharsets.UTF_8));
         data.getJSONObject("cameras").getJSONObject("BC:09:B9:E5:9C:3C").put("notes", "garage");
@@ -43,7 +43,7 @@ class CameraConfigStoreTest {
 
         // Rediscovered at a new IP (DHCP moved it).
         CameraConfigStore.MergeResult result = CameraConfigStore.merge(
-                List.of(new DiscoveredCamera("192.168.1.77", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
+                List.of(enriched("192.168.1.77", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A")), file);
 
         assertEquals(0, result.added());
         assertEquals(1, result.updated());
@@ -53,10 +53,24 @@ class CameraConfigStoreTest {
     }
 
     @Test
+    void preservesDeepConfigNameFromAnAuthenticatedRunAcrossAPasswordlessSweep(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("cameras.json");
+        // First run: enriched with a password, so the app-set name and clean model are known.
+        CameraConfigStore.merge(List.of(enriched("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "Reolink RLC-810A")), file);
+
+        // A later password-less sweep can't read the custom name/model — it must not wipe them.
+        CameraConfigStore.merge(List.of(discovered("192.168.1.50", "BC:09:B9:E5:9C:3C")), file);
+
+        JSONObject entry = registry(file).getJSONObject("BC:09:B9:E5:9C:3C");
+        assertEquals("Front Door", entry.getString("name"), "custom name must not be wiped by a password-less sweep");
+        assertEquals("Reolink RLC-810A", entry.getString("model"));
+    }
+
+    @Test
     void skipsCamerasWithoutAResolvedMac(@TempDir Path dir) {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.MergeResult result = CameraConfigStore.merge(
-                List.of(new DiscoveredCamera("192.168.1.99", null, null, null, false)), file);
+                List.of(discovered("192.168.1.99", null)), file);
 
         assertEquals(0, result.added());
         assertEquals(1, result.skipped());
@@ -69,15 +83,15 @@ class CameraConfigStoreTest {
         Files.writeString(file, "{ not valid json ", StandardCharsets.UTF_8);
 
         assertThrows(RuntimeException.class, () -> CameraConfigStore.merge(
-                List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "x", "y", true)), file));
+                List.of(enriched("192.168.1.50", "BC:09:B9:E5:9C:3C", "x", "y")), file));
     }
 
     @Test
     void listsStoredCamerasSortedByLabel(@TempDir Path dir) {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.merge(List.of(
-                new DiscoveredCamera("192.168.1.50", "AA:AA:AA:AA:AA:AA", "Zebra", "RLC-810A", true),
-                new DiscoveredCamera("192.168.1.51", "BB:BB:BB:BB:BB:BB", "Aardvark", "RLC-820A", true)), file);
+                enriched("192.168.1.50", "AA:AA:AA:AA:AA:AA", "Zebra", "RLC-810A"),
+                enriched("192.168.1.51", "BB:BB:BB:BB:BB:BB", "Aardvark", "RLC-820A")), file);
 
         List<CameraConfigStore.KnownCamera> cameras = CameraConfigStore.list(file);
         assertEquals(2, cameras.size());
@@ -100,7 +114,7 @@ class CameraConfigStoreTest {
     void findReturnsTheCameraByMac(@TempDir Path dir) {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.merge(
-                List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
+                List.of(enriched("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A")), file);
 
         assertTrue(CameraConfigStore.find("BC:09:B9:E5:9C:3C", file).isPresent());
         assertEquals("Front Door", CameraConfigStore.find("BC:09:B9:E5:9C:3C", file).get().label());
@@ -112,13 +126,23 @@ class CameraConfigStoreTest {
     void updateIpChangesOnlyWhenItMoves(@TempDir Path dir) {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.merge(
-                List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
+                List.of(enriched("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A")), file);
 
         assertTrue(CameraConfigStore.updateIp("BC:09:B9:E5:9C:3C", "192.168.1.77", file));
         assertEquals("192.168.1.77", CameraConfigStore.find("BC:09:B9:E5:9C:3C", file).get().lastKnownIp());
 
         assertFalse(CameraConfigStore.updateIp("BC:09:B9:E5:9C:3C", "192.168.1.77", file), "unchanged IP is a no-op");
         assertFalse(CameraConfigStore.updateIp("00:00:00:00:00:00", "192.168.1.99", file), "unknown camera is a no-op");
+    }
+
+    /** A plain discovery result: scopes only, no authenticated name/model. */
+    private static DiscoveredCamera discovered(String ip, String mac) {
+        return new DiscoveredCamera(ip, mac, List.of());
+    }
+
+    /** A discovery result enriched by an authenticated ONVIF poll (app-set name + clean model). */
+    private static DiscoveredCamera enriched(String ip, String mac, String customName, String model) {
+        return new DiscoveredCamera(ip, mac, List.of()).enriched(customName, model, null);
     }
 
     private static JSONObject registry(Path file) {

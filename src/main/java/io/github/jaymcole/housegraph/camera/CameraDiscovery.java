@@ -2,11 +2,12 @@ package io.github.jaymcole.housegraph.camera;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
-import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.MulticastSocket;
 import java.net.NetworkInterface;
 import java.net.SocketTimeoutException;
+import java.net.StandardSocketOptions;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,6 +39,8 @@ public final class CameraDiscovery {
 
     private static final String WS_DISCOVERY_ADDR = "239.255.255.250";
     private static final int WS_DISCOVERY_PORT = 3702;
+    /** Multicast TTL for the probe: 2 hops, so it reaches the local subnet reliably (matches the reference tool). */
+    private static final int MULTICAST_TTL = 2;
     private static final int[] CAMERA_PORTS = {554, 8000, 9000};
     private static final int RTSP_PORT = 554;
 
@@ -72,21 +75,15 @@ public final class CameraDiscovery {
      */
     public static List<DiscoveredCamera> discover(int timeoutSeconds) {
         Map<String, List<String>> scopesByIp = probeOnvif(timeoutSeconds);
-        boolean portScanned = false;
         if (scopesByIp.isEmpty()) {
             scopesByIp = portScan();
-            portScanned = true;
         }
 
         Map<String, String> arp = parseArpTable(runArp());
         List<DiscoveredCamera> cameras = new ArrayList<>();
         for (Map.Entry<String, List<String>> entry : scopesByIp.entrySet()) {
             String ip = entry.getKey();
-            List<String> scopes = entry.getValue();
-            String name = scopeValue(scopes, "name");
-            String model = scopeValue(scopes, "hardware");
-            boolean reolink = portScanned ? false : looksReolink(scopes);
-            cameras.add(new DiscoveredCamera(ip, arp.get(ip), name, model, reolink));
+            cameras.add(new DiscoveredCamera(ip, arp.get(ip), entry.getValue()));
         }
         cameras.sort((a, b) -> compareIps(a.ip(), b.ip()));
         return cameras;
@@ -96,9 +93,23 @@ public final class CameraDiscovery {
 
     private static Map<String, List<String>> probeOnvif(int timeoutSeconds) {
         Map<String, List<String>> found = new LinkedHashMap<>();
+        // Multicast is sent out one interface at a time, so a multi-homed (Wi-Fi + Ethernet)
+        // machine must probe out each local interface explicitly — otherwise a camera behind
+        // the non-default one is silently missed. Bind the socket and its outgoing multicast
+        // interface (IP_MULTICAST_IF) to each address in turn, with a TTL that clears the subnet.
         for (String localIp : localIpv4Addresses()) {
-            try (DatagramSocket socket = new DatagramSocket(new InetSocketAddress(localIp, 0))) {
+            MulticastSocket socket = null;
+            try {
+                socket = new MulticastSocket((java.net.SocketAddress) null);
                 socket.setReuseAddress(true);
+                socket.bind(new InetSocketAddress(localIp, 0));
+                socket.setTimeToLive(MULTICAST_TTL);
+                if (!localIp.equals("0.0.0.0")) {
+                    NetworkInterface iface = NetworkInterface.getByInetAddress(InetAddress.getByName(localIp));
+                    if (iface != null) {
+                        socket.setOption(StandardSocketOptions.IP_MULTICAST_IF, iface);
+                    }
+                }
                 socket.setSoTimeout(Math.max(1, timeoutSeconds) * 1000);
                 byte[] probe = String.format(PROBE, UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
                 socket.send(new DatagramPacket(probe, probe.length,
@@ -120,6 +131,10 @@ public final class CameraDiscovery {
                 }
             } catch (IOException e) {
                 // A busy/unusable interface - just skip it.
+            } finally {
+                if (socket != null) {
+                    socket.close();
+                }
             }
         }
         return found;
@@ -222,27 +237,6 @@ public final class CameraDiscovery {
 
     // --- Scope helpers (testable) -------------------------------------------------
 
-    /** The value after {@code /<key>/} in an ONVIF scope (e.g. {@code onvif://.../name/Reolink} -> {@code Reolink}). */
-    static String scopeValue(List<String> scopes, String key) {
-        String prefix = "/" + key + "/";
-        for (String scope : scopes) {
-            int idx = scope.indexOf(prefix);
-            if (idx != -1) {
-                return trimSlashes(scope.substring(idx + prefix.length()));
-            }
-        }
-        return null;
-    }
-
-    static boolean looksReolink(List<String> scopes) {
-        for (String scope : scopes) {
-            if (scope.toLowerCase().contains("reolink")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /** The whitespace-separated ONVIF service URLs from a WS-Discovery ProbeMatch reply. */
     static List<String> parseXaddrs(String xml) {
         return splitField(XADDRS, xml);
@@ -265,18 +259,6 @@ public final class CameraDiscovery {
     private static Pattern fieldPattern(String tag) {
         return Pattern.compile("<[^>]*\\b" + tag + "\\b[^>]*>(.*?)</[^>]*\\b" + tag + "\\b[^>]*>",
                 Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
-    }
-
-    private static String trimSlashes(String value) {
-        int start = 0;
-        int end = value.length();
-        while (start < end && value.charAt(start) == '/') {
-            start++;
-        }
-        while (end > start && value.charAt(end - 1) == '/') {
-            end--;
-        }
-        return value.substring(start, end);
     }
 
     // --- Local interface enumeration ----------------------------------------------
