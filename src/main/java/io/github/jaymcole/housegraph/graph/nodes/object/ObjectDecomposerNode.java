@@ -23,7 +23,7 @@ import java.util.Map;
  * <p>
  * The reaction is driven by {@link #onInputEdgeAdded}/{@link #onInputEdgeRemoved}, the
  * graph's edge-wiring hooks. The derived property list is persisted via
- * {@link #saveState()}/{@link #loadState()}, so the outputs rebuild on load independently
+ * {@link #saveState()}/{@link #loadState(Map)}, so the outputs rebuild on load independently
  * of the order edges are recreated in.
  */
 @Display.Name("Object Decomposer")
