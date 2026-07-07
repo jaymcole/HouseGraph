@@ -63,7 +63,11 @@ public abstract class BaseNode {
         ensureConfigured();
     }
 
-    /** Set by the UI so a node can ask its on-canvas view to rebuild after its ports change. */
+    /**
+     * Set by the UI so a node can ask its on-canvas view to rebuild after its ports change.
+     *
+     * @param listener the callback to run when this node's ports change, or null to clear it
+     */
     public void setPortsChangedListener(Runnable listener) {
         this.portsChangedListener = listener == null ? () -> {
         } : listener;
@@ -104,6 +108,8 @@ public abstract class BaseNode {
      * start of the pass — for an event-source node to set its outputs from the triggering
      * event's data, captured per-trigger so a burst of events can't overwrite each
      * other's values. See {@link NodeGraph#execute(BaseNode, Runnable)}.
+     *
+     * @param prepare work run on the execution thread at the start of the pass, before this node fires
      */
     protected void execute(Runnable prepare) {
         requireGraph().execute(this, prepare);
@@ -172,6 +178,8 @@ public abstract class BaseNode {
      * (e.g. the object decomposer) overrides this to grow its outputs from the newly
      * connected source's type. Runs on whatever thread performed the wiring (the UI
      * thread for user edits), outside the graph's structural lock.
+     *
+     * @param edge the data edge that was just wired into this node
      */
     protected void onInputEdgeAdded(Edge edge) {
     }
@@ -180,6 +188,8 @@ public abstract class BaseNode {
      * Called by {@link NodeGraph} right after a data edge whose target is this node is
      * removed (an explicit disconnect, a replaced input, the source node being deleted,
      * or a view rebuild). No-op by default; the counterpart to {@link #onInputEdgeAdded}.
+     *
+     * @param edge the data edge that was just removed from this node
      */
     protected void onInputEdgeRemoved(Edge edge) {
     }
@@ -189,6 +199,8 @@ public abstract class BaseNode {
      * node that reacts to its wiring (see {@link #onInputEdgeAdded}) read its <em>current</em>
      * inputs rather than trust a single hook's edge argument — the reliable choice when the
      * hooks are dispatched asynchronously and a rebuild may briefly churn edges.
+     *
+     * @return this node's current incoming data edges, or empty if it isn't in a graph
      */
     protected Set<Edge> getIncomingDataEdges() {
         return graph == null ? Set.of() : graph.getIncomingDataEdges(this);
@@ -199,12 +211,18 @@ public abstract class BaseNode {
      * values — e.g. a dropdown selection or a chosen key. Empty by default. The values
      * are stored verbatim, so this must never contain a secret (persist the reference,
      * not the secret; see {@link NodeVariable#markSecret()}).
+     *
+     * @return this node's persistable configuration, empty by default
      */
     public Map<String, String> saveState() {
         return Map.of();
     }
 
-    /** Restores what {@link #saveState()} produced when a graph is loaded. No-op by default. */
+    /**
+     * Restores what {@link #saveState()} produced when a graph is loaded. No-op by default.
+     *
+     * @param state the previously saved configuration to restore
+     */
     public void loadState(Map<String, String> state) {
     }
 
@@ -232,6 +250,7 @@ public abstract class BaseNode {
      * branch); a node that activates one or more ports fires only those. See
      * {@link NodeGraph}'s cascade logic.
      *
+     * @param port one of this node's own flow-out ports to fire when control cascades out
      * @throws IllegalArgumentException if {@code port} isn't one of this node's own flow-out ports
      */
     protected void activate(FlowPort port) {
@@ -261,7 +280,11 @@ public abstract class BaseNode {
         return Collections.unmodifiableList(flowOutputs);
     }
 
-    /** The node's display name: {@link Display.Name#value()} if the class is annotated with it, else the simple class name. */
+    /**
+     * The node's display name: {@link Display.Name#value()} if the class is annotated with it, else the simple class name.
+     *
+     * @return this node's display name
+     */
     public String getName() {
         Display.Name displayName = getClass().getAnnotation(Display.Name.class);
         if (displayName != null && !displayName.value().isBlank()) {
@@ -270,7 +293,11 @@ public abstract class BaseNode {
         return getClass().getSimpleName();
     }
 
-    /** The exception from the most recent failed process() call, or null if it last succeeded (or hasn't run). */
+    /**
+     * The exception from the most recent failed process() call, or null if it last succeeded (or hasn't run).
+     *
+     * @return the last process() failure, or null
+     */
     public Throwable getLastError() {
         return lastError;
     }

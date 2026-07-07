@@ -36,7 +36,11 @@ public final class AppPreferences {
         this.values = values;
     }
 
-    /** Loads the machine's preferences from {@link AppDirectories#config()}. */
+    /**
+     * Loads the machine's preferences from {@link AppDirectories#config()}.
+     *
+     * @return the loaded preferences (empty if the file is missing or unreadable)
+     */
     public static AppPreferences load() {
         return loadFrom(AppDirectories.get().config().resolve(FILE));
     }

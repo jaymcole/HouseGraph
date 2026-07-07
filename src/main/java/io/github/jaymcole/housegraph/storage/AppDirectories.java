@@ -40,7 +40,11 @@ public final class AppDirectories {
 
     private static volatile AppDirectories defaultInstance;
 
-    /** The shared instance rooted at this machine's HouseGraph directory (resolved once). */
+    /**
+     * The shared instance rooted at this machine's HouseGraph directory (resolved once).
+     *
+     * @return the shared machine-wide instance
+     */
     public static AppDirectories get() {
         AppDirectories local = defaultInstance;
         if (local == null) {
@@ -61,17 +65,29 @@ public final class AppDirectories {
 
     // --- Directory accessors (each created on demand) -----------------------------
 
-    /** The application root directory. */
+    /**
+     * The application root directory.
+     *
+     * @return the root directory, created if needed
+     */
     public Path root() {
         return ensure(root);
     }
 
-    /** Secret files (e.g. a {@code .env}) that shouldn't live in a project or a save. */
+    /**
+     * Secret files (e.g. a {@code .env}) that shouldn't live in a project or a save.
+     *
+     * @return the secrets directory, created if needed
+     */
     public Path secrets() {
         return ensure(root.resolve("secrets"));
     }
 
-    /** Root of per-node persistent storage; see {@link #nodeStorage(String)}. */
+    /**
+     * Root of per-node persistent storage; see {@link #nodeStorage(String)}.
+     *
+     * @return the nodes storage root, created if needed
+     */
     public Path nodes() {
         return ensure(root.resolve("nodes"));
     }
@@ -80,22 +96,37 @@ public final class AppDirectories {
      * A private storage directory for one node, under {@link #nodes()}, keyed by a
      * caller-chosen string (e.g. the node's class name). The key is sanitised so it
      * can never escape the nodes directory.
+     *
+     * @param key a caller-chosen storage key (sanitised to a single safe path segment)
+     * @return the private per-node directory for {@code key}, created if needed
      */
     public Path nodeStorage(String key) {
         return ensure(nodes().resolve(sanitize(key)));
     }
 
-    /** Default location for user-saved graph files (the save/open dialog starts here). */
+    /**
+     * Default location for user-saved graph files (the save/open dialog starts here).
+     *
+     * @return the saves directory, created if needed
+     */
     public Path saves() {
         return ensure(root.resolve("saves"));
     }
 
-    /** Preferences / UX state (recent files, window layout, …). */
+    /**
+     * Preferences / UX state (recent files, window layout, …).
+     *
+     * @return the config directory, created if needed
+     */
     public Path config() {
         return ensure(root.resolve("config"));
     }
 
-    /** Regenerable files (thumbnails, derived data, …) — safe to delete. */
+    /**
+     * Regenerable files (thumbnails, derived data, …) — safe to delete.
+     *
+     * @return the cache directory, created if needed
+     */
     public Path cache() {
         return ensure(root.resolve("cache"));
     }

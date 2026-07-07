@@ -27,7 +27,12 @@ import java.util.Map;
  */
 public final class ObjectProperties {
 
-    /** One readable property: the name it's exposed under and its declared value type. */
+    /**
+     * One readable property: the name it's exposed under and its declared value type.
+     *
+     * @param name the name the property is exposed under
+     * @param type the property's declared value type
+     */
     public record Property(String name, Class<?> type) {
     }
 

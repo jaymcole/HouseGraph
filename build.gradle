@@ -40,3 +40,11 @@ dependencies {
 test {
     useJUnitPlatform()
 }
+
+javadoc {
+    // Keep the doclint checks that catch real mistakes (broken @link references, bad HTML,
+    // syntax), but drop the "missing" group: this codebase documents at the class level and
+    // deliberately leaves trivial getters/setters, abstract stubs, and record boilerplate
+    // uncommented. Records and key public API still carry @param/@return where it adds value.
+    options.addStringOption('Xdoclint:all,-missing', '-quiet')
+}
