@@ -13,6 +13,7 @@ out/
 .env
 .env.*
 !.env.example
+wifi_secrets.h
 
 # OS
 .DS_Store
