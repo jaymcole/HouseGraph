@@ -4,12 +4,14 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import javafx.geometry.Point2D;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
+import javafx.scene.control.Tooltip;
 import javafx.scene.effect.BlurType;
 import javafx.scene.effect.DropShadow;
 import javafx.scene.effect.Effect;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Polygon;
 import javafx.scene.shape.StrokeType;
+import javafx.util.Duration;
 
 /**
  * Control-flow anchor point rendered as a small triangle at the top-left (IN) or
@@ -56,6 +58,23 @@ public class FlowPortView extends Polygon implements EdgeAnchor {
         setCursor(Cursor.CROSSHAIR);
         setOnMouseEntered(event -> setHighlighted(true));
         setOnMouseExited(event -> setHighlighted(false));
+        installTooltip();
+    }
+
+    /**
+     * Flow ports carry no data type, so instead of a "type" the tooltip states the one
+     * thing they signal: whether control enters ({@code IN}) or leaves ({@code OUT})
+     * the node here. When the backing {@link FlowPort} is named (a node with more than
+     * one out-branch), the name is included so the branches can be told apart on hover.
+     */
+    private void installTooltip() {
+        String flow = flowPort.direction == FlowPort.Direction.IN ? "Flow in" : "Flow out";
+        String text = flowPort.name == null || flowPort.name.isBlank()
+                ? flow
+                : flow + ": " + flowPort.name;
+        Tooltip tooltip = new Tooltip(text);
+        tooltip.setShowDelay(Duration.millis(300));
+        Tooltip.install(this, tooltip);
     }
 
     /**

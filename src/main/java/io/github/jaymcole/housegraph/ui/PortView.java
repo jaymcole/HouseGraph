@@ -7,6 +7,8 @@ import javafx.scene.Cursor;
 import javafx.scene.Group;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
+import javafx.util.Duration;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.paint.Color;
@@ -63,6 +65,7 @@ public class PortView extends HBox implements EdgeAnchor {
         circle.setCursor(Cursor.CROSSHAIR);
         circle.setOnMouseEntered(event -> setHighlighted(true));
         circle.setOnMouseExited(event -> setHighlighted(false));
+        installTypeTooltip();
 
         label = new Label(variable.name);
         label.setStyle("-fx-text-fill: #dddddd; -fx-font-size: 11px;");
@@ -220,6 +223,19 @@ public class PortView extends HBox implements EdgeAnchor {
     public void setInvalid(boolean invalid) {
         this.invalid = invalid;
         applyVisualState();
+    }
+
+    /**
+     * Shows the port's data type on hover over the anchor circle: what an OUTPUT port
+     * produces or what an INPUT port expects to be fed. Type names are the plain
+     * {@link Class#getSimpleName() simple name} (e.g. {@code String}, {@code Float}),
+     * which is what matters when deciding whether two ports can be wired together.
+     */
+    private void installTypeTooltip() {
+        String verb = direction == Direction.OUTPUT ? "Outputs" : "Expects";
+        Tooltip tooltip = new Tooltip(verb + ": " + variable.type.getSimpleName());
+        tooltip.setShowDelay(Duration.millis(300));
+        Tooltip.install(circle, tooltip);
     }
 
     private void applyVisualState() {
