@@ -37,10 +37,19 @@ public final class ReolinkClient {
      * The detection state read from a camera in one poll. Each flag is whether that kind of
      * thing is being detected <em>right now</em>; {@link #animal} folds Reolink's
      * {@code dog_cat} category, and {@link #motion} is the plain (non-AI) motion signal.
+     *
+     * @param human   whether a person is being detected right now
+     * @param vehicle whether a vehicle is being detected right now
+     * @param animal  whether an animal (Reolink's {@code dog_cat}) is being detected right now
+     * @param motion  whether plain (non-AI) motion is being detected right now
      */
     public record DetectionState(boolean human, boolean vehicle, boolean animal, boolean motion) {
 
-        /** Whether anything at all is currently detected. */
+        /**
+         * Whether anything at all is currently detected.
+         *
+         * @return true if any of the detection flags is set
+         */
         public boolean anyDetected() {
             return human || vehicle || animal || motion;
         }

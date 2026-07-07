@@ -14,6 +14,12 @@ import java.util.List;
  * the app-set name and the clean model string — but they can only be read from an
  * <em>authenticated</em> ONVIF request (see {@link OnvifEnrichment}), so they are null until a
  * camera has been enriched with a password.
+ *
+ * @param ip         the camera's current IP address
+ * @param mac        the stable hardware MAC (identity), or null if it couldn't be resolved
+ * @param scopes     the raw ONVIF scope URIs advertised by the camera
+ * @param customName the app-set custom name, or null until authenticated-enriched
+ * @param model      the clean model string, or null until authenticated-enriched
  */
 public record DiscoveredCamera(String ip, String mac, List<String> scopes, String customName, String model) {
 

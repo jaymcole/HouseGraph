@@ -39,13 +39,19 @@ public class NodeVariable<T> {
      * Marks this variable as holding a secret, so persistence never writes its value to
      * disk (see the graph's file IO). Fluent, for use at field initialisation:
      * {@code new NodeVariable<>("Value", String.class).markSecret()}.
+     *
+     * @return this variable, for chaining
      */
     public NodeVariable<T> markSecret() {
         this.secret = true;
         return this;
     }
 
-    /** Whether this variable's value must be kept out of save files. */
+    /**
+     * Whether this variable's value must be kept out of save files.
+     *
+     * @return true if this variable holds a secret
+     */
     public boolean isSecret() {
         return secret;
     }
@@ -54,13 +60,19 @@ public class NodeVariable<T> {
      * Marks this variable as holding a live runtime object that only makes sense during
      * one execution pass (e.g. a Discord reply handle) and must never be persisted.
      * Like {@link #markSecret()}, its value is written as null to save files. Fluent.
+     *
+     * @return this variable, for chaining
      */
     public NodeVariable<T> transientValue() {
         this.transientValue = true;
         return this;
     }
 
-    /** Whether this variable's value is runtime-only and must not be written to save files. */
+    /**
+     * Whether this variable's value is runtime-only and must not be written to save files.
+     *
+     * @return true if this variable holds a transient runtime value
+     */
     public boolean isTransient() {
         return transientValue;
     }
@@ -74,6 +86,8 @@ public class NodeVariable<T> {
      * reaches the writer, and — with the {@link #markSecret() secret}/{@link #transientValue()
      * transient} exclusions still applied on top — makes it impossible for a secret to slip
      * to disk just because some node happened to expose it as an output.
+     *
+     * @return true if this variable's value should be written to save files
      */
     public boolean isPersistentValue() {
         return manuallyEditable && !secret && !transientValue;

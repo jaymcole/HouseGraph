@@ -34,12 +34,21 @@ public final class CameraConfigStore {
     private CameraConfigStore() {
     }
 
-    /** The default registry location under {@link AppDirectories#config()}. */
+    /**
+     * The default registry location under {@link AppDirectories#config()}.
+     *
+     * @return the path of the default {@code cameras.json}
+     */
     public static Path defaultPath() {
         return AppDirectories.get().config().resolve(FILE);
     }
 
-    /** Merges discovered cameras into the default registry; see {@link #merge(List, Path)}. */
+    /**
+     * Merges discovered cameras into the default registry; see {@link #merge(List, Path)}.
+     *
+     * @param cameras the cameras to merge in
+     * @return counts of how many were added, updated, or skipped
+     */
     public static MergeResult merge(List<DiscoveredCamera> cameras) {
         return merge(cameras, defaultPath());
     }
@@ -80,7 +89,11 @@ public final class CameraConfigStore {
         return new MergeResult(added, updated, skipped);
     }
 
-    /** The known cameras from the default registry, sorted by display label; see {@link #list(Path)}. */
+    /**
+     * The known cameras from the default registry, sorted by display label; see {@link #list(Path)}.
+     *
+     * @return the known cameras, sorted by display label
+     */
     public static List<KnownCamera> list() {
         return list(defaultPath());
     }
@@ -107,7 +120,12 @@ public final class CameraConfigStore {
         return cameras;
     }
 
-    /** The known camera with this MAC, or empty if none (or {@code mac} is null). */
+    /**
+     * The known camera with this MAC, or empty if none (or {@code mac} is null).
+     *
+     * @param mac the MAC to look up
+     * @return the matching camera, or empty if none
+     */
     public static Optional<KnownCamera> find(String mac) {
         return find(mac, defaultPath());
     }
@@ -119,7 +137,13 @@ public final class CameraConfigStore {
         return list(file).stream().filter(camera -> camera.mac().equals(mac)).findFirst();
     }
 
-    /** Records a camera's current IP in the default registry; see {@link #updateIp(String, String, Path)}. */
+    /**
+     * Records a camera's current IP in the default registry; see {@link #updateIp(String, String, Path)}.
+     *
+     * @param mac   the MAC of the camera to update
+     * @param newIp the newly observed IP address
+     * @return whether the registry changed
+     */
     public static boolean updateIp(String mac, String newIp) {
         return updateIp(mac, newIp, defaultPath());
     }
@@ -216,7 +240,13 @@ public final class CameraConfigStore {
         }
     }
 
-    /** Outcome of a merge: how many cameras were newly added, refreshed, or skipped (no MAC). */
+    /**
+     * Outcome of a merge: how many cameras were newly added, refreshed, or skipped (no MAC).
+     *
+     * @param added   how many cameras were newly added
+     * @param updated how many existing cameras were refreshed
+     * @param skipped how many were skipped for having no resolved MAC
+     */
     public record MergeResult(int added, int updated, int skipped) {
     }
 
@@ -224,10 +254,19 @@ public final class CameraConfigStore {
      * One camera as stored in the registry, keyed by its stable {@code mac}. The
      * {@code lastKnownIp} is where it was last seen — a starting point that may be stale if
      * DHCP has since moved it (see {@link #updateIp}).
+     *
+     * @param mac         the camera's stable hardware MAC (its registry key)
+     * @param name        the display name, or empty
+     * @param model       the model string, or empty
+     * @param lastKnownIp where the camera was last seen, possibly stale
      */
     public record KnownCamera(String mac, String name, String model, String lastKnownIp) {
 
-        /** The best human-readable label available, falling back to the model then the MAC. */
+        /**
+         * The best human-readable label available, falling back to the model then the MAC.
+         *
+         * @return the name if set, else the model, else the MAC
+         */
         public String label() {
             if (name != null && !name.isBlank()) {
                 return name;

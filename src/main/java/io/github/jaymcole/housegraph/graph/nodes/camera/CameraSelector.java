@@ -33,7 +33,11 @@ public final class CameraSelector {
 
     private volatile String selectedMac;
 
-    /** An action run against a resolved camera host (e.g. a Reolink poll); see {@link #withHost}. */
+    /**
+     * An action run against a resolved camera host (e.g. a Reolink poll); see {@link #withHost}.
+     *
+     * @param <T> the type the action returns
+     */
     @FunctionalInterface
     public interface HostAction<T> {
         T apply(String host);

@@ -72,6 +72,7 @@ public final class CameraDiscovery {
      * then MAC resolution. Cameras are keyed/deduped by IP and sorted by IP.
      *
      * @param timeoutSeconds how long to listen for ONVIF replies
+     * @return the discovered cameras, deduped and sorted by IP
      */
     public static List<DiscoveredCamera> discover(int timeoutSeconds) {
         Map<String, List<String>> scopesByIp = probeOnvif(timeoutSeconds);

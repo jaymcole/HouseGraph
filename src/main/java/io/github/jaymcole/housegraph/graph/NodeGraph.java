@@ -108,7 +108,11 @@ public class NodeGraph {
         executionListeners.add(Objects.requireNonNull(listener, "listener"));
     }
 
-    /** How node/edge execution callbacks get from the background execution thread to wherever they need to run. */
+    /**
+     * How node/edge execution callbacks get from the background execution thread to wherever they need to run.
+     *
+     * @param callbackExecutor the executor used to dispatch execution callbacks (e.g. {@code Platform::runLater})
+     */
     public void setCallbackExecutor(Executor callbackExecutor) {
         this.callbackExecutor = Objects.requireNonNull(callbackExecutor, "callbackExecutor");
     }
@@ -269,6 +273,7 @@ public class NodeGraph {
      * nodes' statuses are reset first, so this never serves a stale cached value.
      * Blocks the calling thread until the pull completes (see the class Javadoc).
      *
+     * @param node the node to resolve
      * @throws IllegalStateException if the data edges form a cycle
      */
     public void resolve(BaseNode node) {
@@ -281,6 +286,8 @@ public class NodeGraph {
      * via two different flow paths in the same pass only runs once. Runs on a
      * background thread and returns immediately - the point of this being the trigger
      * path is that a slow node in the graph doesn't block whoever called this.
+     *
+     * @param node the node to trigger
      */
     public void execute(BaseNode node) {
         execute(node, NO_PREPARATION);
@@ -294,6 +301,9 @@ public class NodeGraph {
      * pass, so a burst of events can't clobber one another's values through a shared
      * field (which they could if the value were written from the event thread before the
      * pass ran).
+     *
+     * @param node    the node to trigger
+     * @param prepare work run on the execution thread at the very start of the pass
      */
     public void execute(BaseNode node, Runnable prepare) {
         executionExecutor.execute(() -> {
