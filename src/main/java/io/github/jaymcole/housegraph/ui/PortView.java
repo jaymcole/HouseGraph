@@ -45,6 +45,7 @@ public class PortView extends HBox implements EdgeAnchor {
     private int connectionCount = 0;
     private boolean highlighted = false;
     private boolean invalid = false;
+    private boolean editing = false;
 
     public PortView(NodeView owner, NodeVariable<?> variable, Direction direction) {
         this.owner = owner;
@@ -67,6 +68,13 @@ public class PortView extends HBox implements EdgeAnchor {
         label.setStyle("-fx-text-fill: #dddddd; -fx-font-size: 11px;");
 
         valueField = isEditable(variable) ? createValueField() : null;
+
+        // For editable ports the label doubles as a click target that swaps itself out
+        // for the inline field, so hint that it's interactive.
+        if (valueField != null) {
+            label.setCursor(Cursor.TEXT);
+            label.setOnMouseClicked(event -> startEditing());
+        }
 
         setSpacing(6);
         if (direction == Direction.INPUT) {
@@ -106,10 +114,27 @@ public class PortView extends HBox implements EdgeAnchor {
         field.setOnAction(event -> commitValue());
         field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
             if (!isFocused) {
+                editing = false;
                 commitValue();
+                // An empty field collapses back to just the label; a field with a value
+                // stays visible so the value isn't hidden away behind a label click.
+                updateFieldVisibility();
             }
         });
         return field;
+    }
+
+    /**
+     * Reveals the inline field (if this port has one and can currently show it) in place
+     * of the label and moves the caret into it. Triggered by clicking the label.
+     */
+    private void startEditing() {
+        if (valueField == null || !fieldAllowed()) {
+            return;
+        }
+        editing = true;
+        updateFieldVisibility();
+        valueField.requestFocus();
     }
 
     @SuppressWarnings("unchecked")
@@ -146,20 +171,29 @@ public class PortView extends HBox implements EdgeAnchor {
         updateFieldVisibility();
     }
 
+    /**
+     * Whether this port is allowed to show its inline field at all. Outputs still make
+     * sense to edit manually even when wired (e.g. overriding a constant that also feeds
+     * an edge); only inputs hide the field once connected, since a connected input's
+     * value comes from upstream instead.
+     */
+    private boolean fieldAllowed() {
+        return direction == Direction.OUTPUT || connectionCount == 0;
+    }
+
     private void updateFieldVisibility() {
         if (valueField == null) {
             return;
         }
-        // Outputs still make sense to edit manually even when wired (e.g. overriding a
-        // constant that also feeds an edge); only inputs hide the field once connected,
-        // since a connected input's value comes from upstream instead.
-        boolean showField = direction == Direction.OUTPUT || connectionCount == 0;
+        // The field only replaces the label while it's being edited or already holds a
+        // value; otherwise the port shows just its name label until the user clicks it.
+        boolean hasValue = !valueField.getText().isBlank();
+        boolean showField = fieldAllowed() && (editing || hasValue);
         valueField.setVisible(showField);
         valueField.setManaged(showField);
 
-        // The name label and the value field would otherwise compete for the same
-        // cramped row (truncating into "..."); the field already makes the variable's
-        // purpose clear, so hide the label whenever the field is the one showing.
+        // The name label and the value field compete for the same cramped row, so only
+        // one is ever shown at a time.
         label.setVisible(!showField);
         label.setManaged(!showField);
     }
