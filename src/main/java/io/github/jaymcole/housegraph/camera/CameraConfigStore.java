@@ -13,12 +13,15 @@ import java.util.List;
 
 /**
  * Reads/merges/writes the camera registry — a JSON file keyed by camera MAC, each entry
- * {@code { name, model, lastKnownIp, password }}. Merging is non-destructive: a
- * rediscovered camera refreshes its {@code name}/{@code model}/{@code lastKnownIp} from
- * what was observed, a brand-new one is added with a blank password, and anything you'd
- * added yourself (the password, extra fields) is left untouched. Cameras with no resolved
- * MAC are skipped (no stable key). A malformed existing file is refused rather than
- * clobbered, so live passwords can't be lost.
+ * {@code { name, model, lastKnownIp }}. Merging is non-destructive: a rediscovered camera
+ * refreshes its {@code name}/{@code model}/{@code lastKnownIp} from what was observed, a
+ * brand-new one is added, and anything you'd added yourself (extra fields) is left
+ * untouched. Cameras with no resolved MAC are skipped (no stable key). A malformed existing
+ * file is refused rather than clobbered.
+ * <p>
+ * This file is <em>not</em> encrypted, so it deliberately holds no credentials. A camera's
+ * password is a secret: store it in the encrypted {@code SecretsStore} and feed it to a
+ * camera node's Password input via a Secret Loader.
  */
 public final class CameraConfigStore {
 
@@ -78,7 +81,6 @@ public final class CameraConfigStore {
         entry.put("name", camera.name() == null ? "" : camera.name());
         entry.put("model", camera.model() == null ? "" : camera.model());
         entry.put("lastKnownIp", camera.ip());
-        entry.put("password", "");
         return entry;
     }
 

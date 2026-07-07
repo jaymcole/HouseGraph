@@ -11,13 +11,14 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CameraConfigStoreTest {
 
     @Test
-    void addsANewCameraWithABlankPassword(@TempDir Path dir) throws IOException {
+    void addsANewCameraWithoutStoringCredentials(@TempDir Path dir) throws IOException {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.MergeResult result = CameraConfigStore.merge(
                 List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
@@ -26,17 +27,18 @@ class CameraConfigStoreTest {
         JSONObject entry = registry(file).getJSONObject("BC:09:B9:E5:9C:3C");
         assertEquals("Front Door", entry.getString("name"));
         assertEquals("192.168.1.50", entry.getString("lastKnownIp"));
-        assertEquals("", entry.getString("password"));
+        // Credentials live in the encrypted SecretsStore, never this plaintext file.
+        assertFalse(entry.has("password"), "the unencrypted registry must not carry a password");
     }
 
     @Test
-    void refreshesIpButPreservesAnAddedPassword(@TempDir Path dir) throws IOException {
+    void refreshesIpButPreservesHandAddedFields(@TempDir Path dir) throws IOException {
         Path file = dir.resolve("cameras.json");
         CameraConfigStore.merge(
                 List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
-        // The user fills in a password by hand.
+        // The user annotates the entry by hand with a non-secret field.
         JSONObject data = new JSONObject(Files.readString(file, StandardCharsets.UTF_8));
-        data.getJSONObject("cameras").getJSONObject("BC:09:B9:E5:9C:3C").put("password", "hunter2");
+        data.getJSONObject("cameras").getJSONObject("BC:09:B9:E5:9C:3C").put("notes", "garage");
         Files.writeString(file, data.toString(), StandardCharsets.UTF_8);
 
         // Rediscovered at a new IP (DHCP moved it).
@@ -47,7 +49,7 @@ class CameraConfigStoreTest {
         assertEquals(1, result.updated());
         JSONObject entry = registry(file).getJSONObject("BC:09:B9:E5:9C:3C");
         assertEquals("192.168.1.77", entry.getString("lastKnownIp"), "IP should be refreshed");
-        assertEquals("hunter2", entry.getString("password"), "the hand-entered password must survive");
+        assertEquals("garage", entry.getString("notes"), "the hand-added field must survive");
     }
 
     @Test
