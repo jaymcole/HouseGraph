@@ -5,6 +5,7 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import io.github.jaymcole.housegraph.graph.nodes.loader.SecretLoaderNode;
+import io.github.jaymcole.housegraph.graph.nodes.object.ObjectDecomposerNode;
 import javafx.geometry.Point2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -111,7 +112,7 @@ class GraphFileIOTest {
     }
 
     @Test
-    void aSecretMarkedValueIsNeverWrittenToTheSaveFile() {
+    void anAuthoredValueIsWrittenButAnAuthoredSecretIsNot() {
         SecretHolder node = new SecretHolder();
         node.plain.setValue("visible");
         node.secret.setValue("TOP_SECRET");
@@ -120,9 +121,51 @@ class GraphFileIOTest {
                 List.of(new GraphCanvas.ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
 
         JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
-        assertEquals("visible", outputs.get(0), "a normal value is still written");
-        assertTrue(outputs.isNull(1), "the secret's slot is null");
+        assertEquals("visible", outputs.get(0), "a manually-authored value is still written");
+        assertTrue(outputs.isNull(1), "the secret's slot is null even though it's authored");
         assertFalse(json.toString().contains("TOP_SECRET"), "the secret value must appear nowhere in the file");
+    }
+
+    @Test
+    void computedOutputValuesAreNotWrittenAndNonFiniteNumbersDontBreakSaving() {
+        // A decomposer-style computed output holding a non-finite float used to blow up the
+        // save (org.json rejects Infinity/NaN). Computed (non-editable) values are no longer
+        // written at all, so saving succeeds and the slot is simply null.
+        ComputedHolder node = new ComputedHolder();
+        node.value.setValue(Float.POSITIVE_INFINITY);
+
+        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
+
+        JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
+        assertTrue(outputs.isNull(0), "a computed value is not written to disk");
+        assertFalse(json.toString().toLowerCase().contains("infinity"), "no non-finite number reaches the file");
+    }
+
+    @Test
+    void dynamicOutputsAreRebuiltFromNodeStateOnLoad() {
+        // A decomposer's outputs come from its saved state (the property list), not from
+        // any wired edge. On load the state must be restored before the ports are first
+        // configured, or the outputs come back empty. Emulates a decomposer that had a
+        // record-typed source with "title"/"size" properties.
+        JSONObject nodeJson = new JSONObject();
+        nodeJson.put("type", ObjectDecomposerNode.class.getName());
+        nodeJson.put("x", 0.0);
+        nodeJson.put("y", 0.0);
+        nodeJson.put("inputs", new JSONArray(List.of(JSONObject.NULL)));
+        nodeJson.put("outputs", new JSONArray());
+        nodeJson.put("state", new JSONObject(Map.of("properties", "title:java.lang.String, size:java.lang.Integer")));
+
+        JSONObject root = new JSONObject();
+        root.put("nodes", new JSONArray(List.of(nodeJson)));
+        root.put("dataEdges", new JSONArray());
+        root.put("flowEdges", new JSONArray());
+
+        GraphCanvas.GraphSnapshot snapshot = GraphFileIO.fromJson(root);
+
+        BaseNode loaded = snapshot.nodes().get(0).node();
+        List<String> outputNames = loaded.getOutputs().stream().map(variable -> variable.name).toList();
+        assertEquals(List.of("title", "size"), outputNames, "decomposer outputs must regenerate from saved state on load");
     }
 
     @Test
@@ -143,10 +186,10 @@ class GraphFileIOTest {
         return GraphFileIO.fromJson(new JSONObject(new JSONTokener(text)));
     }
 
-    /** A node with one normal and one secret output, for checking secrets don't get serialised. */
+    /** A node with one authored and one authored-secret output, for checking secrets don't get serialised. */
     private static final class SecretHolder extends BaseNode {
-        final NodeVariable<String> plain = new NodeVariable<>("Plain", String.class);
-        final NodeVariable<String> secret = new NodeVariable<>("Secret", String.class).markSecret();
+        final NodeVariable<String> plain = new NodeVariable<>("Plain", String.class, true);
+        final NodeVariable<String> secret = new NodeVariable<>("Secret", String.class, true).markSecret();
 
         @Override
         public void process() {
@@ -160,6 +203,24 @@ class GraphFileIOTest {
         public void configureOutputs() {
             addOutput(plain);
             addOutput(secret);
+        }
+    }
+
+    /** A node with a single computed (non-editable) output, for checking computed values aren't serialised. */
+    private static final class ComputedHolder extends BaseNode {
+        final NodeVariable<Float> value = new NodeVariable<>("Value", Float.class);
+
+        @Override
+        public void process() {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+            addOutput(value);
         }
     }
 }

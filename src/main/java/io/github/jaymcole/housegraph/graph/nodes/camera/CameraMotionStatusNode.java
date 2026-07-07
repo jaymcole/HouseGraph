@@ -6,6 +6,12 @@ import io.github.jaymcole.housegraph.camera.ReolinkClient.DetectionState;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.ui.NodeContentProvider;
+import javafx.scene.Node;
+import javafx.scene.control.Label;
+import javafx.scene.layout.VBox;
+
+import java.util.Map;
 
 /**
  * Polls a Reolink camera for what it's currently detecting and exposes the result as a
@@ -20,15 +26,16 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
  * reached or rejects the login, process() fails for that pass (surfaced as the node's
  * error) rather than reporting a stale or false "none".
  * <p>
- * The Password input is marked secret so it's never written to a save file; rather than
- * typing it in, wire a Secret Loader into it so the credential stays in the encrypted
- * secrets store. The Host is the camera's IP or hostname; prefix it with {@code https://}
- * for a camera reachable only over TLS.
+ * The camera is picked from a dropdown of those known to the registry (populate it with
+ * Discover Cameras); the node starts from that camera's last known IP and, if it can't be
+ * reached there, rediscovers it by MAC and updates the cached address — see
+ * {@link CameraSelector}. The Password input is marked secret so it's never written to a
+ * save file; rather than typing it in, wire a Secret Loader into it so the credential stays
+ * in the encrypted secrets store.
  */
 @Display.Name("Camera Motion Status")
-public class CameraMotionStatusNode extends BaseNode {
+public class CameraMotionStatusNode extends BaseNode implements NodeContentProvider {
 
-    private final NodeVariable<String> host = new NodeVariable<>("Host", String.class, true);
     private final NodeVariable<String> username = new NodeVariable<>("Username", String.class, true);
     private final NodeVariable<String> password = new NodeVariable<>("Password", String.class, true).markSecret();
     private final NodeVariable<Integer> channel = new NodeVariable<>("Channel", Integer.class, true);
@@ -39,19 +46,17 @@ public class CameraMotionStatusNode extends BaseNode {
     private final FlowPort in = new FlowPort("", FlowPort.Direction.IN);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
 
+    private final CameraSelector camera = new CameraSelector();
+
     public CameraMotionStatusNode() {
-        // Pre-fill the common case so the node works after just entering host + password.
+        // Pre-fill the common case so the node works after just picking a camera + password.
         username.setValue("admin");
     }
 
     @Override
     public void process() {
-        DetectionState state = ReolinkClient.poll(
-                host.getValue(),
-                username.getValue(),
-                password.getValue(),
-                channelValue(),
-                5);
+        DetectionState state = camera.withHost(host ->
+                ReolinkClient.poll(host, username.getValue(), password.getValue(), channelValue(), 5));
         status.setValue(state.topStatus());
         detected.setValue(state.anyDetected() ? 1f : 0f);
     }
@@ -63,7 +68,6 @@ public class CameraMotionStatusNode extends BaseNode {
 
     @Override
     public void configureInputs() {
-        addInput(host);
         addInput(username);
         addInput(password);
         addInput(channel);
@@ -83,5 +87,24 @@ public class CameraMotionStatusNode extends BaseNode {
     @Override
     public void configureFlowOutputs() {
         addFlowOutput(out);
+    }
+
+    @Override
+    public Map<String, String> saveState() {
+        return camera.saveState();
+    }
+
+    @Override
+    public void loadState(Map<String, String> state) {
+        camera.loadState(state);
+    }
+
+    @Override
+    public Node createNodeContent() {
+        Label label = new Label("Camera");
+        label.setStyle("-fx-text-fill: #aaaaaa; -fx-font-size: 10px;");
+        VBox box = new VBox(2, label, camera.buildComboBox());
+        box.setMaxWidth(Double.MAX_VALUE);
+        return box;
     }
 }

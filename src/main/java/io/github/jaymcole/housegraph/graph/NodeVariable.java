@@ -65,4 +65,18 @@ public class NodeVariable<T> {
         return transientValue;
     }
 
+    /**
+     * Whether this variable's value is written to save files. Only manually-authored values
+     * (a constant, a typed-in config field) persist; everything a node <em>computes</em> is
+     * left out and recomputed on the next run instead. This "don't save computed values"
+     * default is deliberate: it keeps stale/derived data out of the file, means a value that
+     * can't be serialised (e.g. a non-finite float a decomposer read off some object) never
+     * reaches the writer, and — with the {@link #markSecret() secret}/{@link #transientValue()
+     * transient} exclusions still applied on top — makes it impossible for a secret to slip
+     * to disk just because some node happened to expose it as an output.
+     */
+    public boolean isPersistentValue() {
+        return manuallyEditable && !secret && !transientValue;
+    }
+
 }

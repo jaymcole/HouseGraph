@@ -268,7 +268,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      */
     private void rebuildNodeView(BaseNode node) {
         NodeView oldView = nodeViewByNode.get(node);
-        if (oldView == null) {
+        // Skip if the node has left the graph. A ports-changed request can arrive late -
+        // e.g. a decomposer's edge-removed hook is dispatched asynchronously and only runs
+        // after the graph was torn down on app close - by which point rebuilding its view
+        // (and trying to re-wire edges to its now-unregistered neighbours) is both pointless
+        // and would throw.
+        if (oldView == null || !graph.getNodes().contains(node)) {
             return;
         }
         double x = oldView.getLayoutX();
@@ -319,7 +324,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             FlowPortView port = flowPortViews.get(captured.portIndex());
             FlowPortView source = captured.nodeIsSource() ? port : captured.otherPort();
             FlowPortView target = captured.nodeIsSource() ? captured.otherPort() : port;
-            createFlowEdge(source, target).setWaypoints(captured.waypoints());
+            try {
+                createFlowEdge(source, target).setWaypoints(captured.waypoints());
+            } catch (RuntimeException e) {
+                // The other endpoint may no longer be in the graph (e.g. removed as part of
+                // the same teardown) - drop just this edge, same as the data-edge reconnect.
+                System.err.println("Could not reconnect flow edge after rebuild: " + e.getMessage());
+            }
         }
     }
 

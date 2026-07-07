@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -58,6 +59,30 @@ class ObjectPropertiesTest {
                 List.of(new Property("count", Integer.class),
                         new Property("tag", String.class)),
                 ObjectProperties.of(Fields.class));
+    }
+
+    static final class WithStatics {
+        public static final int CONSTANT = 42;
+        public static String label() {
+            return "static-getter-ish";
+        }
+        public String instanceValue = "v";
+    }
+
+    @Test
+    void staticFieldsAndMethodsAreNotProperties() {
+        // Only the instance field survives - the static field/method are class-level, not
+        // properties of a value (this is why decomposing a Float must not expose MIN_VALUE).
+        assertEquals(List.of(new Property("instanceValue", String.class)),
+                ObjectProperties.of(WithStatics.class));
+    }
+
+    @Test
+    void wrapperTypesExposeNoStaticConstants() {
+        assertFalse(ObjectProperties.of(Float.class).stream().anyMatch(p -> p.name().equals("MIN_VALUE")),
+                "a Float's static MIN_VALUE constant must not appear as a property");
+        assertTrue(ObjectProperties.of(Integer.class).isEmpty(),
+                "an Integer has no instance properties to decompose");
     }
 
     @Test

@@ -105,11 +105,16 @@ public final class GraphFileIO {
             if (node == null) {
                 continue;
             }
-            applyValues(node.getInputs(), nodeJson.getJSONArray("inputs"));
-            applyValues(node.getOutputs(), nodeJson.getJSONArray("outputs"));
+            // Restore node config BEFORE touching ports. A dynamic-port node (the object
+            // decomposer, a Discord slash command) builds its inputs/outputs from this
+            // state, and the getInputs()/getOutputs() calls below are what first trigger
+            // that configuration - so the state has to be in place first, or the ports get
+            // built empty and never rebuild.
             if (nodeJson.has("state")) {
                 node.loadState(readState(nodeJson.getJSONObject("state")));
             }
+            applyValues(node.getInputs(), nodeJson.getJSONArray("inputs"));
+            applyValues(node.getOutputs(), nodeJson.getJSONArray("outputs"));
             nodes.add(new GraphCanvas.ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));
         }
 
@@ -166,10 +171,10 @@ public final class GraphFileIO {
     private static JSONArray valuesToJson(List<NodeVariable> variables) {
         JSONArray array = new JSONArray();
         for (NodeVariable variable : variables) {
-            // A secret's or transient's value is never written to disk - only null is
-            // stored in its slot, so position-based load still lines up. The node
-            // re-resolves/repopulates it at run time.
-            Object value = variable.isSecret() || variable.isTransient() ? null : variable.getValue();
+            // Only manually-authored values are written; computed values are left as null
+            // and recomputed on load (see NodeVariable.isPersistentValue). Storing null in
+            // the skipped slots keeps position-based load lined up.
+            Object value = variable.isPersistentValue() ? variable.getValue() : null;
             array.put(value == null ? JSONObject.NULL : value);
         }
         return array;

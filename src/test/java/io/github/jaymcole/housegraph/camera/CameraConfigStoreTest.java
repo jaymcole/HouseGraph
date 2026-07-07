@@ -72,6 +72,55 @@ class CameraConfigStoreTest {
                 List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "x", "y", true)), file));
     }
 
+    @Test
+    void listsStoredCamerasSortedByLabel(@TempDir Path dir) {
+        Path file = dir.resolve("cameras.json");
+        CameraConfigStore.merge(List.of(
+                new DiscoveredCamera("192.168.1.50", "AA:AA:AA:AA:AA:AA", "Zebra", "RLC-810A", true),
+                new DiscoveredCamera("192.168.1.51", "BB:BB:BB:BB:BB:BB", "Aardvark", "RLC-820A", true)), file);
+
+        List<CameraConfigStore.KnownCamera> cameras = CameraConfigStore.list(file);
+        assertEquals(2, cameras.size());
+        assertEquals("Aardvark", cameras.get(0).name(), "sorted by label");
+        assertEquals("192.168.1.51", cameras.get(0).lastKnownIp());
+        assertEquals("Zebra", cameras.get(1).name());
+    }
+
+    @Test
+    void listToleratesAMissingOrMalformedFile(@TempDir Path dir) throws IOException {
+        Path missing = dir.resolve("nope.json");
+        assertTrue(CameraConfigStore.list(missing).isEmpty());
+
+        Path malformed = dir.resolve("cameras.json");
+        Files.writeString(malformed, "{ not valid json ", StandardCharsets.UTF_8);
+        assertTrue(CameraConfigStore.list(malformed).isEmpty(), "a bad file must not break the dropdown");
+    }
+
+    @Test
+    void findReturnsTheCameraByMac(@TempDir Path dir) {
+        Path file = dir.resolve("cameras.json");
+        CameraConfigStore.merge(
+                List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
+
+        assertTrue(CameraConfigStore.find("BC:09:B9:E5:9C:3C", file).isPresent());
+        assertEquals("Front Door", CameraConfigStore.find("BC:09:B9:E5:9C:3C", file).get().label());
+        assertTrue(CameraConfigStore.find("00:00:00:00:00:00", file).isEmpty());
+        assertTrue(CameraConfigStore.find(null, file).isEmpty());
+    }
+
+    @Test
+    void updateIpChangesOnlyWhenItMoves(@TempDir Path dir) {
+        Path file = dir.resolve("cameras.json");
+        CameraConfigStore.merge(
+                List.of(new DiscoveredCamera("192.168.1.50", "BC:09:B9:E5:9C:3C", "Front Door", "RLC-810A", true)), file);
+
+        assertTrue(CameraConfigStore.updateIp("BC:09:B9:E5:9C:3C", "192.168.1.77", file));
+        assertEquals("192.168.1.77", CameraConfigStore.find("BC:09:B9:E5:9C:3C", file).get().lastKnownIp());
+
+        assertFalse(CameraConfigStore.updateIp("BC:09:B9:E5:9C:3C", "192.168.1.77", file), "unchanged IP is a no-op");
+        assertFalse(CameraConfigStore.updateIp("00:00:00:00:00:00", "192.168.1.99", file), "unknown camera is a no-op");
+    }
+
     private static JSONObject registry(Path file) {
         try {
             return new JSONObject(Files.readString(file, StandardCharsets.UTF_8)).getJSONObject("cameras");

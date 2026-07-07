@@ -9,7 +9,11 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Reads/merges/writes the camera registry — a JSON file keyed by camera MAC, each entry
@@ -76,6 +80,89 @@ public final class CameraConfigStore {
         return new MergeResult(added, updated, skipped);
     }
 
+    /** The known cameras from the default registry, sorted by display label; see {@link #list(Path)}. */
+    public static List<KnownCamera> list() {
+        return list(defaultPath());
+    }
+
+    /**
+     * Reads the registry into a display-friendly list. Unlike a merge, this is read-only
+     * and lenient: a missing or malformed file yields an empty list (logged) rather than an
+     * error, so a UI populating a dropdown from it can't be broken by a bad file.
+     */
+    static List<KnownCamera> list(Path file) {
+        JSONObject registry = readRegistryLenient(file);
+        List<KnownCamera> cameras = new ArrayList<>();
+        for (String mac : registry.keySet()) {
+            JSONObject entry = registry.optJSONObject(mac);
+            if (entry == null) {
+                continue;
+            }
+            cameras.add(new KnownCamera(mac,
+                    entry.optString("name", ""),
+                    entry.optString("model", ""),
+                    entry.optString("lastKnownIp", "")));
+        }
+        cameras.sort(Comparator.comparing(camera -> camera.label().toLowerCase(Locale.ROOT)));
+        return cameras;
+    }
+
+    /** The known camera with this MAC, or empty if none (or {@code mac} is null). */
+    public static Optional<KnownCamera> find(String mac) {
+        return find(mac, defaultPath());
+    }
+
+    static Optional<KnownCamera> find(String mac, Path file) {
+        if (mac == null) {
+            return Optional.empty();
+        }
+        return list(file).stream().filter(camera -> camera.mac().equals(mac)).findFirst();
+    }
+
+    /** Records a camera's current IP in the default registry; see {@link #updateIp(String, String, Path)}. */
+    public static boolean updateIp(String mac, String newIp) {
+        return updateIp(mac, newIp, defaultPath());
+    }
+
+    /**
+     * Updates the {@code lastKnownIp} of an existing camera (e.g. after it moved on DHCP and
+     * was rediscovered), leaving every other field untouched. Returns whether anything
+     * changed — false if the camera is unknown or the IP already matches. Like a merge, this
+     * uses the strict read that refuses to clobber a malformed file.
+     */
+    static boolean updateIp(String mac, String newIp, Path file) {
+        if (mac == null || newIp == null || newIp.isBlank()) {
+            return false;
+        }
+        JSONObject root = read(file);
+        JSONObject registry = root.optJSONObject("cameras");
+        if (registry == null || !registry.has(mac)) {
+            return false;
+        }
+        JSONObject entry = registry.getJSONObject(mac);
+        if (newIp.equals(entry.optString("lastKnownIp", null))) {
+            return false;
+        }
+        entry.put("lastKnownIp", newIp);
+        write(file, root);
+        return true;
+    }
+
+    /** Reads the {@code cameras} object, tolerating a missing/malformed file (for read-only callers). */
+    private static JSONObject readRegistryLenient(Path file) {
+        if (!Files.isRegularFile(file)) {
+            return new JSONObject();
+        }
+        try {
+            JSONObject root = new JSONObject(new JSONTokener(Files.readString(file, StandardCharsets.UTF_8)));
+            JSONObject registry = root.optJSONObject("cameras");
+            return registry == null ? new JSONObject() : registry;
+        } catch (IOException | RuntimeException e) {
+            System.err.println("Could not read camera registry " + file + ": " + e.getMessage());
+            return new JSONObject();
+        }
+    }
+
     private static JSONObject newEntry(DiscoveredCamera camera) {
         JSONObject entry = new JSONObject();
         entry.put("name", camera.name() == null ? "" : camera.name());
@@ -126,5 +213,24 @@ public final class CameraConfigStore {
 
     /** Outcome of a merge: how many cameras were newly added, refreshed, or skipped (no MAC). */
     public record MergeResult(int added, int updated, int skipped) {
+    }
+
+    /**
+     * One camera as stored in the registry, keyed by its stable {@code mac}. The
+     * {@code lastKnownIp} is where it was last seen — a starting point that may be stale if
+     * DHCP has since moved it (see {@link #updateIp}).
+     */
+    public record KnownCamera(String mac, String name, String model, String lastKnownIp) {
+
+        /** The best human-readable label available, falling back to the model then the MAC. */
+        public String label() {
+            if (name != null && !name.isBlank()) {
+                return name;
+            }
+            if (model != null && !model.isBlank()) {
+                return model;
+            }
+            return mac;
+        }
     }
 }

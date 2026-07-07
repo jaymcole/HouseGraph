@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.graph;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -66,6 +67,8 @@ public final class ObjectProperties {
         }
         // Getters first, then fields not already covered by a getter; keyed by name for
         // dedup, then sorted so the order is stable across runs (drives save/load indices).
+        // Only instance members: a static field/method (e.g. Float.MIN_VALUE) is a class
+        // constant, not a property of a value, and must never become a decomposed output.
         Map<String, Property> byName = new LinkedHashMap<>();
         for (Method method : type.getMethods()) {
             String name = getterPropertyName(method);
@@ -74,7 +77,9 @@ public final class ObjectProperties {
             }
         }
         for (Field field : type.getFields()) {
-            byName.putIfAbsent(field.getName(), new Property(field.getName(), box(field.getType())));
+            if (!Modifier.isStatic(field.getModifiers())) {
+                byName.putIfAbsent(field.getName(), new Property(field.getName(), box(field.getType())));
+            }
         }
         List<Property> properties = new ArrayList<>(byName.values());
         properties.sort((a, b) -> a.name().compareTo(b.name()));
@@ -122,6 +127,7 @@ public final class ObjectProperties {
     private static String getterPropertyName(Method method) {
         if (method.getParameterCount() != 0
                 || method.getReturnType() == void.class
+                || Modifier.isStatic(method.getModifiers())
                 || method.getDeclaringClass() == Object.class) {
             return null;
         }
