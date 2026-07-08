@@ -84,6 +84,14 @@ snapshot shape (`GraphCanvas.GraphSnapshot` / `ClipboardNode` / `ClipboardDataEd
 it can be unit-tested headlessly; `save`/`load` are the thin wrappers that touch a
 real canvas.
 
+The toolbar (`App`) exposes three file actions. **Quick Save** writes straight to
+the *current file* — the file most recently saved to or loaded from — with no
+dialog; until one exists (fresh session that has never saved), it falls back to
+the **Save As…** flow, which always prompts for a destination. **Load** opens a
+file chooser. Saving or loading records the file as the current file and persists
+its path (`AppPreferences.LAST_FILE`) so it reopens on the next launch — which
+also seeds Quick Save's target for a reopened graph.
+
 JSON shape:
 
 ```jsonc

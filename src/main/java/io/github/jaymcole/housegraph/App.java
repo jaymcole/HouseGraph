@@ -26,24 +26,27 @@ public class App extends Application {
     private final AppPreferences preferences = AppPreferences.load();
     private NodeGraph graph;
 
+    /** The file most recently saved to or loaded from; the target for Quick Save. Null until chosen. */
+    private File currentFile;
+
     @Override
     public void start(Stage stage) {
         graph = new NodeGraph();
         GraphCanvas canvas = new GraphCanvas(graph);
 
-        Button saveButton = new Button("Save");
-        saveButton.setOnAction(e -> {
-            File file = createFileChooser("Save Graph").showSaveDialog(stage);
-            if (file == null) {
+        // Quick Save writes straight to the current file with no dialog. Until one has been
+        // chosen (fresh session, never saved), it falls back to the Save-As flow.
+        Button quickSaveButton = new Button("Quick Save");
+        quickSaveButton.setOnAction(e -> {
+            if (currentFile == null) {
+                saveAs(stage, canvas);
                 return;
             }
-            try {
-                GraphFileIO.save(canvas, file);
-                rememberLastFile(file);
-            } catch (IOException ex) {
-                new Alert(Alert.AlertType.ERROR, "Failed to save graph: " + ex.getMessage()).showAndWait();
-            }
+            saveTo(canvas, currentFile);
         });
+
+        Button saveButton = new Button("Save As…");
+        saveButton.setOnAction(e -> saveAs(stage, canvas));
 
         Button loadButton = new Button("Load");
         loadButton.setOnAction(e -> {
@@ -62,7 +65,7 @@ public class App extends Application {
         Button secretsButton = new Button("Secrets…");
         secretsButton.setOnAction(e -> SecretsEditor.show(stage));
 
-        ToolBar toolBar = new ToolBar(saveButton, loadButton, secretsButton);
+        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, secretsButton);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);
@@ -84,8 +87,28 @@ public class App extends Application {
         }
     }
 
-    /** Records the just-saved/opened file as the one to reopen on the next launch. */
+    /** Prompts for a destination file, then saves the graph there. */
+    private void saveAs(Stage stage, GraphCanvas canvas) {
+        File file = createFileChooser("Save Graph").showSaveDialog(stage);
+        if (file == null) {
+            return;
+        }
+        saveTo(canvas, file);
+    }
+
+    /** Saves the graph to {@code file} and records it as the current/last file. */
+    private void saveTo(GraphCanvas canvas, File file) {
+        try {
+            GraphFileIO.save(canvas, file);
+            rememberLastFile(file);
+        } catch (IOException ex) {
+            new Alert(Alert.AlertType.ERROR, "Failed to save graph: " + ex.getMessage()).showAndWait();
+        }
+    }
+
+    /** Records the just-saved/opened file as the current file and the one to reopen on the next launch. */
     private void rememberLastFile(File file) {
+        currentFile = file;
         preferences.put(AppPreferences.LAST_FILE, file.getAbsolutePath());
         preferences.save();
     }
@@ -99,6 +122,7 @@ public class App extends Application {
             }
             try {
                 GraphFileIO.load(canvas, file);
+                currentFile = file;
             } catch (IOException | RuntimeException ex) {
                 System.err.println("Could not reopen last file " + file + ": " + ex);
             }
