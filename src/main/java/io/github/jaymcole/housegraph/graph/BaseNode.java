@@ -345,6 +345,20 @@ public abstract class BaseNode {
         return !getFlowOutputs().isEmpty() && getFlowInputs().isEmpty();
     }
 
+    /**
+     * Whether this node is a <em>flow join</em> (an AND-barrier): it fires only once <em>all</em>
+     * its wired incoming flow edges have arrived in a run, rather than on the first arrival like an
+     * ordinary node. Default {@code false}. Because a run is fire-and-forget, reconverging parallel
+     * branches needs this to wait for every branch (see {@link NodeGraph}). A join whose incoming
+     * branches don't all fire in a run — e.g. one was pruned by an {@code If} — simply doesn't fire
+     * that run (it's an AND); the run still quiesces.
+     *
+     * @return true if this node waits for all its incoming flow edges before firing
+     */
+    public boolean isFlowJoin() {
+        return false;
+    }
+
     // Package-private: only NodeGraph (same package) drives node execution state.
 
     NodeGraph getGraph() {

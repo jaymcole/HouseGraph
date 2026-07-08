@@ -123,9 +123,9 @@ Key rules to preserve when editing this format:
 Right-clicking a node opens a context menu (`NodeView.showContextMenu`) whose
 **Execution Policy** submenu sets the node's `ExecutionPolicy` — what happens when
 the node is triggered again mid-pass (see [graph-engine.md](graph-engine.md)). The
-menu is rebuilt on each open so it reflects the node's current policy. `PARALLEL`
-is shown disabled: it isn't implemented and falls back to `QUEUE`, so offering it
-would mislead. The chosen policy round-trips through the save format above.
+menu is rebuilt on each open so it reflects the node's current policy. All four
+policies (including `PARALLEL`) are selectable. The chosen policy round-trips through
+the save format above.
 
 Only **execution entry points** (`BaseNode.isExecutionEntryPoint()` — nodes that
 `execute()` themselves, like triggers, listeners, and the Discover-cameras button)

@@ -11,11 +11,10 @@ package io.github.jaymcole.housegraph.graph;
  * command). Nodes reached downstream during a cascade aren't re-entered by this
  * mechanism; the pass already dedupes them ({@link NodeGraph}'s {@code flowVisited}).
  * <p>
- * Only {@link #DROP}, {@link #RESTART} and {@link #QUEUE} are implemented today; they
- * all fit the engine's single serialized execution thread. {@link #PARALLEL} is declared
- * so the save format and UI stay forward-compatible, but currently falls back to
- * {@link #QUEUE} — true concurrent passes need per-pass execution state that the engine
- * doesn't carry yet (see {@link NodeGraph}'s class Javadoc).
+ * All four are implemented: the engine runs each trigger as an isolated concurrent
+ * {@code Run} (see {@link NodeGraph}), so {@link #PARALLEL} simply starts a new run every
+ * time while {@link #DROP}/{@link #QUEUE}/{@link #RESTART} keep a single in-flight run per
+ * entry node.
  */
 public enum ExecutionPolicy {
 
@@ -43,10 +42,10 @@ public enum ExecutionPolicy {
     QUEUE,
 
     /**
-     * Run the new trigger concurrently with the in-flight pass. <b>Not yet implemented</b>
-     * — currently behaves as {@link #QUEUE}. Enabling it requires extracting per-pass
-     * execution state (node statuses, visited set, data values) off the shared node/graph
-     * fields the engine mutates today; see {@link NodeGraph}.
+     * Start an independent run for the new trigger, concurrent with the in-flight one(s) — no
+     * single-flight gate and no coalescing. Safe because each run carries an isolated
+     * {@link ExecutionContext}. Use it when overlapping invocations should all proceed (e.g. two
+     * motion events each analysed on their own).
      */
     PARALLEL
 }

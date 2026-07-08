@@ -46,6 +46,18 @@ default `QUEUE`, persisted by `GraphFileIO`) that governs what happens when the 
 **triggered again while a pass it started is still in flight** — drop it, restart, or
 queue (coalesced). The engine, not the node, enforces it — see [graph-engine.md](graph-engine.md).
 
+### Flow joins (AND-barriers)
+
+Because a run is fire-and-forget (see [graph-engine.md](graph-engine.md)), an ordinary node
+reached by several flow branches fires on the **first** arrival (OR/merge). A node that overrides
+`BaseNode.isFlowJoin()` to return `true` instead waits for **all** its wired incoming flow edges
+before firing (AND) — the way to reconverge parallel branches. `graph/nodes/control/JoinNode.java`
+is the concrete node (numbered flow-in ports, adjustable 2–8). The engine counts arrivals per run
+(`ExecutionContext`) and fires the join once they reach its wired-edge count; an unwired port
+doesn't count, and a join whose branch is pruned by an upstream `If` just doesn't fire that run.
+
+### Execution policy
+
 It only matters for **execution entry points** — nodes `execute()` is called on directly
 (a trigger button, a timer, an inbound event), as opposed to nodes only reached along a
 flow edge. `BaseNode.isExecutionEntryPoint()` marks these: it defaults to "has a flow-out

@@ -346,9 +346,9 @@ public class NodeView extends BorderPane {
     }
 
     /**
-     * A submenu of mutually-exclusive execution policies (see {@link ExecutionPolicy}),
-     *      * with the node's current one pre-selected. PARALLEL is shown but disabled — it isn't
-     * implemented yet and silently falls back to QUEUE, so offering it would mislead.
+     * A submenu of mutually-exclusive execution policies (see {@link ExecutionPolicy}), with the
+     * node's current one pre-selected and a glyph beside each. Selecting one applies it and
+     * refreshes the title glyph.
      */
     private Menu buildExecutionPolicyMenu() {
         Menu policyMenu = new Menu("Execution Policy");
@@ -358,14 +358,10 @@ public class NodeView extends BorderPane {
             item.setGraphic(ExecutionPolicyIcons.create(policy));
             item.setToggleGroup(group);
             item.setSelected(node.getExecutionPolicy() == policy);
-            if (policy == ExecutionPolicy.PARALLEL) {
-                item.setDisable(true);
-            } else {
-                item.setOnAction(event -> {
-                    node.setExecutionPolicy(policy);
-                    refreshPolicyIcon();
-                });
-            }
+            item.setOnAction(event -> {
+                node.setExecutionPolicy(policy);
+                refreshPolicyIcon();
+            });
             policyMenu.getItems().add(item);
         }
         return policyMenu;

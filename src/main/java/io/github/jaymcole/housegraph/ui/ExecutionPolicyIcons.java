@@ -86,7 +86,7 @@ final class ExecutionPolicyIcons {
             case DROP -> "Drop — ignore triggers while running";
             case RESTART -> "Restart — cancel & rerun with new inputs";
             case QUEUE -> "Queue — run next (latest wins)";
-            case PARALLEL -> "Parallel — not yet available";
+            case PARALLEL -> "Parallel — run every trigger at once";
         };
     }
 

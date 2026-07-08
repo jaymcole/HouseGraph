@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Per-run execution state, isolated from every other concurrent run.
@@ -68,6 +69,9 @@ public final class ExecutionContext {
      */
     private final Map<BaseNode, Object> resolutionLocks = new ConcurrentHashMap<>();
 
+    /** Arrival counts at flow-join nodes this run, so a join fires only once all its branches have arrived. */
+    private final Map<BaseNode, AtomicInteger> joinArrivals = new ConcurrentHashMap<>();
+
     /** The context bound to the calling thread, or null if none (then {@link NodeVariable} uses authored values). */
     static ExecutionContext current() {
         return CURRENT.get();
@@ -99,6 +103,14 @@ public final class ExecutionContext {
     /** This run's resolution monitor for {@code node} (see the field). */
     Object lockFor(BaseNode node) {
         return resolutionLocks.computeIfAbsent(node, ignored -> new Object());
+    }
+
+    /**
+     * Records one arrival at a flow-join {@code node} this run and returns the running total. A
+     * join fires once its arrivals reach its wired incoming-edge count (see {@link BaseNode#isFlowJoin}).
+     */
+    int recordJoinArrival(BaseNode node) {
+        return joinArrivals.computeIfAbsent(node, ignored -> new AtomicInteger()).incrementAndGet();
     }
 
     /**

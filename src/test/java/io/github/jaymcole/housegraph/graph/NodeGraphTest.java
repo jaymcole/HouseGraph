@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.graph;
 
 import io.github.jaymcole.housegraph.graph.nodes.camera.DiscoverCamerasNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.IfNode;
+import io.github.jaymcole.housegraph.graph.nodes.control.JoinNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -605,6 +607,116 @@ class NodeGraphTest {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+    }
+
+    @Test
+    void joinFiresOnlyAfterAllBranchesArrive() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        CountDownLatch releaseSlow = new CountDownLatch(1);
+        GateNode slow = new GateNode(releaseSlow);
+        GateNode fast = new GateNode(new CountDownLatch(0));
+        JoinNode join = new JoinNode();
+        SignalSink sink = new SignalSink();
+        graph.addNode(trigger);
+        graph.addNode(slow);
+        graph.addNode(fast);
+        graph.addNode(join);
+        graph.addNode(sink);
+
+        // trigger fans out to both branches; each branch feeds a different join input.
+        graph.registerFlowEdge(new FlowEdge(trigger, trigger.getFlowOutputs().get(0), slow, slow.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(trigger, trigger.getFlowOutputs().get(0), fast, fast.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(slow, slow.getFlowOutputs().get(0), join, join.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(fast, fast.getFlowOutputs().get(0), join, join.getFlowInputs().get(1)));
+        graph.registerFlowEdge(flowEdge(join, sink));
+
+        trigger.execute();
+        assertTrue(slow.started.await(2, TimeUnit.SECONDS), "the slow branch should start");
+        // The fast branch has arrived at the join, but an AND-join must wait for the slow branch too.
+        assertFalse(sink.ran.await(300, TimeUnit.MILLISECONDS), "the join must not fire on the first branch alone");
+
+        releaseSlow.countDown();
+        assertTrue(sink.ran.await(2, TimeUnit.SECONDS), "the join fires once every branch has arrived");
+        graph.awaitIdle();
+        assertEquals(1, sink.processCount.get(), "the join fires its downstream exactly once");
+    }
+
+    @Test
+    void joinCountsOnlyWiredPortsNotEmptyOnes() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        JoinNode join = new JoinNode();
+        join.loadState(Map.of("inputs", "3")); // three ports, but we wire only two
+        GateNode a = new GateNode(new CountDownLatch(0));
+        GateNode b = new GateNode(new CountDownLatch(0));
+        CountingSinkNode sink = new CountingSinkNode();
+        graph.addNode(trigger);
+        graph.addNode(join);
+        graph.addNode(a);
+        graph.addNode(b);
+        graph.addNode(sink);
+
+        graph.registerFlowEdge(new FlowEdge(trigger, trigger.getFlowOutputs().get(0), a, a.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(trigger, trigger.getFlowOutputs().get(0), b, b.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(a, a.getFlowOutputs().get(0), join, join.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(b, b.getFlowOutputs().get(0), join, join.getFlowInputs().get(1)));
+        graph.registerFlowEdge(flowEdge(join, sink));
+
+        trigger.execute();
+        graph.awaitIdle();
+        assertEquals(1, sink.processCount.get(), "expected arrivals = wired edges (2); the third, unwired port doesn't hold the join up");
+    }
+
+    @Test
+    void andJoinDoesNotFireWhenABranchIsPrunedYetTheRunStillFinishes() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        IfNode ifNode = new IfNode();
+        JoinNode join = new JoinNode();
+        CountingSinkNode sink = new CountingSinkNode();
+        graph.addNode(trigger);
+        graph.addNode(ifNode);
+        graph.addNode(join);
+        graph.addNode(sink);
+
+        graph.registerFlowEdge(flowEdge(trigger, ifNode));
+        graph.registerFlowEdge(new FlowEdge(ifNode, ifNode.getFlowOutputs().get(0), join, join.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(ifNode, ifNode.getFlowOutputs().get(1), join, join.getFlowInputs().get(1)));
+        graph.registerFlowEdge(flowEdge(join, sink));
+
+        input(ifNode, "Condition").setValue(1f); // only the True branch fires; the False branch is pruned
+        trigger.execute();
+
+        // The join wants both branches but only one arrives - it never fires, but the run must
+        // still quiesce rather than hang waiting for the branch that will never come.
+        assertDoesNotThrow(graph::awaitIdle);
+        assertEquals(0, sink.processCount.get(), "an AND-join with a pruned branch does not fire");
+    }
+
+    /** A flow sink that counts its runs and signals a latch, for asserting when (and whether) it fired. */
+    private static final class SignalSink extends BaseNode {
+        final AtomicInteger processCount = new AtomicInteger();
+        final CountDownLatch ran = new CountDownLatch(1);
+
+        @Override
+        public void process() {
+            processCount.incrementAndGet();
+            ran.countDown();
         }
 
         @Override

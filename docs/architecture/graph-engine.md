@@ -70,7 +70,9 @@ This is the subtle part. Read the `NodeGraph` class Javadoc alongside this.
   wait for them (see the `NodeGraph.Run` inner class). Linear order still holds — a node
   runs downstream only after its own `process()` — but a fan-out no longer joins. The run
   ends when its pending-firing counter reaches zero. Reconvergence therefore has no
-  implicit barrier; explicit joining is planned (see the design doc).
+  implicit barrier: an ordinary fan-in node fires on the first branch to arrive (OR/merge),
+  and to wait for **all** parallel branches you use a **flow join** (`BaseNode.isFlowJoin()`,
+  concrete `JoinNode`) — an AND-barrier that fires once every wired incoming edge has arrived.
 - **Per-run resolution lock.** `resolveInternal` synchronizes on a monitor from the run's
   context (`ExecutionContext.lockFor(node)`), not the node object. Within a run this dedups
   a shared data dependency (the second branch blocks, then sees the completed status) and,

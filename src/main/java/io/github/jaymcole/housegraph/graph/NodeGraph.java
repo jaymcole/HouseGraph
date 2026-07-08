@@ -598,11 +598,27 @@ public class NodeGraph {
             schedule(entry);
         }
 
-        /** Schedules {@code node} to fire, unless it's already been cascaded through this run (dedup). */
+        /**
+         * Handles one flow arrival at {@code node}. An ordinary node fires on its first arrival and
+         * is deduped thereafter; a {@link BaseNode#isFlowJoin() flow join} instead records the arrival
+         * and fires only once all its wired incoming edges have arrived (an AND-barrier). A join whose
+         * branches don't all arrive this run simply never fires — no firing task is left pending, so
+         * the run still quiesces.
+         */
         private void schedule(BaseNode node) {
-            if (!context.markFlowVisited(node)) {
+            if (node.isFlowJoin()) {
+                int arrived = context.recordJoinArrival(node);
+                if (arrived >= getIncomingFlowEdges(node).size() && context.markFlowVisited(node)) {
+                    fireTask(node);
+                }
                 return;
             }
+            if (context.markFlowVisited(node)) {
+                fireTask(node);
+            }
+        }
+
+        private void fireTask(BaseNode node) {
             pending.incrementAndGet();
             runExecutor.execute(() -> fire(node));
         }
