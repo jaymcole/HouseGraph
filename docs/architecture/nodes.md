@@ -106,7 +106,10 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
   node type; `instantiate(class)` builds one via its no-arg constructor;
   `duplicate(source)` clones a node for copy/paste by copying input/output values
   positionally (no per-type `clone()` needed, since `configure*` always builds the
-  same list shape for a given class).
+  same list shape for a given class). It carries across **only persistent values**
+  (`NodeVariable.isPersistentValue` — manually-authored, non-secret, non-transient),
+  exactly as save-to-file does; computed outputs and values a node resolved off an
+  edge (a secret in particular) are left out rather than pasted in as manual entries.
 
 ## Node categories (current folders under `graph/nodes/`)
 

@@ -3,12 +3,14 @@ package io.github.jaymcole.housegraph.graph;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
+import io.github.jaymcole.housegraph.graph.nodes.loader.SecretLoaderNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NodeRegistryTest {
@@ -57,7 +59,22 @@ class NodeRegistryTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void duplicateCopiesInputAndOutputValuesByPosition() {
+    void duplicateCopiesManuallyAuthoredValues() {
+        ConstantFloatNode original = new ConstantFloatNode();
+        original.getOutputs().get(0).setValue(3f); // manually-editable constant
+
+        BaseNode copy = NodeRegistry.duplicate(original);
+
+        assertTrue(copy instanceof ConstantFloatNode);
+        assertEquals(3f, copy.getOutputs().get(0).getValue());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void duplicateDoesNotCopyComputedValues() {
+        // AddNode's inputs and sum output are not manually editable — they only ever hold
+        // values pulled off edges or computed by process(). Those must not be carried across
+        // as manual entries (mirrors the save-file persistence discipline).
         AddNode original = new AddNode();
         original.getInputs().get(0).setValue(3f);
         original.getOutputs().get(0).setValue(99f);
@@ -65,8 +82,22 @@ class NodeRegistryTest {
         BaseNode copy = NodeRegistry.duplicate(original);
 
         assertTrue(copy instanceof AddNode);
-        assertEquals(3f, copy.getInputs().get(0).getValue());
-        assertEquals(99f, copy.getOutputs().get(0).getValue());
+        assertNull(copy.getInputs().get(0).getValue());
+        assertNull(copy.getOutputs().get(0).getValue());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void duplicateDoesNotCopySecretValues() {
+        // Regression: copying a node whose value was resolved off a secret used to paste the
+        // secret in plaintext as a manual entry. A secret-marked variable must never transfer.
+        SecretLoaderNode original = new SecretLoaderNode();
+        original.getOutputs().get(0).setValue("hunter2");
+
+        BaseNode copy = NodeRegistry.duplicate(original);
+
+        assertTrue(copy instanceof SecretLoaderNode);
+        assertNull(copy.getOutputs().get(0).getValue());
     }
 
     @SuppressWarnings("unchecked")

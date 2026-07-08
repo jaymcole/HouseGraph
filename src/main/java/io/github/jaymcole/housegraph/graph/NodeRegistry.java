@@ -96,6 +96,12 @@ public final class NodeRegistry {
      * current input/output values copied over by position. Used for copy/paste: no
      * per-node-type clone() is needed since {@code configureInputs()}/{@code configureOutputs()}
      * always build the same list shape for a given class.
+     *
+     * <p>Only <em>persistent</em> values are carried across (see
+     * {@link NodeVariable#isPersistentValue()}): computed outputs, secrets, and transient
+     * runtime handles are left out, exactly as they are for save files. This keeps a value
+     * resolved off an incoming edge — a secret in particular — from being copied into the
+     * duplicate as a manual entry; the edge itself is re-wired by the caller.
      */
     public static BaseNode duplicate(BaseNode source) {
         BaseNode copy = instantiate(source.getClass());
@@ -109,7 +115,16 @@ public final class NodeRegistry {
     @SuppressWarnings("unchecked")
     private static void copyValues(List<NodeVariable> from, List<NodeVariable> to) {
         for (int i = 0; i < Math.min(from.size(), to.size()); i++) {
-            to.get(i).setValue(from.get(i).getValue());
+            NodeVariable source = from.get(i);
+            // Mirror the save-file persistence discipline (NodeVariable.isPersistentValue): only
+            // manually-authored, non-secret, non-transient values are carried to the copy. Anything
+            // a node computes — including a secret resolved off an incoming edge and committed onto
+            // the input variable after a run — is left out, so it's never turned into a manual entry
+            // (which is how a secret used to end up pasted in plaintext). Edges are re-wired
+            // separately by the caller, restoring the real value source.
+            if (source.isPersistentValue()) {
+                to.get(i).setValue(source.getValue());
+            }
         }
     }
 
