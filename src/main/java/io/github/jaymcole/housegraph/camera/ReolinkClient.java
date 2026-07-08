@@ -8,6 +8,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Locale;
 
@@ -99,6 +100,70 @@ public final class ReolinkClient {
         } finally {
             logout(base, token, timeout);
         }
+    }
+
+    /**
+     * Grabs a single still frame from one camera as JPEG bytes.
+     * <p>
+     * Reolink's {@code Snap} command is a plain authenticated GET that streams back a JPEG
+     * (unlike the JSON-batch commands used elsewhere in this client). We log in for a
+     * short-lived token, fetch the frame, then log out — same session hygiene as {@link #poll}
+     * so a node grabbing frames in a loop doesn't exhaust the camera's session pool. Bytes are
+     * returned raw (this package stays JavaFX-free); the caller wraps them into an image.
+     *
+     * @param host           IP or hostname; scheme/port honoured, else plain HTTP on port 80
+     * @param user           login user (typically {@code admin})
+     * @param password       login password (may be empty for an unset camera)
+     * @param channel        camera channel (0 for a standalone camera; NVR channels vary)
+     * @param timeoutSeconds per-request timeout
+     * @return the JPEG-encoded frame
+     * @throws ReolinkException if the camera can't be reached, login is rejected, or the
+     *                          camera returns an error instead of an image
+     */
+    public static byte[] snapshot(String host, String user, String password, int channel, int timeoutSeconds) {
+        String base = baseUrl(host);
+        int timeout = Math.max(1, timeoutSeconds);
+        String token = login(base, user, password, timeout);
+        try {
+            return fetchSnapshot(base, token, channel, timeout);
+        } finally {
+            logout(base, token, timeout);
+        }
+    }
+
+    private static byte[] fetchSnapshot(String base, String token, int channel, int timeout) {
+        // rs is a cache-buster the camera expects; any changing token does.
+        String rs = Long.toHexString(System.nanoTime());
+        String url = base + "?cmd=Snap&channel=" + channel + "&rs=" + rs + "&token=" + token;
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(timeout))
+                .GET()
+                .build();
+        HttpResponse<byte[]> response;
+        try {
+            response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (IOException e) {
+            throw new ReolinkException("Could not reach camera at " + url + ": " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ReolinkException("Interrupted while contacting camera at " + url, e);
+        }
+        if (response.statusCode() / 100 != 2) {
+            throw new ReolinkException("Camera returned HTTP " + response.statusCode() + " for " + url);
+        }
+        byte[] body = response.body();
+        if (!looksLikeJpeg(body)) {
+            // On error (bad token, unsupported channel) Reolink answers with a JSON blob, not an image.
+            String detail = body == null ? "" : ": " + new String(body, StandardCharsets.UTF_8).strip();
+            throw new ReolinkException("Camera did not return a JPEG frame" + detail);
+        }
+        return body;
+    }
+
+    /** JPEG magic number: FF D8 FF. Guards against Reolink's JSON error body being taken for a frame. */
+    private static boolean looksLikeJpeg(byte[] data) {
+        return data != null && data.length >= 3
+                && (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 && (data[2] & 0xFF) == 0xFF;
     }
 
     private static String login(String base, String user, String password, int timeout) {
