@@ -40,8 +40,8 @@ public class CameraMotionStatusNode extends BaseNode implements NodeContentProvi
     private final NodeVariable<String> password = new NodeVariable<>("Password", String.class, true).markSecret();
     private final NodeVariable<Integer> channel = new NodeVariable<>("Channel", Integer.class, true);
 
-    private final NodeVariable<String> status = new NodeVariable<>("Status", String.class);
-    private final NodeVariable<Float> detected = new NodeVariable<>("Detected", Float.class);
+    private final NodeVariable<Boolean> motion = new NodeVariable<>("motion", Boolean.class);
+    private final NodeVariable<DetectionState> detectionState = new NodeVariable<>("state", DetectionState.class);
 
     private final FlowPort in = new FlowPort("", FlowPort.Direction.IN);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
@@ -57,8 +57,8 @@ public class CameraMotionStatusNode extends BaseNode implements NodeContentProvi
     public void process() {
         DetectionState state = camera.withHost(host ->
                 ReolinkClient.poll(host, username.getValue(), password.getValue(), channelValue(), 5));
-        status.setValue(state.topStatus());
-        detected.setValue(state.anyDetected() ? 1f : 0f);
+        detectionState.setValue(state);
+        motion.setValue(state.anyDetected());
     }
 
     private int channelValue() {
@@ -75,8 +75,8 @@ public class CameraMotionStatusNode extends BaseNode implements NodeContentProvi
 
     @Override
     public void configureOutputs() {
-        addOutput(status);
-        addOutput(detected);
+        addOutput(motion);
+        addOutput(detectionState);
     }
 
     @Override
