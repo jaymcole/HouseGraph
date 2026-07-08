@@ -44,9 +44,15 @@ Both `markSecret()` and `transientValue()` are fluent, for field initialization.
 Every node carries an `ExecutionPolicy` (`getExecutionPolicy()`/`setExecutionPolicy()`,
 default `QUEUE`, persisted by `GraphFileIO`) that governs what happens when the node is
 **triggered again while a pass it started is still in flight** — drop it, restart, or
-queue (coalesced). It only matters for entry-point nodes (the ones `execute()` is called
-on); it's inert for pure transform nodes. The engine, not the node, enforces it — see
-[graph-engine.md](graph-engine.md). Users set it from a node's right-click menu.
+queue (coalesced). The engine, not the node, enforces it — see [graph-engine.md](graph-engine.md).
+
+It only matters for **execution entry points** — nodes `execute()` is called on directly
+(a trigger button, a timer, an inbound event), as opposed to nodes only reached along a
+flow edge. `BaseNode.isExecutionEntryPoint()` marks these: it defaults to "has a flow-out
+but no flow-in" (such a node can only ever run via a direct `execute()`), which covers the
+usual trigger/listener sources automatically. A node that self-triggers *and* has a flow-in
+(e.g. `DiscoverCamerasNode`'s Discover button) overrides it to `true`. The UI shows the
+policy glyph and right-click menu only for entry points; the field is inert elsewhere.
 
 ## Discovery: `NodeRegistry`
 

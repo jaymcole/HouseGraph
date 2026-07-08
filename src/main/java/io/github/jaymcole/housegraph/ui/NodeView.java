@@ -20,12 +20,14 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
@@ -81,6 +83,10 @@ public class NodeView extends BorderPane {
     private final Rectangle processingStripes;
     private final Timeline processingAnimation;
 
+    /** Sits beside the title, holding the glyph for the node's current {@link ExecutionPolicy}. */
+    private final StackPane policyIcon = new StackPane();
+    private final Tooltip policyTooltip = new Tooltip();
+
     private Point2D lastDragContentPoint;
     private boolean selected = false;
     private boolean processing = false;
@@ -124,6 +130,16 @@ public class NodeView extends BorderPane {
             if (flowInPort.getFlowPort().name.isBlank()) {
                 titleBar.getChildren().add(flowInPort);
             }
+        }
+        // A small glyph for the execution policy, tucked just left of the title — but only
+        // for nodes the policy actually applies to (execution entry points; see
+        // BaseNode.isExecutionEntryPoint). A constant or a resource node is never triggered,
+        // so it gets no glyph and no policy menu. Refreshed whenever the policy changes.
+        boolean showsPolicy = node.isExecutionEntryPoint();
+        if (showsPolicy) {
+            Tooltip.install(policyIcon, policyTooltip);
+            refreshPolicyIcon();
+            titleBar.getChildren().add(policyIcon);
         }
         titleBar.getChildren().add(title);
         for (FlowPortView flowOutPort : flowOutPorts) {
@@ -224,9 +240,12 @@ public class NodeView extends BorderPane {
         setOnMousePressed(Event::consume);
         setOnMouseDragged(Event::consume);
 
-        // Right-click the node for its per-node settings (currently the execution policy).
-        // Consumed so the canvas's own add-node menu doesn't open on top of it.
-        setOnContextMenuRequested(this::showContextMenu);
+        // Right-click the node for its per-node settings (currently just the execution
+        // policy), so only nodes that have one get the menu; on others the event falls
+        // through to the canvas's own add-node menu, as before.
+        if (showsPolicy) {
+            setOnContextMenuRequested(this::showContextMenu);
+        }
 
         // Emphasis overlay for the selected and pulse states: an unmanaged, mouse-
         // transparent rectangle stretched over the whole node, stroked on the inside
@@ -335,26 +354,28 @@ public class NodeView extends BorderPane {
         Menu policyMenu = new Menu("Execution Policy");
         ToggleGroup group = new ToggleGroup();
         for (ExecutionPolicy policy : ExecutionPolicy.values()) {
-            RadioMenuItem item = new RadioMenuItem(policyLabel(policy));
+            RadioMenuItem item = new RadioMenuItem(ExecutionPolicyIcons.label(policy));
+            item.setGraphic(ExecutionPolicyIcons.create(policy));
             item.setToggleGroup(group);
             item.setSelected(node.getExecutionPolicy() == policy);
             if (policy == ExecutionPolicy.PARALLEL) {
                 item.setDisable(true);
             } else {
-                item.setOnAction(event -> node.setExecutionPolicy(policy));
+                item.setOnAction(event -> {
+                    node.setExecutionPolicy(policy);
+                    refreshPolicyIcon();
+                });
             }
             policyMenu.getItems().add(item);
         }
         return policyMenu;
     }
 
-    private static String policyLabel(ExecutionPolicy policy) {
-        return switch (policy) {
-            case DROP -> "Drop — ignore triggers while running";
-            case RESTART -> "Restart — cancel & rerun with new inputs";
-            case QUEUE -> "Queue — run next (latest wins)";
-            case PARALLEL -> "Parallel — not yet available";
-        };
+    /** Swaps in the glyph and tooltip for the node's current policy; called at build time and after a change. */
+    private void refreshPolicyIcon() {
+        ExecutionPolicy policy = node.getExecutionPolicy();
+        policyIcon.getChildren().setAll(ExecutionPolicyIcons.create(policy));
+        policyTooltip.setText(ExecutionPolicyIcons.label(policy));
     }
 
     public void setSelected(boolean selected) {

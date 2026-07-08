@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph;
 
+import io.github.jaymcole.housegraph.graph.nodes.camera.DiscoverCamerasNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.IfNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
@@ -511,6 +512,18 @@ class NodeGraphTest {
                 addOutput(new NodeVariable<>(name, String.class));
             }
         }
+    }
+
+    @Test
+    void executionEntryPointsAreFlowSourcesOrDeclaredSelfTriggers() {
+        // Flow source (flow-out, no flow-in): can only ever run via a direct execute().
+        assertTrue(new TriggerNode().isExecutionEntryPoint());
+        // Reached along an incoming flow edge (has a flow-in), so not an entry point.
+        assertFalse(new AddNode().isExecutionEntryPoint(), "a mid-cascade node is not an entry point");
+        // No flow ports at all: pulled as a data dependency, never executed.
+        assertFalse(new ConstantFloatNode().isExecutionEntryPoint(), "a pure data node is not an entry point");
+        // Self-triggers via its Discover button despite also having a flow-in; declared explicitly.
+        assertTrue(new DiscoverCamerasNode().isExecutionEntryPoint(), "a self-triggering node overrides to true");
     }
 
     @Test

@@ -127,6 +127,18 @@ menu is rebuilt on each open so it reflects the node's current policy. `PARALLEL
 is shown disabled: it isn't implemented and falls back to `QUEUE`, so offering it
 would mislead. The chosen policy round-trips through the save format above.
 
+Only **execution entry points** (`BaseNode.isExecutionEntryPoint()` — nodes that
+`execute()` themselves, like triggers, listeners, and the Discover-cameras button)
+get the glyph and the menu; a constant, loader, or mid-cascade transform node shows
+neither, and right-clicking it falls through to the canvas's add-node menu as before.
+
+Each policy has a small glyph (`ExecutionPolicyIcons`, drawn from primitive JavaFX
+shapes — no image assets): a ringed slash (Drop), a circular arrow (Restart), three
+stacked lines (Queue), two upright bars (Parallel). `NodeView` renders the current
+policy's glyph just left of the title (with a tooltip) and refreshes it when the
+policy changes; the same glyphs appear beside the menu items. To add or restyle a
+policy icon, edit `ExecutionPolicyIcons` — nothing else needs to change.
+
 ---
 
 **When you change this, update…** this file whenever you change canvas

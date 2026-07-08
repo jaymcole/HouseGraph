@@ -108,6 +108,16 @@ public class DiscoverCamerasNode extends BaseNode implements NodeContentProvider
         addFlowOutput(flowOut);
     }
 
+    /**
+     * An entry point despite having a flow input: the "Discover cameras" button calls
+     * {@link #execute()} directly, so its {@link io.github.jaymcole.housegraph.graph.ExecutionPolicy}
+     * is meaningful. The structural default would miss this (it has a flow-in), so it's declared here.
+     */
+    @Override
+    public boolean isExecutionEntryPoint() {
+        return true;
+    }
+
     @Override
     protected void onExecuted() {
         if (statusLabel == null) {

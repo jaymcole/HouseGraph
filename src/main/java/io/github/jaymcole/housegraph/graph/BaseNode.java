@@ -330,6 +330,25 @@ public abstract class BaseNode {
         this.executionPolicy = executionPolicy == null ? ExecutionPolicy.QUEUE : executionPolicy;
     }
 
+    /**
+     * Whether this node can be an <em>execution entry point</em> — something calls
+     * {@link #execute()} on it directly (a trigger button, a timer, an inbound event),
+     * rather than it only running when reached along an incoming flow edge. Only entry
+     * points can be re-triggered while a pass is in flight, so only they have a meaningful
+     * {@link ExecutionPolicy}; the UI surfaces the policy selector for these nodes alone.
+     * <p>
+     * The default covers the common case structurally: a node with a flow output but no
+     * flow input can <em>only</em> ever run via a direct {@code execute()} (nothing can
+     * cascade into it). A node that is both flow-triggerable and self-triggering — one
+     * with a flow input that also kicks itself off (e.g. a "Discover" button) — overrides
+     * this to return {@code true}.
+     *
+     * @return true if this node initiates its own execution
+     */
+    public boolean isExecutionEntryPoint() {
+        return !getFlowOutputs().isEmpty() && getFlowInputs().isEmpty();
+    }
+
     // Package-private: only NodeGraph (same package) drives node execution state.
 
     NodeGraph getGraph() {
