@@ -28,10 +28,13 @@ import java.util.Map;
  * Per node the file stores its {@code type}, canvas {@code x}/{@code y}, its
  * {@code executionPolicy} (see {@link ExecutionPolicy}), its {@code maxConcurrency} and
  * {@code timeoutMillis} (both written only when non-zero), its persistable input/output values
- * (computed and secret values are omitted — see {@link NodeVariable#isPersistentValue}), and any
- * node-specific {@code state}. Reads are forgiving of older files: a missing {@code executionPolicy}
- * loads as the default {@code QUEUE}, missing {@code maxConcurrency}/{@code timeoutMillis} as 0
- * (unlimited / no timeout), and an unknown node type is skipped rather than failing the whole load.
+ * (computed and secret values are omitted — see {@link NodeVariable#isPersistentValue}), a
+ * {@code requiredInputs} positional boolean array (written only when some input is
+ * {@link NodeVariable#isRequired() required}), and any node-specific {@code state}. Reads are
+ * forgiving of older files: a missing {@code executionPolicy} loads as the default {@code QUEUE},
+ * missing {@code maxConcurrency}/{@code timeoutMillis} as 0 (unlimited / no timeout), a missing
+ * {@code requiredInputs} leaves each input's author-declared default, and an unknown node type is
+ * skipped rather than failing the whole load.
  */
 public final class GraphFileIO {
 
@@ -70,6 +73,10 @@ public final class GraphFileIO {
             }
             nodeJson.put("inputs", valuesToJson(node.getInputs()));
             nodeJson.put("outputs", valuesToJson(node.getOutputs()));
+            JSONArray requiredInputs = requiredInputsToJson(node.getInputs());
+            if (requiredInputs != null) {
+                nodeJson.put("requiredInputs", requiredInputs);
+            }
             Map<String, String> state = node.saveState();
             if (!state.isEmpty()) {
                 nodeJson.put("state", new JSONObject(state));
@@ -135,6 +142,11 @@ public final class GraphFileIO {
             node.setTimeoutMillis(nodeJson.optLong("timeoutMillis", 0));
             applyValues(node.getInputs(), nodeJson.getJSONArray("inputs"));
             applyValues(node.getOutputs(), nodeJson.getJSONArray("outputs"));
+            // Absent in saves written before inputs could be required, and in saves where no input
+            // was required — either way the node keeps its author-declared defaults untouched.
+            if (nodeJson.has("requiredInputs")) {
+                applyRequired(node.getInputs(), nodeJson.getJSONArray("requiredInputs"));
+            }
             nodes.add(new GraphCanvas.ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));
         }
 
@@ -198,6 +210,32 @@ public final class GraphFileIO {
             array.put(value == null ? JSONObject.NULL : value);
         }
         return array;
+    }
+
+    /**
+     * A positional boolean per input recording whether it's {@link NodeVariable#isRequired()
+     * required}, or {@code null} when none are — so the common "no required inputs" node writes
+     * nothing. Aligned with the {@code inputs} value array (same order), read back by
+     * {@link #applyRequired}. Note: a node whose only author-required input was un-required by the
+     * user therefore writes nothing and reloads with that input required again — the one case this
+     * compact "write only when something is required" scheme can't round-trip.
+     */
+    private static JSONArray requiredInputsToJson(List<NodeVariable> inputs) {
+        JSONArray array = new JSONArray();
+        boolean anyRequired = false;
+        for (NodeVariable input : inputs) {
+            boolean required = input.isRequired();
+            array.put(required);
+            anyRequired |= required;
+        }
+        return anyRequired ? array : null;
+    }
+
+    /** Restores each input's required flag from a saved positional boolean array (extra inputs, if any, keep their author default). */
+    private static void applyRequired(List<NodeVariable> inputs, JSONArray flags) {
+        for (int i = 0; i < Math.min(inputs.size(), flags.length()); i++) {
+            inputs.get(i).setRequired(flags.getBoolean(i));
+        }
     }
 
     /** Parses a saved {@link ExecutionPolicy} name, tolerating null/unknown values by falling back to the default. */

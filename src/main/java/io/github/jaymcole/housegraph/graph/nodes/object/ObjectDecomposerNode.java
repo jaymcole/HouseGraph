@@ -29,7 +29,7 @@ import java.util.Map;
 @Display.Name("Object Decomposer")
 public class ObjectDecomposerNode extends BaseNode {
 
-    private final NodeVariable<Object> objectInput = new NodeVariable<>("Object", Object.class);
+    private final NodeVariable<Object> objectInput = new NodeVariable<>("Object", Object.class).required();
     private final Map<String, NodeVariable> outputsByProperty = new LinkedHashMap<>();
 
     /** The current output shape - one entry per exposed property, in port order. */

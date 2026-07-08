@@ -11,6 +11,7 @@ public class NodeVariable<T> {
     private T value;
     private boolean secret = false;
     private boolean transientValue = false;
+    private boolean required = false;
 
     public NodeVariable(String variableName, Class<T> type, String variableId, boolean manuallyEditable) {
         this.name = variableName;
@@ -110,6 +111,44 @@ public class NodeVariable<T> {
      */
     public boolean isTransient() {
         return transientValue;
+    }
+
+    /**
+     * Marks this input variable as <em>required</em>: the node is considered misconfigured
+     * (and flagged as such in the UI) until this input has a value source — either an incoming
+     * data edge or a non-null manually-authored value. Node authors set the <em>default</em> at
+     * field initialisation, alongside the other flags:
+     * {@code new NodeVariable<>("A", Float.class).required()}. Optional by default, so no
+     * existing node becomes misconfigured until its author opts in. The user can override this
+     * per-input from the node's right-click menu (see the node view), and that choice
+     * <em>is</em> persisted (see the graph's file IO). Fluent, for use as the author default.
+     * See {@link BaseNode#getUnsatisfiedRequiredInputs()}.
+     *
+     * @return this variable, for chaining
+     */
+    public NodeVariable<T> required() {
+        this.required = true;
+        return this;
+    }
+
+    /**
+     * Sets whether this input is required. The non-fluent counterpart to {@link #required()},
+     * for a user toggling it from the UI or a load restoring a saved choice.
+     *
+     * @param required whether this input must have a value source
+     */
+    public void setRequired(boolean required) {
+        this.required = required;
+    }
+
+    /**
+     * Whether this input must have a value source (an incoming edge or a manual value) for its
+     * node to be considered configured.
+     *
+     * @return true if this input is required
+     */
+    public boolean isRequired() {
+        return required;
     }
 
     /**

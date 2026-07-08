@@ -17,7 +17,7 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Display.Name("If")
 public class IfNode extends BaseNode {
 
-    private final NodeVariable<Float> condition = new NodeVariable<>("Condition", Float.class, true);
+    private final NodeVariable<Float> condition = new NodeVariable<>("Condition", Float.class, true).required();
     private final FlowPort truePort = new FlowPort("True", FlowPort.Direction.OUT);
     private final FlowPort falsePort = new FlowPort("False", FlowPort.Direction.OUT);
 

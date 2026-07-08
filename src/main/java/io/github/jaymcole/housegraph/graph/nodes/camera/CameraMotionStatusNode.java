@@ -37,7 +37,7 @@ import java.util.Map;
 public class CameraMotionStatusNode extends BaseNode implements NodeContentProvider {
 
     private final NodeVariable<String> username = new NodeVariable<>("Username", String.class, true);
-    private final NodeVariable<String> password = new NodeVariable<>("Password", String.class, true).markSecret();
+    private final NodeVariable<String> password = new NodeVariable<>("Password", String.class, true).markSecret().required();
     private final NodeVariable<Integer> channel = new NodeVariable<>("Channel", Integer.class, true);
 
     private final NodeVariable<Boolean> motion = new NodeVariable<>("motion", Boolean.class);

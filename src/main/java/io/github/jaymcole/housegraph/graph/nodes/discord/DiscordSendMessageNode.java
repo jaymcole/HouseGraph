@@ -25,8 +25,8 @@ import java.util.Map;
 @Display.Name("Discord Send Message")
 public class DiscordSendMessageNode extends BaseNode implements NodeContentProvider {
 
-    private final NodeVariable<String> message = new NodeVariable<>("Message", String.class, true);
-    private final NodeVariable<String> channel = new NodeVariable<>("Channel", String.class, true);
+    private final NodeVariable<String> message = new NodeVariable<>("Message", String.class, true).required();
+    private final NodeVariable<String> channel = new NodeVariable<>("Channel", String.class, true).required();
     private final FlowPort in = new FlowPort("", FlowPort.Direction.IN);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
 

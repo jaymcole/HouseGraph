@@ -37,7 +37,21 @@ flag. Persistence rules (enforced by `GraphFileIO`):
 - `transientValue()` — value is a live runtime handle (e.g. a Discord reply);
   meaningful only within one pass, never persisted.
 
-Both `markSecret()` and `transientValue()` are fluent, for field initialization.
+- `required()` — this input must have a value source (an incoming data edge **or** a
+  non-null manually-authored value) or its node is **misconfigured**. Optional by default,
+  so no existing node changes until its author opts in. Authors set the *default* via the fluent
+  `required()`; the user can override it per-input from the node's right-click "Required inputs"
+  menu, and that choice **is** persisted (a `requiredInputs` boolean array — see
+  [ui.md](ui.md) / `GraphFileIO`). `BaseNode.getUnsatisfiedRequiredInputs()` / `isMisconfigured()`
+  evaluate this headlessly against the node's current wiring and values; the UI renders the result
+  as a red node border, red input-port anchors, and a tooltip.
+
+`markSecret()`, `transientValue()`, and `required()` are all fluent, for field initialization.
+Many library nodes already ship with author-required inputs where a missing value makes the node
+meaningless — e.g. the string converters' `in`, the viewers' displayed value, the `If` nodes'
+condition, the object decomposer's `Object`, and the Discord Send/Reply message + target. Nodes
+with a sensible default for a missing input (e.g. `Add`, whose operands default to 0) leave them
+optional.
 
 ### Execution policy
 

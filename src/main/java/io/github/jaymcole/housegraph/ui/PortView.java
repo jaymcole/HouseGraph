@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -9,6 +10,11 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.util.Duration;
+import javafx.scene.layout.Border;
+import javafx.scene.layout.BorderStroke;
+import javafx.scene.layout.BorderStrokeStyle;
+import javafx.scene.layout.BorderWidths;
+import javafx.scene.layout.CornerRadii;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.paint.Color;
@@ -37,6 +43,15 @@ public class PortView extends HBox implements EdgeAnchor {
     private static final double BASE_STROKE_WIDTH = 1.5;
     private static final double HOVER_STROKE_WIDTH = 3;
 
+    // The misconfigured-input marker is a thin border around the whole port row (anchor +
+    // label/field), not a recolored anchor — the red anchor read like the drag "invalid target"
+    // state. A transparent border of the same width sits on every port by default so toggling the
+    // colour on/off never changes the row's size and reflows the node.
+    private static final Border TRANSPARENT_BORDER = new Border(new BorderStroke(
+            Color.TRANSPARENT, BorderStrokeStyle.SOLID, new CornerRadii(3), new BorderWidths(1)));
+    private static final Border MISSING_REQUIRED_BORDER = new Border(new BorderStroke(
+            Color.web("#e06c75"), BorderStrokeStyle.SOLID, new CornerRadii(3), new BorderWidths(1)));
+
     private final NodeView owner;
     private final NodeVariable<?> variable;
     private final Direction direction;
@@ -47,6 +62,7 @@ public class PortView extends HBox implements EdgeAnchor {
     private int connectionCount = 0;
     private boolean highlighted = false;
     private boolean invalid = false;
+    private boolean missingRequired = false;
     private boolean editing = false;
 
     public PortView(NodeView owner, NodeVariable<?> variable, Direction direction) {
@@ -80,6 +96,10 @@ public class PortView extends HBox implements EdgeAnchor {
         }
 
         setSpacing(6);
+        // A permanent transparent border (swapped to red when this input is required-but-unfed,
+        // see setMissingRequired) plus a little breathing room so it doesn't hug the anchor.
+        setBorder(TRANSPARENT_BORDER);
+        setPadding(new Insets(1, 2, 1, 2));
         if (direction == Direction.INPUT) {
             setAlignment(Pos.CENTER_LEFT);
             getChildren().addAll(circle, label);
@@ -145,11 +165,15 @@ public class PortView extends HBox implements EdgeAnchor {
         String text = valueField.getText();
         if (text == null || text.isBlank()) {
             ((NodeVariable<Object>) variable).setValue(null);
+            // Clearing a required input's value can make the node misconfigured; re-check.
+            owner.refreshValidation();
             return;
         }
         try {
             Object parsed = ValueEditors.editorFor(variable.type).parse(text);
             ((NodeVariable<Object>) variable).setValue(parsed);
+            // Typing a value can satisfy a required input; re-check the node's status.
+            owner.refreshValidation();
         } catch (RuntimeException e) {
             Object currentValue = variable.getValue();
             valueField.setText(currentValue == null ? "" : formatValue(currentValue));
@@ -223,6 +247,18 @@ public class PortView extends HBox implements EdgeAnchor {
     public void setInvalid(boolean invalid) {
         this.invalid = invalid;
         applyVisualState();
+    }
+
+    /**
+     * Marks (or unmarks) this port as a {@link NodeVariable#required() required} input with no
+     * value source — the per-port half of the misconfigured-node indicator. Draws a thin red
+     * border around the whole port row (anchor + label/field) rather than recoloring the anchor,
+     * which read like the drag {@link #setInvalid(boolean) invalid-target} state. Driven by
+     * {@link NodeView#refreshValidation()} whenever the node's wiring or values change.
+     */
+    public void setMissingRequired(boolean missingRequired) {
+        this.missingRequired = missingRequired;
+        setBorder(missingRequired ? MISSING_REQUIRED_BORDER : TRANSPARENT_BORDER);
     }
 
     /**

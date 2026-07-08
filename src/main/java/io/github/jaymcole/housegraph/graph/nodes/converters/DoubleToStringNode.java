@@ -8,7 +8,7 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Display.Name("Double to String")
 public class DoubleToStringNode extends BaseNode {
 
-    private final NodeVariable<Double> in = new NodeVariable<>("in", Double.class, false);
+    private final NodeVariable<Double> in = new NodeVariable<>("in", Double.class, false).required();
     private final NodeVariable<String> out = new NodeVariable<>("out", String.class, false);
 
 

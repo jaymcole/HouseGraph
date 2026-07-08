@@ -22,7 +22,7 @@ import javafx.util.Duration;
 @Display.Name("Repeating Trigger")
 public class TriggerRepeatingNode extends BaseNode implements NodeContentProvider {
 
-    private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true);
+    private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true).required();
 
     private Timeline timeline;
     private Button startButton;

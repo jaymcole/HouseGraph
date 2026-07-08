@@ -8,7 +8,7 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Display.Name("Float to String")
 public class FloatToStringNode extends BaseNode {
 
-    private final NodeVariable<Float> in = new NodeVariable<>("in", Float.class, false);
+    private final NodeVariable<Float> in = new NodeVariable<>("in", Float.class, false).required();
     private final NodeVariable<String> out = new NodeVariable<>("out", String.class, false);
 
 

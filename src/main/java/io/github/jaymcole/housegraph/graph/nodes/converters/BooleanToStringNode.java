@@ -8,7 +8,7 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Display.Name("Boolean to String")
 public class BooleanToStringNode extends BaseNode {
 
-    private final NodeVariable<Boolean> in = new NodeVariable<>("in", Boolean.class, false);
+    private final NodeVariable<Boolean> in = new NodeVariable<>("in", Boolean.class, false).required();
     private final NodeVariable<String> out = new NodeVariable<>("out", String.class, false);
 
 

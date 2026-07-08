@@ -510,6 +510,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         graph.registerEdge(edge);
         outputPort.connect();
         inputPort.connect();
+        // Wiring an input can satisfy a required input; re-evaluate the target node's status.
+        inputPort.getOwner().refreshValidation();
 
         EdgeView[] edgeViewRef = new EdgeView[1];
         EdgeView edgeView = new EdgeView(outputPort, inputPort, content,
@@ -519,6 +521,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                     edgeViews.remove(edge);
                     outputPort.disconnect();
                     inputPort.disconnect();
+                    // Removing the edge may leave a required input unsatisfied again.
+                    inputPort.getOwner().refreshValidation();
                     selectedConnections.remove(edgeViewRef[0]);
                 });
         edgeViewRef[0] = edgeView;

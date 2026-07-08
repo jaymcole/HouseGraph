@@ -48,10 +48,15 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   if ONVIF is disabled/unreachable, calls return empty and the camera keeps what
   it had.
 - **`ReolinkClient`** — minimal client for Reolink's HTTP CGI API
-  (`/cgi-bin/api.cgi`), just enough to read current detection state. Logs in for a
-  short-lived token, batches AI + plain-motion state in one request, logs out.
-  Folds AI categories (`people`/`vehicle`/`dog_cat`) and plain `GetMdState` into a
-  single `DetectionState(human, vehicle, animal, motion)`.
+  (`/cgi-bin/api.cgi`). Same session hygiene for every call: log in for a
+  short-lived token, do the work, log out. Two capabilities:
+  - `poll(...)` reads current detection state — batches AI + plain-motion state in
+    one request and folds AI categories (`people`/`vehicle`/`dog_cat`) and plain
+    `GetMdState` into a single `DetectionState(human, vehicle, animal, motion)`.
+  - `snapshot(...)` grabs a single still frame via the `Snap` GET, returning raw
+    JPEG bytes (guarded by a JPEG-magic check, since the camera answers errors with
+    a JSON body). The package stays JavaFX-free; the node wraps the bytes in an
+    `Image`.
 - **`CameraConfigStore`** — reads/merges/writes the camera registry
   (`cameras.json` under `config()`), keyed by MAC, each entry `{ name, model,
   lastKnownIp }`. Merging is non-destructive; a malformed file is refused rather

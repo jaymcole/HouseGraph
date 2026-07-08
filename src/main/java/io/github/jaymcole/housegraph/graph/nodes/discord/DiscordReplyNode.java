@@ -16,8 +16,8 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Display.Name("Discord Reply")
 public class DiscordReplyNode extends BaseNode {
 
-    private final NodeVariable<DiscordReply> reply = new NodeVariable<>("Reply", DiscordReply.class).transientValue();
-    private final NodeVariable<String> message = new NodeVariable<>("Message", String.class, true);
+    private final NodeVariable<DiscordReply> reply = new NodeVariable<>("Reply", DiscordReply.class).transientValue().required();
+    private final NodeVariable<String> message = new NodeVariable<>("Message", String.class, true).required();
     private final FlowPort in = new FlowPort("", FlowPort.Direction.IN);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
 

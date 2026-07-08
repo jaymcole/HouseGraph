@@ -41,6 +41,24 @@ not call into JavaFX from an engine thread yourself.
 Flow anchors are taken straight from `BaseNode.getFlowInputs()/getFlowOutputs()`,
 so a branch node with several out-ports gets one anchor each automatically.
 
+### Node visual states
+
+A `NodeView` layers a few unmanaged, mouse-transparent overlay rectangles over the node
+(unmanaged + `INSIDE` stroke, so they never shift or resize the node by a pixel):
+
+- **Selected** — amber border (`highlightBorder`).
+- **Pulse** — a brief cyan flash when the node is triggered, reverting to its resting state.
+- **Processing** — animated orange "marching ants" while the node's `process()` is running.
+- **Misconfigured** — a persistent red border (`validationBorder`) plus a thin red border around
+  each unsatisfied input `PortView` (anchor + label/field) and a tooltip naming them, shown whenever
+  `BaseNode.isMisconfigured()` (a [`required()`](nodes.md) input with no incoming edge and no
+  manual value). `NodeView.refreshValidation()` recomputes it; `GraphCanvas` calls it when an
+  edge to the node is added or removed, and `PortView` calls it when a manual value is committed.
+  The port border is used rather than recoloring the anchor, which read like the drag
+  "invalid target" state; every port carries a transparent border of the same width by default so
+  toggling it never reflows the node. The selection/pulse border paints on top of the red node
+  border, but the red port borders keep a misconfigured node's problem visible even while selected.
+
 ## Node inline UI: `NodeContentProvider`
 
 A `BaseNode` subclass can implement `NodeContentProvider` to embed its own JavaFX
@@ -141,8 +159,12 @@ get the policy glyph and the **Execution Policy** submenu. Any node that partici
 flow (has a flow port) additionally gets **Concurrency limit** and **Process timeout**
 submenus (per-node `maxConcurrency` / `timeoutMillis` — see [nodes.md](nodes.md)), so a
 mid-cascade LLM or camera node is right-clickable even though it has no execution policy.
-A node with none of these (a constant, a resource) shows no menu and right-clicking it
-falls through to the canvas's add-node menu.
+Any node with inputs also gets a **Required inputs** submenu: a checkbox per input toggling
+its [`required`](nodes.md) flag (which drives the misconfigured indicator above). Like the
+other submenus this mutates the model directly rather than through the undo stack, and the
+per-input choice round-trips through the save format (`requiredInputs`). A node with none of
+these (a constant, an input-less resource) shows no menu and right-clicking it falls through
+to the canvas's add-node menu.
 
 Each policy has a small glyph (`ExecutionPolicyIcons`, drawn from primitive JavaFX
 shapes — no image assets): a ringed slash (Drop), a circular arrow (Restart), three

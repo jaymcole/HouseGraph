@@ -17,7 +17,7 @@ import javafx.scene.control.Label;
 @Display.Name("Text Viewer")
 public class TextViewerNode extends BaseNode implements NodeContentProvider {
 
-    private final NodeVariable<String> value = new NodeVariable<>("Value", String.class);
+    private final NodeVariable<String> value = new NodeVariable<>("Value", String.class).required();
     private Label valueLabel;
 
     @Override

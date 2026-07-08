@@ -34,7 +34,7 @@ public class SquirrelAlarmNode extends BaseNode {
     private static final String DEFAULT_HOST = "squirrel-alarm.local";
 
     private final NodeVariable<String> host = new NodeVariable<>("Host", String.class, true);
-    private final NodeVariable<String> status = new NodeVariable<>("Status", String.class, true);
+    private final NodeVariable<String> status = new NodeVariable<>("Status", String.class, true).required();
     private final FlowPort in = new FlowPort("", FlowPort.Direction.IN);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
 

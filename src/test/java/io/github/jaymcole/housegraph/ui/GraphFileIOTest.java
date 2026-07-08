@@ -234,6 +234,73 @@ class GraphFileIOTest {
         assertEquals(0L, reloadedPlain.getTimeoutMillis());
     }
 
+    @Test
+    void requiredInputChoiceRoundTripsAndIsOnlyWrittenWhenSomethingIsRequired() {
+        // The user marks AddNode's first input required; the choice must survive a save/load.
+        AddNode add = new AddNode();
+        add.getInputs().get(0).setRequired(true);
+
+        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(add, 0.0, 0.0)), List.of(), List.of()));
+        BaseNode reloaded = roundTripped.nodes().get(0).node();
+        assertTrue(reloaded.getInputs().get(0).isRequired(), "the required input must reload as required");
+        assertFalse(reloaded.getInputs().get(1).isRequired(), "an input left optional must reload optional");
+
+        // A node with no required inputs writes no requiredInputs key at all.
+        AddNode plain = new AddNode();
+        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
+        assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("requiredInputs"),
+                "no requiredInputs key is written when nothing is required");
+    }
+
+    @Test
+    void aUserCanOverrideAnAuthorRequiredInputToOptional() {
+        // IfBoolNode's Condition is author-required; a save where the user turned it off must
+        // reload with it off (the requiredInputs array carries the explicit false).
+        io.github.jaymcole.housegraph.graph.nodes.control.IfBoolNode ifNode =
+                new io.github.jaymcole.housegraph.graph.nodes.control.IfBoolNode();
+        assertTrue(ifNode.getInputs().get(0).isRequired(), "Condition is author-required by default");
+        ifNode.getInputs().get(0).setRequired(false);
+
+        // Something else on the node is required so the array is actually written.
+        JSONObject nodeJson = new JSONObject();
+        nodeJson.put("type", io.github.jaymcole.housegraph.graph.nodes.control.IfBoolNode.class.getName());
+        nodeJson.put("x", 0.0);
+        nodeJson.put("y", 0.0);
+        nodeJson.put("inputs", new JSONArray(List.of(JSONObject.NULL)));
+        nodeJson.put("outputs", new JSONArray());
+        nodeJson.put("requiredInputs", new JSONArray(List.of(false)));
+        JSONObject root = new JSONObject();
+        root.put("nodes", new JSONArray(List.of(nodeJson)));
+        root.put("dataEdges", new JSONArray());
+        root.put("flowEdges", new JSONArray());
+
+        GraphCanvas.GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        assertFalse(loaded.nodes().get(0).node().getInputs().get(0).isRequired(),
+                "an explicit false in requiredInputs overrides the author default");
+    }
+
+    @Test
+    void legacySaveWithoutRequiredInputsKeepsAuthorDefaults() {
+        // A save written before required inputs existed has no requiredInputs key; an
+        // author-required input (IfBoolNode's Condition) must still load as required.
+        JSONObject nodeJson = new JSONObject();
+        nodeJson.put("type", io.github.jaymcole.housegraph.graph.nodes.control.IfBoolNode.class.getName());
+        nodeJson.put("x", 0.0);
+        nodeJson.put("y", 0.0);
+        nodeJson.put("inputs", new JSONArray(List.of(JSONObject.NULL)));
+        nodeJson.put("outputs", new JSONArray());
+        JSONObject root = new JSONObject();
+        root.put("nodes", new JSONArray(List.of(nodeJson)));
+        root.put("dataEdges", new JSONArray());
+        root.put("flowEdges", new JSONArray());
+
+        GraphCanvas.GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        assertTrue(loaded.nodes().get(0).node().getInputs().get(0).isRequired(),
+                "a missing requiredInputs key must leave the author default (required) intact");
+    }
+
     private static GraphCanvas.GraphSnapshot roundTrip(GraphCanvas.GraphSnapshot snapshot) {
         String text = GraphFileIO.toJson(snapshot).toString();
         return GraphFileIO.fromJson(new JSONObject(new JSONTokener(text)));

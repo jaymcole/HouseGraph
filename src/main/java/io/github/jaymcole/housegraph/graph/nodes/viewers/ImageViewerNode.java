@@ -14,7 +14,7 @@ public class ImageViewerNode extends BaseNode implements NodeContentProvider  {
 
     private static final double MAX_SIZE = 160;
 
-    private final NodeVariable<Image> imageIn = new NodeVariable<>("image", Image.class);
+    private final NodeVariable<Image> imageIn = new NodeVariable<>("image", Image.class).required();
     private ImageView imageViewer;
 
     @Override

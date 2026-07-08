@@ -15,6 +15,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
 import javafx.scene.Node;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
@@ -70,8 +71,10 @@ public class NodeView extends BorderPane {
 
     private static final Color SELECTED_BORDER_COLOR = Color.web("#e5c07b");
     private static final Color PULSE_BORDER_COLOR = Color.web("#61dafb");
+    private static final Color MISCONFIGURED_BORDER_COLOR = Color.web("#e06c75");
     private static final double SELECTED_BORDER_WIDTH = 2;
     private static final double PULSE_BORDER_WIDTH = 3;
+    private static final double MISCONFIGURED_BORDER_WIDTH = 2;
     private static final Color PROCESSING_STRIPE_COLOR = Color.web("#e5a561");
     private static final Duration PULSE_DURATION = Duration.millis(400);
     private static final double PROCESSING_STRIPE_WIDTH = 4;
@@ -79,9 +82,13 @@ public class NodeView extends BorderPane {
     private static final double PROCESSING_GAP_LENGTH = 8;
     private static final double PROCESSING_CYCLE_LENGTH = PROCESSING_DASH_LENGTH + PROCESSING_GAP_LENGTH;
 
+    private final Rectangle validationBorder;
     private final Rectangle highlightBorder;
     private final Rectangle processingStripes;
     private final Timeline processingAnimation;
+
+    /** Explains, on hover, which required inputs are unsatisfied while the node is misconfigured. */
+    private final Tooltip validationTooltip = new Tooltip();
 
     /** Sits beside the title, holding the glyph for the node's current {@link ExecutionPolicy}. */
     private final StackPane policyIcon = new StackPane();
@@ -241,10 +248,10 @@ public class NodeView extends BorderPane {
         setOnMouseDragged(Event::consume);
 
         // Right-click the node for its per-node settings (execution policy for triggers;
-        // concurrency limit / timeout for any node that does work). Nodes with none of these
-        // (a constant, a resource) get no menu and the event falls through to the canvas's
-        // add-node menu, as before.
-        if (showsPolicy || participatesInFlow()) {
+        // concurrency limit / timeout for any node that does work; which inputs are required,
+        // for any node with inputs). Nodes with none of these (a constant, a resource with no
+        // inputs) get no menu and the event falls through to the canvas's add-node menu, as before.
+        if (showsPolicy || participatesInFlow() || !node.getInputs().isEmpty()) {
             setOnContextMenuRequested(this::showContextMenu);
         }
 
@@ -254,6 +261,22 @@ public class NodeView extends BorderPane {
         // participate in layout and an INSIDE stroke never extends a shape's bounds,
         // so this border can be any width (or later carry glows, gradients, animated
         // strokes...) without the node moving or resizing by a single pixel.
+        // Persistent red border marking a misconfigured node (a required input with no value
+        // source). Built like the selection overlay — unmanaged, mouse-transparent, INSIDE
+        // stroke — and added first so the selection/pulse border paints on top of it; the red
+        // port circles (see PortView.setMissingRequired) keep the problem visible even then.
+        validationBorder = new Rectangle();
+        validationBorder.setFill(null);
+        validationBorder.setStroke(MISCONFIGURED_BORDER_COLOR);
+        validationBorder.setStrokeWidth(MISCONFIGURED_BORDER_WIDTH);
+        validationBorder.setStrokeType(StrokeType.INSIDE);
+        validationBorder.widthProperty().bind(widthProperty());
+        validationBorder.heightProperty().bind(heightProperty());
+        validationBorder.setMouseTransparent(true);
+        validationBorder.setVisible(false);
+        validationBorder.setManaged(false);
+        getChildren().add(validationBorder);
+
         highlightBorder = new Rectangle();
         highlightBorder.setFill(null);
         highlightBorder.setStrokeType(StrokeType.INSIDE);
@@ -287,6 +310,10 @@ public class NodeView extends BorderPane {
                 new KeyFrame(Duration.ZERO, new KeyValue(processingStripes.strokeDashOffsetProperty(), 0)),
                 new KeyFrame(Duration.seconds(0.6), new KeyValue(processingStripes.strokeDashOffsetProperty(), PROCESSING_CYCLE_LENGTH)));
         processingAnimation.setCycleCount(Timeline.INDEFINITE);
+
+        // Reflect the node's initial configured state (a fresh node with unwired required
+        // inputs shows red at once, before any edge is drawn).
+        refreshValidation();
     }
 
     /**
@@ -349,6 +376,9 @@ public class NodeView extends BorderPane {
             // actually does work in a cascade (an LLM/camera node, a transform) - not just triggers.
             menu.getItems().add(buildConcurrencyMenu());
             menu.getItems().add(buildTimeoutMenu());
+        }
+        if (!node.getInputs().isEmpty()) {
+            menu.getItems().add(buildRequiredInputsMenu());
         }
         if (menu.getItems().isEmpty()) {
             return;
@@ -423,6 +453,27 @@ public class NodeView extends BorderPane {
         return menu;
     }
 
+    /**
+     * A checklist of this node's inputs, each toggling its {@link NodeVariable#setRequired(boolean)
+     * required} flag — the user's way to say "this input must be wired (or given a value)". Toggling
+     * re-runs {@link #refreshValidation()} so the red border/port indicator updates immediately; the
+     * choice is persisted (see {@code GraphFileIO}). Like the policy/concurrency/timeout menus, this
+     * mutates the model directly rather than through the undo stack, matching those controls.
+     */
+    private Menu buildRequiredInputsMenu() {
+        Menu menu = new Menu("Required inputs");
+        for (NodeVariable<?> input : node.getInputs()) {
+            CheckMenuItem item = new CheckMenuItem(input.name);
+            item.setSelected(input.isRequired());
+            item.setOnAction(event -> {
+                input.setRequired(item.isSelected());
+                refreshValidation();
+            });
+            menu.getItems().add(item);
+        }
+        return menu;
+    }
+
     public void setSelected(boolean selected) {
         this.selected = selected;
         applyHighlight();
@@ -471,6 +522,34 @@ public class NodeView extends BorderPane {
 
     public boolean isProcessing() {
         return processing;
+    }
+
+    /**
+     * Recomputes this node's misconfigured state and updates its indicators: the red node border, a
+     * hover tooltip naming the unsatisfied required inputs, and a thin red border around each
+     * unsatisfied input port. Called by {@link GraphCanvas} whenever the node's wiring changes (an edge added
+     * or removed, the node added/rebuilt) and by {@link PortView} when a manual value is committed.
+     * Pure view refresh — the truth lives in {@link BaseNode#getUnsatisfiedRequiredInputs()}.
+     */
+    public void refreshValidation() {
+        List<NodeVariable> missing = node.getUnsatisfiedRequiredInputs();
+        boolean misconfigured = !missing.isEmpty();
+
+        validationBorder.setVisible(misconfigured);
+        if (misconfigured) {
+            List<String> names = new ArrayList<>();
+            for (NodeVariable<?> variable : missing) {
+                names.add(variable.name);
+            }
+            validationTooltip.setText("Missing required input(s): " + String.join(", ", names));
+            Tooltip.install(this, validationTooltip);
+        } else {
+            Tooltip.uninstall(this, validationTooltip);
+        }
+
+        for (PortView port : inputPorts) {
+            port.setMissingRequired(missing.contains(port.getVariable()));
+        }
     }
 
     public BaseNode getNode() {

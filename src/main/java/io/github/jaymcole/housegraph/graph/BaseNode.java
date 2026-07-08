@@ -228,6 +228,46 @@ public abstract class BaseNode {
     }
 
     /**
+     * The node's {@link NodeVariable#required() required} inputs that currently have no value
+     * source — no incoming data edge and no non-null manually-authored value. An empty list means
+     * the node is configured; a non-empty one means it's <em>misconfigured</em> and the UI flags it
+     * (see the node view). Pure, JavaFX-free logic so it stays headless-testable; evaluated against
+     * the node's current wiring ({@link #getIncomingDataEdges()}) and authored values. Meant to be
+     * called outside a run (on the UI thread), where {@link NodeVariable#getValue()} returns the
+     * authored value rather than a run's computed overlay.
+     *
+     * @return the required inputs lacking a value source, empty if the node is configured
+     */
+    public List<NodeVariable> getUnsatisfiedRequiredInputs() {
+        Set<NodeVariable> fedByEdge = new java.util.HashSet<>();
+        for (Edge edge : getIncomingDataEdges()) {
+            fedByEdge.add(edge.getTargetVariable());
+        }
+        List<NodeVariable> unsatisfied = new ArrayList<>();
+        for (NodeVariable input : getInputs()) {
+            if (!input.isRequired()) {
+                continue;
+            }
+            boolean satisfied = fedByEdge.contains(input) || input.getValue() != null;
+            if (!satisfied) {
+                unsatisfied.add(input);
+            }
+        }
+        return unsatisfied;
+    }
+
+    /**
+     * Whether this node has any {@link NodeVariable#required() required} input without a value
+     * source — i.e. it can't run as configured. Shorthand for
+     * {@code !getUnsatisfiedRequiredInputs().isEmpty()}.
+     *
+     * @return true if a required input is unsatisfied
+     */
+    public boolean isMisconfigured() {
+        return !getUnsatisfiedRequiredInputs().isEmpty();
+    }
+
+    /**
      * Node-specific configuration to persist in a save file, beyond input/output
      * values — e.g. a dropdown selection or a chosen key. Empty by default. The values
      * are stored verbatim, so this must never contain a secret (persist the reference,
