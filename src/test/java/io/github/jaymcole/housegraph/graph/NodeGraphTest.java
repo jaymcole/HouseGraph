@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -509,6 +510,151 @@ class NodeGraphTest {
             for (String name : optionNames) {
                 addOutput(new NodeVariable<>(name, String.class));
             }
+        }
+    }
+
+    @Test
+    void dropPolicyIgnoresARetriggerWhileAPassIsInFlight() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        CountDownLatch release = new CountDownLatch(1);
+        GateNode gate = new GateNode(release);
+        CountingSinkNode sink = new CountingSinkNode();
+        graph.addNode(trigger);
+        graph.addNode(gate);
+        graph.addNode(sink);
+        graph.registerFlowEdge(flowEdge(trigger, gate));
+        graph.registerFlowEdge(flowEdge(gate, sink));
+
+        trigger.setExecutionPolicy(ExecutionPolicy.DROP);
+
+        trigger.execute(); // pass 1: blocks in the gate
+        assertTrue(gate.started.await(2, TimeUnit.SECONDS), "first pass should reach the gate");
+        trigger.execute(); // dropped: a pass from this node is already in flight
+
+        release.countDown();
+        graph.awaitIdle();
+
+        assertEquals(1, gate.processCount.get(), "the dropped trigger must not start a second pass");
+        assertEquals(1, sink.processCount.get());
+    }
+
+    @Test
+    void queuePolicyCoalescesToTheLatestPendingTrigger() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        PayloadSourceNode source = new PayloadSourceNode();
+        CountDownLatch release = new CountDownLatch(1);
+        GateNode gate = new GateNode(release);
+        RecorderNode recorder = new RecorderNode();
+        graph.addNode(source);
+        graph.addNode(gate);
+        graph.addNode(recorder);
+        graph.registerEdge(new Edge(source, source.out, recorder, recorder.in));
+        graph.registerFlowEdge(flowEdge(source, gate));
+        graph.registerFlowEdge(flowEdge(gate, recorder));
+
+        // QUEUE is the default, but set it explicitly to document intent.
+        source.setExecutionPolicy(ExecutionPolicy.QUEUE);
+
+        graph.execute(source, () -> source.out.setValue("a")); // pass 1: blocks in the gate
+        assertTrue(gate.started.await(2, TimeUnit.SECONDS), "first pass should reach the gate");
+        // Two triggers arrive while pass 1 is blocked; only the latest survives coalescing.
+        graph.execute(source, () -> source.out.setValue("b"));
+        graph.execute(source, () -> source.out.setValue("c"));
+
+        release.countDown();
+        graph.awaitIdle();
+
+        assertEquals(List.of("a", "c"), recorder.received, "the middle trigger \"b\" should be coalesced away");
+    }
+
+    @Test
+    void restartPolicyCancelsTheInFlightCascadeAndRunsAFreshPass() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        CountDownLatch release = new CountDownLatch(1);
+        GateNode gate = new GateNode(release);
+        CountingSinkNode sink = new CountingSinkNode();
+        graph.addNode(trigger);
+        graph.addNode(gate);
+        graph.addNode(sink);
+        graph.registerFlowEdge(flowEdge(trigger, gate));
+        graph.registerFlowEdge(flowEdge(gate, sink));
+
+        trigger.setExecutionPolicy(ExecutionPolicy.RESTART);
+
+        trigger.execute(); // pass 1: blocks in the gate, before ever reaching the sink
+        assertTrue(gate.started.await(2, TimeUnit.SECONDS), "first pass should reach the gate");
+        trigger.execute(); // restart: cancel pass 1's remaining cascade, queue a fresh pass
+
+        release.countDown();
+        graph.awaitIdle();
+
+        assertEquals(2, gate.processCount.get(), "the gate runs once per pass (the cancelled one plus the restart)");
+        assertEquals(1, sink.processCount.get(),
+                "pass 1's cascade to the sink is cancelled after the gate; only the restarted pass reaches it");
+    }
+
+    /** Blocks in process() until released, counting each entry - holds a pass in flight at a known point. */
+    private static final class GateNode extends BaseNode {
+        final CountDownLatch started = new CountDownLatch(1);
+        final CountDownLatch release;
+        final AtomicInteger processCount = new AtomicInteger();
+
+        GateNode(CountDownLatch release) {
+            this.release = release;
+        }
+
+        @Override
+        public void process() {
+            processCount.incrementAndGet();
+            started.countDown();
+            try {
+                assertTrue(release.await(2, TimeUnit.SECONDS), "test never released the gate");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+
+        @Override
+        public void configureFlowOutputs() {
+            addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
+        }
+    }
+
+    /** Counts how many times it was reached via a flow cascade. */
+    private static final class CountingSinkNode extends BaseNode {
+        final AtomicInteger processCount = new AtomicInteger();
+
+        @Override
+        public void process() {
+            processCount.incrementAndGet();
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
         }
     }
 

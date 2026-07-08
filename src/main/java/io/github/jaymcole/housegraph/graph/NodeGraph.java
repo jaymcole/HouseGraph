@@ -56,6 +56,15 @@ import java.util.concurrent.Executors;
  * wait out a slow in-flight trigger the way it would if the whole traversal shared one
  * lock.
  * <p>
+ * <b>Re-entrant triggers.</b> When {@link #execute(BaseNode, Runnable)} is called on a node
+ * whose earlier pass is still in flight, the node's {@link ExecutionPolicy} decides the
+ * outcome: {@code DROP} ignores it, {@code RESTART} cancels the in-flight cascade and runs a
+ * fresh pass, and {@code QUEUE} (the default) coalesces to a single pending follow-up pass.
+ * All three build on the single serialized execution thread above — a pass never runs
+ * concurrently with another. {@code PARALLEL} would break that and is not yet implemented
+ * (it needs per-pass execution state instead of the statuses/visited-set the engine mutates
+ * on the shared node/graph objects today); it currently falls back to {@code QUEUE}.
+ * <p>
  * This class never imports anything from JavaFX: node/edge execution callbacks
  * ({@link BaseNode#onExecuted()}, {@link GraphExecutionListener}) are dispatched
  * through an injectable {@link #setCallbackExecutor callback executor}, which defaults
@@ -77,6 +86,25 @@ public class NodeGraph {
      * claim the same node, so this needs to be a thread-safe set, not a plain HashSet.
      */
     private final Set<BaseNode> flowVisited = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Per-entry-node execution state backing the {@link ExecutionPolicy} decision made in
+     * {@link #execute(BaseNode, Runnable)}. Keyed by the node {@code execute()} is called on;
+     * each value tracks whether a pass from that node is in flight and holds at most one
+     * coalesced pending pass. Concurrent because triggers arrive on many threads (FX, JDA,
+     * camera, resource publishers). Entries are dropped when a node leaves the graph.
+     */
+    private final Map<BaseNode, EntryExecution> entryExecutions = new ConcurrentHashMap<>();
+
+    /**
+     * Number of triggered passes that have been accepted but not yet finished, including a
+     * coalesced pass still waiting to run. Lets {@link #awaitIdle()} wait for the whole
+     * chain a burst of triggers produces — a coalesced follow-up is submitted lazily from
+     * inside the pass ahead of it, so it isn't yet on the executor's queue when awaitIdle
+     * is called. Guarded by {@link #idleLock}.
+     */
+    private int outstandingPasses = 0;
+    private final Object idleLock = new Object();
 
     private final List<GraphExecutionListener> executionListeners = new ArrayList<>();
 
@@ -166,6 +194,9 @@ public class NodeGraph {
         outgoingFlowEdges.remove(node);
         incomingFlowEdges.remove(node);
         boolean present = nodes.remove(node);
+        // Drop any policy bookkeeping for this node; an in-flight pass keeps its own
+        // captured reference and finishes unaffected.
+        entryExecutions.remove(node);
         node.setGraph(null);
         return present;
     }
@@ -301,20 +332,99 @@ public class NodeGraph {
      * pass, so a burst of events can't clobber one another's values through a shared
      * field (which they could if the value were written from the event thread before the
      * pass ran).
+     * <p>
+     * When a pass this node already started is still in flight, the node's
+     * {@link ExecutionPolicy} decides what happens to this new trigger — dropped, restarted,
+     * or queued (coalesced). See {@link ExecutionPolicy}.
      *
      * @param node    the node to trigger
      * @param prepare work run on the execution thread at the very start of the pass
      */
     public void execute(BaseNode node, Runnable prepare) {
-        executionExecutor.execute(() -> {
-            try {
-                prepare.run();
-                executeEntry(node);
-            } catch (RuntimeException e) {
-                Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
-                System.err.println("Triggered execution of \"" + node.getName() + "\" failed: " + cause);
+        Objects.requireNonNull(prepare, "prepare");
+        ExecutionPolicy policy = node.getExecutionPolicy();
+        if (policy == ExecutionPolicy.PARALLEL) {
+            // Phase 2: true concurrent passes need per-pass state the engine doesn't carry
+            // yet (see class Javadoc). Fall back to QUEUE so saves/UI stay forward-compatible.
+            policy = ExecutionPolicy.QUEUE;
+        }
+
+        EntryExecution state = entryExecutions.computeIfAbsent(node, ignored -> new EntryExecution());
+        synchronized (state) {
+            if (!state.running) {
+                // Nothing in flight for this node: start a pass immediately, regardless of policy.
+                state.running = true;
+                beginPass();
+                submitPass(node, prepare, state);
+                return;
             }
-        });
+            if (policy == ExecutionPolicy.DROP) {
+                // A pass is already in flight or queued for this node; ignore this trigger.
+                return;
+            }
+            // RESTART and QUEUE both coalesce to a single pending pass carrying the latest
+            // inputs; RESTART additionally cancels the in-flight pass's remaining cascade so
+            // the pending one effectively replaces it rather than following it.
+            if (policy == ExecutionPolicy.RESTART && state.runningToken != null) {
+                state.runningToken.cancel();
+            }
+            if (state.pendingPrepare == null) {
+                beginPass(); // first pass to queue behind the running one
+            }
+            state.pendingPrepare = prepare; // replaces any earlier pending (coalesce to latest)
+        }
+    }
+
+    /**
+     * Submits one pass for {@code node} to the single execution thread. The caller must hold
+     * {@code state}'s monitor; this records the pass's cancellation token so a later RESTART
+     * can stop it.
+     */
+    private void submitPass(BaseNode node, Runnable prepare, EntryExecution state) {
+        PassToken token = new PassToken();
+        state.runningToken = token;
+        executionExecutor.execute(() -> runPass(node, prepare, state, token));
+    }
+
+    private void runPass(BaseNode node, Runnable prepare, EntryExecution state, PassToken token) {
+        try {
+            prepare.run();
+            executeEntry(node, token);
+        } catch (RuntimeException e) {
+            Throwable cause = e instanceof CompletionException && e.getCause() != null ? e.getCause() : e;
+            System.err.println("Triggered execution of \"" + node.getName() + "\" failed: " + cause);
+        } finally {
+            // Chain into a coalesced pending pass if one accumulated while this ran (QUEUE /
+            // RESTART), otherwise mark the node idle so the next trigger starts fresh. Either
+            // way this pass is done: endPass() balances the beginPass() from execute(). The
+            // coalesced follow-up was counted separately when it was queued, so it keeps the
+            // graph non-idle until it too finishes.
+            synchronized (state) {
+                if (state.pendingPrepare != null) {
+                    Runnable next = state.pendingPrepare;
+                    state.pendingPrepare = null;
+                    submitPass(node, next, state); // stays "running"; runs the coalesced pass next
+                } else {
+                    state.running = false;
+                    state.runningToken = null;
+                }
+            }
+            endPass();
+        }
+    }
+
+    private void beginPass() {
+        synchronized (idleLock) {
+            outstandingPasses++;
+        }
+    }
+
+    private void endPass() {
+        synchronized (idleLock) {
+            if (--outstandingPasses == 0) {
+                idleLock.notifyAll();
+            }
+        }
     }
 
     /**
@@ -329,11 +439,11 @@ public class NodeGraph {
         resolveInternal(node);
     }
 
-    private void executeEntry(BaseNode node) {
+    private void executeEntry(BaseNode node, PassToken token) {
         requireRegistered(node);
         resetAllStatuses();
         flowVisited.clear();
-        executeInternal(node);
+        executeInternal(node, token);
     }
 
     private void runOnExecutionThreadAndWait(Runnable task) {
@@ -351,7 +461,13 @@ public class NodeGraph {
         }
     }
 
-    private void executeInternal(BaseNode node) {
+    private void executeInternal(BaseNode node, PassToken token) {
+        // Cooperative RESTART cancellation: a cancelled pass stops advancing the cascade at
+        // the next node boundary. The node currently mid-process() isn't interrupted (see
+        // ExecutionPolicy.RESTART) - only not-yet-reached downstream work is skipped.
+        if (token.isCancelled()) {
+            return;
+        }
         if (!flowVisited.add(node)) {
             return;
         }
@@ -372,8 +488,11 @@ public class NodeGraph {
             if (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort())) {
                 continue;
             }
+            if (token.isCancelled()) {
+                break;
+            }
             callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
-            branches.add(CompletableFuture.runAsync(() -> executeInternal(flowEdge.getTargetNode()), branchExecutor));
+            branches.add(CompletableFuture.runAsync(() -> executeInternal(flowEdge.getTargetNode(), token), branchExecutor));
         }
         for (CompletableFuture<Void> branch : branches) {
             branch.join();
@@ -466,12 +585,26 @@ public class NodeGraph {
     }
 
     /**
-     * Blocks until every resolve()/execute() call submitted before this one has
-     * finished running. Not needed by the app itself (nothing there waits on
-     * completion — that's the whole point), but lets tests deterministically wait for
-     * an execute() call's background work before asserting on its effects.
+     * Blocks until the graph is idle: every triggered pass accepted so far has finished,
+     * <em>including</em> any coalesced follow-up pass a burst of triggers queued (which is
+     * submitted lazily from inside the pass ahead of it, so waiting on the executor queue
+     * alone would miss it). Not needed by the app itself (nothing there waits on completion
+     * — that's the whole point), but lets tests deterministically wait for an execute()
+     * call's background work before asserting on its effects.
      */
     public void awaitIdle() {
+        synchronized (idleLock) {
+            while (outstandingPasses > 0) {
+                try {
+                    idleLock.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Interrupted while waiting for the graph to become idle", e);
+                }
+            }
+        }
+        // Flush any non-triggered work (e.g. an in-flight resolve()) still on the execution
+        // thread, and let the final pass's runPass() fully unwind before we return.
         runOnExecutionThreadAndWait(() -> {
         });
     }
@@ -498,5 +631,36 @@ public class NodeGraph {
     private static <T> boolean removeFromSet(Map<BaseNode, Set<T>> map, BaseNode node, T value) {
         Set<T> set = map.get(node);
         return set != null && set.remove(value);
+    }
+
+    /**
+     * Per-entry-node execution bookkeeping for {@link ExecutionPolicy}. All fields are
+     * guarded by this object's own monitor (the {@code synchronized (state)} blocks in
+     * {@link #execute(BaseNode, Runnable)} and {@link #runPass}).
+     */
+    private static final class EntryExecution {
+        /** A pass from this node is in flight (submitted and not yet finished). */
+        boolean running;
+        /** The coalesced next pass's preparation, or null if none is queued. At most one. */
+        Runnable pendingPrepare;
+        /** Cancellation handle for the in-flight pass, used by a RESTART trigger. */
+        PassToken runningToken;
+    }
+
+    /**
+     * One pass's cancellation flag. A RESTART trigger flips it; {@link #executeInternal}
+     * checks it at each node boundary and stops advancing the cascade. Volatile because it's
+     * set from the triggering thread and read from the execution/branch threads.
+     */
+    private static final class PassToken {
+        private volatile boolean cancelled;
+
+        void cancel() {
+            cancelled = true;
+        }
+
+        boolean isCancelled() {
+            return cancelled;
+        }
     }
 }

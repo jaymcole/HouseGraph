@@ -39,6 +39,15 @@ flag. Persistence rules (enforced by `GraphFileIO`):
 
 Both `markSecret()` and `transientValue()` are fluent, for field initialization.
 
+### Execution policy
+
+Every node carries an `ExecutionPolicy` (`getExecutionPolicy()`/`setExecutionPolicy()`,
+default `QUEUE`, persisted by `GraphFileIO`) that governs what happens when the node is
+**triggered again while a pass it started is still in flight** — drop it, restart, or
+queue (coalesced). It only matters for entry-point nodes (the ones `execute()` is called
+on); it's inert for pure transform nodes. The engine, not the node, enforces it — see
+[graph-engine.md](graph-engine.md). Users set it from a node's right-click menu.
+
 ## Discovery: `NodeRegistry`
 
 `NodeRegistry.discover()` scans the classpath under

@@ -91,6 +91,7 @@ JSON shape:
   "nodes": [
     { "type": "<fully-qualified class name>",
       "x": 0.0, "y": 0.0,
+      "executionPolicy": "QUEUE",  // DROP | RESTART | QUEUE | PARALLEL; absent = QUEUE
       "inputs":  [ /* positional; null where not persistent */ ],
       "outputs": [ /* positional; computed values written as null */ ],
       "state":   { /* optional saveState() map */ } }
@@ -113,8 +114,18 @@ Key rules to preserve when editing this format:
   their ports from state before values are applied.
 - **Backward compatibility:** unknown node types are skipped with a warning
   (rather than failing the load); missing `waypoints`/`sourcePort`/`targetPort`
-  default sensibly so older saves still open. When you change the format, keep
-  this forgiving-read behavior and document the new fields.
+  default sensibly so older saves still open, and a missing/unknown
+  `executionPolicy` loads as `QUEUE`. When you change the format, keep this
+  forgiving-read behavior and document the new fields.
+
+## Per-node execution policy
+
+Right-clicking a node opens a context menu (`NodeView.showContextMenu`) whose
+**Execution Policy** submenu sets the node's `ExecutionPolicy` — what happens when
+the node is triggered again mid-pass (see [graph-engine.md](graph-engine.md)). The
+menu is rebuilt on each open so it reflects the node's current policy. `PARALLEL`
+is shown disabled: it isn't implemented and falls back to `QUEUE`, so offering it
+would mislead. The chosen policy round-trips through the save format above.
 
 ---
 

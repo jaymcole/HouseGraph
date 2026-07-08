@@ -76,6 +76,34 @@ This is the subtle part. Read the `NodeGraph` class Javadoc alongside this.
   lock is **never** held for a whole pass — so a UI-thread edit isn't forced to
   wait out a slow in-flight trigger.
 
+## Execution policy (re-entrant triggers)
+
+`execute()` is only ever called on **entry-point nodes** — the ones a trigger fires
+(a Trigger button, a Repeating Trigger, an event listener, a Discord command). When one
+of those is triggered again while a pass it started is still in flight, the node's
+`ExecutionPolicy` (a `volatile` field on `BaseNode`, default `QUEUE`) decides what happens:
+
+| Policy | Behavior |
+| --- | --- |
+| `DROP` | Ignore the new trigger while a pass from this node is running or queued. |
+| `RESTART` | Cancel the in-flight pass's remaining cascade (cooperatively — a node already inside `process()` still finishes; only not-yet-reached downstream nodes are skipped) and run a fresh pass with the newest inputs. |
+| `QUEUE` (default) | Run after the in-flight pass. **Coalesces to the latest**: at most one pass is kept pending, so a burst of triggers collapses to a single follow-up carrying the newest inputs, not an unbounded backlog. |
+| `PARALLEL` | **Not implemented yet** — falls back to `QUEUE`. True concurrent passes need per-pass execution state (see below); the enum/UI/save format carry it now only for forward-compatibility. |
+
+All of this is layered on top of the single serialized execution thread: passes still never
+run concurrently. `NodeGraph` tracks per-entry-node state (`EntryExecution`) and a per-pass
+`PassToken` that `RESTART` flips and `executeInternal` checks at each node boundary. Because a
+coalesced follow-up pass is submitted lazily from inside the pass ahead of it, `awaitIdle()`
+tracks an `outstandingPasses` count rather than just draining the executor queue — otherwise
+it would return before the coalesced pass ran.
+
+**Why `PARALLEL` needs a refactor.** Pass state lives as mutable fields on the shared
+node/graph objects — `BaseNode.status` (reset for *all* nodes at pass start via
+`resetAllStatuses()`), `flowVisited`, `activatedOutputs`, and the data values written into each
+node's `NodeVariable`. Two concurrent passes over any overlapping node would corrupt each
+other. Real parallelism requires extracting that into a per-pass `ExecutionContext`; until then
+`PARALLEL` is a no-op alias for `QUEUE`.
+
 ## The callback-executor seam (why the engine has no JavaFX)
 
 `NodeGraph` dispatches all outward notifications through an injectable

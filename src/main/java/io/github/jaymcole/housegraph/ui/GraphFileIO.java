@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import javafx.geometry.Point2D;
@@ -23,6 +24,13 @@ import java.util.Map;
  * copy/paste. The JSON conversion ({@link #toJson}/{@link #fromJson}) is deliberately
  * kept free of any JavaFX/GraphCanvas dependency so it can be unit-tested headlessly;
  * {@link #save}/{@link #load} are the thin wrappers that touch an actual canvas.
+ * <p>
+ * Per node the file stores its {@code type}, canvas {@code x}/{@code y}, its
+ * {@code executionPolicy} (see {@link ExecutionPolicy}), its persistable input/output
+ * values (computed and secret values are omitted — see {@link NodeVariable#isPersistentValue}),
+ * and any node-specific {@code state}. Reads are forgiving of older files: a missing
+ * {@code executionPolicy} loads as the default {@code QUEUE}, and an unknown node type is
+ * skipped rather than failing the whole load.
  */
 public final class GraphFileIO {
 
@@ -52,6 +60,7 @@ public final class GraphFileIO {
             nodeJson.put("type", node.getClass().getName());
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
+            nodeJson.put("executionPolicy", node.getExecutionPolicy().name());
             nodeJson.put("inputs", valuesToJson(node.getInputs()));
             nodeJson.put("outputs", valuesToJson(node.getOutputs()));
             Map<String, String> state = node.saveState();
@@ -113,6 +122,8 @@ public final class GraphFileIO {
             if (nodeJson.has("state")) {
                 node.loadState(readState(nodeJson.getJSONObject("state")));
             }
+            // Absent in saves written before execution policies existed; default to QUEUE.
+            node.setExecutionPolicy(parsePolicy(nodeJson.optString("executionPolicy", null)));
             applyValues(node.getInputs(), nodeJson.getJSONArray("inputs"));
             applyValues(node.getOutputs(), nodeJson.getJSONArray("outputs"));
             nodes.add(new GraphCanvas.ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));
@@ -178,6 +189,19 @@ public final class GraphFileIO {
             array.put(value == null ? JSONObject.NULL : value);
         }
         return array;
+    }
+
+    /** Parses a saved {@link ExecutionPolicy} name, tolerating null/unknown values by falling back to the default. */
+    private static ExecutionPolicy parsePolicy(String name) {
+        if (name == null || name.isBlank()) {
+            return ExecutionPolicy.QUEUE;
+        }
+        try {
+            return ExecutionPolicy.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            System.err.println("Unknown execution policy in save file, defaulting to QUEUE: " + name);
+            return ExecutionPolicy.QUEUE;
+        }
     }
 
     private static Map<String, String> readState(JSONObject stateJson) {

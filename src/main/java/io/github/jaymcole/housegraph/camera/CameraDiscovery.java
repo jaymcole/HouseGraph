@@ -27,10 +27,11 @@ import java.util.regex.Pattern;
  * <p>
  * Primary method is <b>ONVIF WS-Discovery</b>: a SOAP "Probe" multicast to
  * {@code 239.255.255.250:3702} over UDP, sent out every local interface; each device
- * replies with its service address(es) and scopes (name/hardware/manufacturer). If
- * nothing answers (Reolink ships with ONVIF off) we fall back to a concurrent <b>TCP
- * port-scan</b> of each local /24 for the RTSP port (554). Either way we resolve each
- * IP to a <b>MAC</b> from the OS ARP cache — the stable id used to key the config.
+ * replies with its service address(es) and scopes (name/hardware/manufacturer). Because
+ * that multicast is lossy (an AP may not flood it to every Wi-Fi client, and Reolink ships
+ * with ONVIF off), it's always <b>unioned with a concurrent TCP port-scan</b> of each local
+ * /24 for the RTSP port (554), so a camera the probe missed is still found. Either way we
+ * resolve each IP to a <b>MAC</b> from the OS ARP cache — the stable id used to key the config.
  * <p>
  * Pure JDK, no dependency; multicast only reaches the local subnet, so this must run on
  * the same network/VLAN as the cameras.
@@ -68,17 +69,25 @@ public final class CameraDiscovery {
     }
 
     /**
-     * Runs a full discovery sweep: ONVIF probe, port-scan fallback if nothing answers,
-     * then MAC resolution. Cameras are keyed/deduped by IP and sorted by IP.
+     * Runs a full discovery sweep: an ONVIF WS-Discovery probe <em>unioned with</em> a TCP
+     * port-scan of the local subnet(s), then MAC resolution. Cameras are keyed/deduped by IP
+     * and sorted by IP.
+     * <p>
+     * The port-scan isn't just a fallback for when ONVIF is disabled — it always runs and is
+     * merged in. WS-Discovery is multicast, which is lossy: a Wi-Fi AP may not flood the
+     * {@code 239.255.255.250} group to every client, so a camera can answer ONVIF/RTSP
+     * perfectly over unicast yet never have its probe reply arrive. Scanning for the open RTSP
+     * port catches those cameras; the authenticated ONVIF enrichment that follows (see
+     * {@link OnvifEnrichment}) then fills in their name/model over unicast, which does work.
      *
      * @param timeoutSeconds how long to listen for ONVIF replies
      * @return the discovered cameras, deduped and sorted by IP
      */
     public static List<DiscoveredCamera> discover(int timeoutSeconds) {
         Map<String, List<String>> scopesByIp = probeOnvif(timeoutSeconds);
-        if (scopesByIp.isEmpty()) {
-            scopesByIp = portScan();
-        }
+        // Union in the port-scan results without overwriting a camera that already answered
+        // ONVIF (its real scopes beat the scan's placeholder).
+        portScan().forEach(scopesByIp::putIfAbsent);
 
         Map<String, String> arp = parseArpTable(runArp());
         List<DiscoveredCamera> cameras = new ArrayList<>();
@@ -273,7 +282,10 @@ public final class CameraDiscovery {
                 }
                 for (InetAddress address : Collections.list(iface.getInetAddresses())) {
                     String ip = address.getHostAddress();
-                    if (isIpv4(ip) && !ip.startsWith("127.")) {
+                    // Skip loopback and APIPA link-local (169.254.x): the latter are unconfigured
+                    // dead-end interfaces (no DHCP), and probing out each one just burns the whole
+                    // receive timeout waiting for replies that never come, slowing every sweep.
+                    if (isIpv4(ip) && !ip.startsWith("127.") && !ip.startsWith("169.254.")) {
                         addresses.add(ip);
                     }
                 }

@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
@@ -179,6 +180,32 @@ class GraphFileIOTest {
 
         assertEquals(1, roundTripped.nodes().size());
         assertEquals(Map.of("key", "API_KEY"), roundTripped.nodes().get(0).node().saveState());
+    }
+
+    @Test
+    void executionPolicyRoundTripsAndDefaultsToQueueWhenAbsent() {
+        AddNode restarting = new AddNode();
+        restarting.setExecutionPolicy(ExecutionPolicy.RESTART);
+
+        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(restarting, 0.0, 0.0)), List.of(), List.of()));
+        assertEquals(ExecutionPolicy.RESTART, roundTripped.nodes().get(0).node().getExecutionPolicy());
+
+        // A save written before policies existed has no "executionPolicy" key; it must load as QUEUE.
+        JSONObject legacyNode = new JSONObject();
+        legacyNode.put("type", AddNode.class.getName());
+        legacyNode.put("x", 0.0);
+        legacyNode.put("y", 0.0);
+        legacyNode.put("inputs", new JSONArray(List.of(JSONObject.NULL, JSONObject.NULL)));
+        legacyNode.put("outputs", new JSONArray(List.of(JSONObject.NULL)));
+        JSONObject legacyRoot = new JSONObject();
+        legacyRoot.put("nodes", new JSONArray(List.of(legacyNode)));
+        legacyRoot.put("dataEdges", new JSONArray());
+        legacyRoot.put("flowEdges", new JSONArray());
+
+        GraphCanvas.GraphSnapshot legacy = GraphFileIO.fromJson(legacyRoot);
+        assertEquals(ExecutionPolicy.QUEUE, legacy.nodes().get(0).node().getExecutionPolicy(),
+                "a save with no execution policy must default to QUEUE");
     }
 
     private static GraphCanvas.GraphSnapshot roundTrip(GraphCanvas.GraphSnapshot snapshot) {

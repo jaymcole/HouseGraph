@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import javafx.animation.KeyFrame;
@@ -14,7 +15,12 @@ import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
 import javafx.scene.Node;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
+import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.ToggleGroup;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -218,6 +224,10 @@ public class NodeView extends BorderPane {
         setOnMousePressed(Event::consume);
         setOnMouseDragged(Event::consume);
 
+        // Right-click the node for its per-node settings (currently the execution policy).
+        // Consumed so the canvas's own add-node menu doesn't open on top of it.
+        setOnContextMenuRequested(this::showContextMenu);
+
         // Emphasis overlay for the selected and pulse states: an unmanaged, mouse-
         // transparent rectangle stretched over the whole node, stroked on the inside
         // so it sits exactly where the CSS border does. Unmanaged children don't
@@ -306,6 +316,45 @@ public class NodeView extends BorderPane {
             dragController.onNodeReleased();
         }
         event.consume();
+    }
+
+    /** Builds and shows the node's right-click menu fresh each time, so it reflects the node's current state. */
+    private void showContextMenu(ContextMenuEvent event) {
+        ContextMenu menu = new ContextMenu();
+        menu.getItems().add(buildExecutionPolicyMenu());
+        menu.show(this, event.getScreenX(), event.getScreenY());
+        event.consume();
+    }
+
+    /**
+     * A submenu of mutually-exclusive execution policies (see {@link ExecutionPolicy}),
+     *      * with the node's current one pre-selected. PARALLEL is shown but disabled — it isn't
+     * implemented yet and silently falls back to QUEUE, so offering it would mislead.
+     */
+    private Menu buildExecutionPolicyMenu() {
+        Menu policyMenu = new Menu("Execution Policy");
+        ToggleGroup group = new ToggleGroup();
+        for (ExecutionPolicy policy : ExecutionPolicy.values()) {
+            RadioMenuItem item = new RadioMenuItem(policyLabel(policy));
+            item.setToggleGroup(group);
+            item.setSelected(node.getExecutionPolicy() == policy);
+            if (policy == ExecutionPolicy.PARALLEL) {
+                item.setDisable(true);
+            } else {
+                item.setOnAction(event -> node.setExecutionPolicy(policy));
+            }
+            policyMenu.getItems().add(item);
+        }
+        return policyMenu;
+    }
+
+    private static String policyLabel(ExecutionPolicy policy) {
+        return switch (policy) {
+            case DROP -> "Drop — ignore triggers while running";
+            case RESTART -> "Restart — cancel & rerun with new inputs";
+            case QUEUE -> "Queue — run next (latest wins)";
+            case PARALLEL -> "Parallel — not yet available";
+        };
     }
 
     public void setSelected(boolean selected) {

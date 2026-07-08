@@ -15,6 +15,15 @@ public abstract class BaseNode {
     private NodeProcessingStatus status = NodeProcessingStatus.NOT_STARTED;
     private Throwable lastError;
     private boolean configured = false;
+
+    /**
+     * What happens when this node is {@link #execute() triggered} again while a pass it
+     * started is still in flight. Only meaningful for entry-point nodes (the ones that
+     * actually get {@code execute()}d); inert for pure transform nodes. Read on the
+     * triggering thread, so kept {@code volatile}. Defaults to {@link ExecutionPolicy#QUEUE}
+     * to preserve the engine's historical "run the next trigger after this one" behavior.
+     */
+    private volatile ExecutionPolicy executionPolicy = ExecutionPolicy.QUEUE;
     private final List<NodeVariable> inputs = new ArrayList<>();
     private final List<NodeVariable> outputs = new ArrayList<>();
     private final List<FlowPort> flowInputs = new ArrayList<>();
@@ -300,6 +309,25 @@ public abstract class BaseNode {
      */
     public Throwable getLastError() {
         return lastError;
+    }
+
+    /**
+     * How re-triggering this node while a pass is in flight is handled — see
+     * {@link ExecutionPolicy}. Never null.
+     *
+     * @return this node's execution policy
+     */
+    public ExecutionPolicy getExecutionPolicy() {
+        return executionPolicy;
+    }
+
+    /**
+     * Sets how re-triggering this node while a pass is in flight is handled.
+     *
+     * @param executionPolicy the policy to apply; null resets to {@link ExecutionPolicy#QUEUE}
+     */
+    public void setExecutionPolicy(ExecutionPolicy executionPolicy) {
+        this.executionPolicy = executionPolicy == null ? ExecutionPolicy.QUEUE : executionPolicy;
     }
 
     // Package-private: only NodeGraph (same package) drives node execution state.
