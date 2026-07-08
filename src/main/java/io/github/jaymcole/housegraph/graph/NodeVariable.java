@@ -27,11 +27,34 @@ public class NodeVariable<T> {
         this(variableName, type, UUID.randomUUID().toString(), false);
     }
 
+    /**
+     * Sets this variable's value. During a run (an {@link ExecutionContext} is bound to the
+     * current thread) the value is written into that run's computed-value overlay, keeping
+     * concurrent runs isolated; outside a run it's stored on the variable as its authored value.
+     *
+     * @param value the value to set
+     */
     public void setValue(T value) {
-        this.value = value;
+        ExecutionContext context = ExecutionContext.current();
+        if (context != null) {
+            context.setValue(this, value);
+        } else {
+            this.value = value;
+        }
     }
 
+    /**
+     * This variable's value: the current run's computed value if it has one, otherwise the
+     * authored value stored on the variable. Outside a run, always the authored value. See
+     * {@link ExecutionContext}.
+     *
+     * @return the effective value for the current thread
+     */
     public T getValue() {
+        ExecutionContext context = ExecutionContext.current();
+        if (context != null && context.hasValue(this)) {
+            return context.getValue(this);
+        }
         return value;
     }
 
