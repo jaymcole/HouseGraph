@@ -527,6 +527,101 @@ class NodeGraphTest {
     }
 
     @Test
+    void separateTriggersRunConcurrently() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode slowTrigger = new TriggerNode();
+        TriggerNode fastTrigger = new TriggerNode();
+
+        CountDownLatch slowStarted = new CountDownLatch(1);
+        CountDownLatch releaseSlow = new CountDownLatch(1);
+        BlockingNode slow = new BlockingNode(slowStarted, releaseSlow);
+        CountDownLatch fastStarted = new CountDownLatch(1);
+        BlockingNode fast = new BlockingNode(fastStarted, new CountDownLatch(0));
+
+        graph.addNode(slowTrigger);
+        graph.addNode(fastTrigger);
+        graph.addNode(slow);
+        graph.addNode(fast);
+        graph.registerFlowEdge(flowEdge(slowTrigger, slow));
+        graph.registerFlowEdge(flowEdge(fastTrigger, fast));
+
+        slowTrigger.execute(); // starts a run that blocks in `slow`
+        assertTrue(slowStarted.await(2, TimeUnit.SECONDS), "the slow trigger's run should reach its blocking node");
+        // A separate trigger's run must not wait behind the blocked one (it would, on the old
+        // single serialized execution thread) - the fast run proves it runs concurrently.
+        fastTrigger.execute();
+        assertTrue(fastStarted.await(2, TimeUnit.SECONDS), "a second trigger runs concurrently while the first is blocked");
+
+        releaseSlow.countDown();
+        graph.awaitIdle();
+        assertTrue(slow.getStatus().isComplete());
+        assertTrue(fast.getStatus().isComplete());
+    }
+
+    @Test
+    void parallelPolicyRunsConcurrentRunsOfTheSameTrigger() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+
+        // Blocks until TWO runs have entered its process() at once. Only reachable if both
+        // PARALLEL runs are in flight concurrently AND the per-run resolution lock lets two
+        // runs into the same shared node at the same time - a global node lock would deadlock
+        // this at one entry.
+        CountDownLatch bothEntered = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        ConcurrentNode shared = new ConcurrentNode(bothEntered, release);
+
+        graph.addNode(trigger);
+        graph.addNode(shared);
+        graph.registerFlowEdge(flowEdge(trigger, shared));
+        trigger.setExecutionPolicy(ExecutionPolicy.PARALLEL);
+
+        trigger.execute();
+        trigger.execute();
+        assertTrue(bothEntered.await(2, TimeUnit.SECONDS), "both PARALLEL runs should enter the shared node concurrently");
+
+        release.countDown();
+        graph.awaitIdle();
+        assertEquals(2, shared.processCount.get(), "PARALLEL runs both execute");
+    }
+
+    /** Records how many runs are inside process() at once by blocking until an expected count arrives. */
+    private static final class ConcurrentNode extends BaseNode {
+        private final CountDownLatch entered;
+        private final CountDownLatch release;
+        final AtomicInteger processCount = new AtomicInteger();
+
+        ConcurrentNode(CountDownLatch entered, CountDownLatch release) {
+            this.entered = entered;
+            this.release = release;
+        }
+
+        @Override
+        public void process() {
+            processCount.incrementAndGet();
+            entered.countDown();
+            try {
+                assertTrue(release.await(2, TimeUnit.SECONDS), "test never released the concurrent node");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+    }
+
+    @Test
     void dropPolicyIgnoresARetriggerWhileAPassIsInFlight() throws InterruptedException {
         NodeGraph graph = new NodeGraph();
         TriggerNode trigger = new TriggerNode();

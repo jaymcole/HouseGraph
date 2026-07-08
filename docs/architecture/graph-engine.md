@@ -25,17 +25,16 @@ no control-only special-casing. See the `FlowPort` Javadoc.
 
 - **`resolve(node)`** — pulls a fresh value through the node's incoming data
   edges, resolving each upstream node first (depth-first), then runs the node's
-  `process()`. Every call is a *fresh pass*: all node statuses are reset first, so
-  a resolve never serves a stale cached value. It blocks the caller until done —
-  some callers need the value the instant the call returns.
-- **`execute(node)`** — resolves the node (as above) and then **cascades** along
-  its outgoing flow edges, triggering each downstream node in turn. Runs on a
-  background thread and returns immediately, so a slow node can't freeze the UI
-  thread that triggered it.
-- **`execute(node, prepare)`** — same, but `prepare` runs on the execution thread
-  at the very start of the pass. This is how an event source hands its per-event
-  payload to exactly one pass (captured inside the serialized pass, so a burst of
-  events can't clobber one another's values). Event-source nodes use the
+  `process()`. Every call runs in a fresh `ExecutionContext`, so every node starts
+  un-run and a resolve never serves a stale cached value. It blocks the caller until
+  done — some callers need the value the instant the call returns.
+- **`execute(node)`** — starts a **run**: resolves the node, then cascades along its
+  outgoing flow edges to the downstream nodes. Returns immediately; the run executes
+  on background virtual threads, concurrently with any other in-flight run.
+- **`execute(node, prepare)`** — same, but `prepare` runs inside the run's own
+  `ExecutionContext` at the very start. This is how an event source hands its per-event
+  payload to exactly one run — the payload lands in that run's value overlay, so a burst
+  of events (even overlapping runs) can't clobber one another. Event-source nodes use the
   `BaseNode.execute(Runnable)` protected overload.
 
 ## Node status lifecycle & cycle detection
@@ -60,25 +59,27 @@ no control-only special-casing. See the `FlowPort` Javadoc.
 
 This is the subtle part. Read the `NodeGraph` class Javadoc alongside this.
 
-- **One serialized execution thread** (`executionExecutor`, a single-thread
-  daemon named `housegraph-execution`). Every top-level `resolve`/`execute` is
-  submitted here, so two separate triggers never run at the same time — the
-  second waits in queue. `resolve` submits and blocks; `execute` submits and
-  returns.
-- **Virtual-thread branch fan-out.** Within one `execute` pass, sibling branches
-  of a control-flow fan-out (a node with several outgoing flow edges) run
-  concurrently, each on its own virtual thread (`branchExecutor`). A slow branch
-  can't hold up an unrelated sibling. The pass doesn't return until every branch
-  has joined.
-- **Per-node intrinsic lock.** `resolveInternal` synchronizes on the node object
-  itself. This gives two things at once: (1) two concurrent branches that share a
-  data dependency can't both run that node's `process()` — the second blocks, then
-  sees the completed status and returns without re-running; (2) a single thread
-  revisiting a node mid-resolution (a data cycle) hits the `IN_PROGRESS` check
-  rather than deadlocking (the lock is reentrant per thread).
+- **Concurrent runs on virtual threads.** A *run* is one trigger firing and its
+  cascade. Every node firing (and each synchronous `resolve` pull) runs as a task on a
+  shared virtual-thread `runExecutor`. Runs execute concurrently and never block one
+  another, so a slow node (a camera, an LLM node) only slows its own run. This is safe
+  because each run carries an isolated `ExecutionContext` — see the status-lifecycle
+  section above and `ExecutionContext`.
+- **Fire-and-forget flow.** A node resolves its data synchronously, runs `process()`,
+  then *schedules* its activated downstream nodes as independent tasks and does **not**
+  wait for them (see the `NodeGraph.Run` inner class). Linear order still holds — a node
+  runs downstream only after its own `process()` — but a fan-out no longer joins. The run
+  ends when its pending-firing counter reaches zero. Reconvergence therefore has no
+  implicit barrier; explicit joining is planned (see the design doc).
+- **Per-run resolution lock.** `resolveInternal` synchronizes on a monitor from the run's
+  context (`ExecutionContext.lockFor(node)`), not the node object. Within a run this dedups
+  a shared data dependency (the second branch blocks, then sees the completed status) and,
+  reentrant per thread, turns a data cycle into the `IN_PROGRESS` check rather than a
+  deadlock. Being per-run, it does **not** serialize two different concurrent runs that
+  share the node — that's what makes `PARALLEL` genuinely parallel.
 - **Structural methods stay `synchronized` on the `NodeGraph`** for their brief
   critical section (adding/removing nodes and edges, reading topology), but that
-  lock is **never** held for a whole pass — so a UI-thread edit isn't forced to
+  lock is **never** held for a whole run — so a UI-thread edit isn't forced to
   wait out a slow in-flight trigger.
 
 ## Execution policy (re-entrant triggers)
@@ -92,22 +93,15 @@ of those is triggered again while a pass it started is still in flight, the node
 | --- | --- |
 | `DROP` | Ignore the new trigger while a pass from this node is running or queued. |
 | `RESTART` | Cancel the in-flight pass's remaining cascade (cooperatively — a node already inside `process()` still finishes; only not-yet-reached downstream nodes are skipped) and run a fresh pass with the newest inputs. |
-| `QUEUE` (default) | Run after the in-flight pass. **Coalesces to the latest**: at most one pass is kept pending, so a burst of triggers collapses to a single follow-up carrying the newest inputs, not an unbounded backlog. |
-| `PARALLEL` | **Not implemented yet** — falls back to `QUEUE`. True concurrent passes need per-pass execution state (see below); the enum/UI/save format carry it now only for forward-compatibility. |
+| `QUEUE` (default) | Run after the in-flight run. **Coalesces to the latest**: at most one run is kept pending, so a burst of triggers collapses to a single follow-up carrying the newest inputs, not an unbounded backlog. |
+| `PARALLEL` | Start an independent concurrent run every time — no single-flight gate, no coalescing. Safe because each run has an isolated context. |
 
-All of this is layered on top of the single serialized execution thread: passes still never
-run concurrently. `NodeGraph` tracks per-entry-node state (`EntryExecution`) and a per-pass
-`PassToken` that `RESTART` flips and `executeInternal` checks at each node boundary. Because a
-coalesced follow-up pass is submitted lazily from inside the pass ahead of it, `awaitIdle()`
-tracks an `outstandingPasses` count rather than just draining the executor queue — otherwise
-it would return before the coalesced pass ran.
-
-**Why `PARALLEL` isn't enabled yet.** Per-pass state has been extracted into a per-pass
-`ExecutionContext` (status, flow-visited, activated ports, computed values) — the foundation
-concurrent passes need — but the engine still submits every pass to the single serialized
-thread, so passes don't actually overlap and `PARALLEL` remains a no-op alias for `QUEUE`.
-Flipping to genuinely concurrent runs is the in-progress work tracked in
-`docs/design/per-node-execution-policy.md`.
+`DROP`/`QUEUE`/`RESTART` keep a single in-flight run per entry node via `EntryExecution`;
+different entry nodes, and `PARALLEL` re-fires, run concurrently. A per-run `PassToken` that
+`RESTART` flips and `Run.fire` checks at each node boundary stops a superseded run's remaining
+cascade. Because a coalesced follow-up run is started lazily from the run ahead of it (and runs
+are fire-and-forget), `awaitIdle()` waits on an `outstandingPasses` count that a run decrements
+only once its last firing completes — never on draining a queue.
 
 ## The callback-executor seam (why the engine has no JavaFX)
 
@@ -141,10 +135,13 @@ Cycle-free data + `activate` are how branch nodes work: see `IfNode` (fires
 
 ## Waiting on async work (tests)
 
-`awaitIdle()` blocks until every previously-submitted pass has finished. The app
-never needs it (nothing waits on completion — that's the point of the background
-thread), but tests use it to deterministically wait for an `execute` pass before
-asserting. See [testing.md](testing.md).
+`awaitIdle()` blocks until every accepted run (including a coalesced follow-up) has fully
+quiesced — it waits on the `outstandingPasses` count, which a run decrements only once its
+last fire-and-forget node firing completes. The app never needs it (nothing waits on
+completion — that's the point of running in the background), but tests use it to
+deterministically wait for an `execute` run before asserting. Because reconvergence is no
+longer implicitly barriered, tests that need a specific order should impose it structurally.
+See [testing.md](testing.md).
 
 ---
 

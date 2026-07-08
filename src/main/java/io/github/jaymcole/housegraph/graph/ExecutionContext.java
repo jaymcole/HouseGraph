@@ -59,6 +59,15 @@ public final class ExecutionContext {
     /** Which flow-out ports each node fired this run (empty means "fire all"); replaces the old {@link BaseNode} field. */
     private final Map<BaseNode, Set<FlowPort>> activatedOutputs = new ConcurrentHashMap<>();
 
+    /**
+     * Per-node resolution monitors, scoped to this run. Two branch threads of the same run that
+     * share a data dependency take the same monitor (so the node resolves once); a data cycle
+     * re-enters it on one thread (reentrant) and hits the {@code IN_PROGRESS} check. Crucially the
+     * monitor is <em>per-context</em>, not the node object itself, so two concurrent runs sharing a
+     * node don't serialize on each other's {@code process()} — each has isolated state anyway.
+     */
+    private final Map<BaseNode, Object> resolutionLocks = new ConcurrentHashMap<>();
+
     /** The context bound to the calling thread, or null if none (then {@link NodeVariable} uses authored values). */
     static ExecutionContext current() {
         return CURRENT.get();
@@ -85,6 +94,11 @@ public final class ExecutionContext {
     /** The flow-out ports {@code node} fired this run; empty means "fire all" (see {@link BaseNode#activate}). */
     Set<FlowPort> activatedOf(BaseNode node) {
         return activatedOutputs.getOrDefault(node, Set.of());
+    }
+
+    /** This run's resolution monitor for {@code node} (see the field). */
+    Object lockFor(BaseNode node) {
+        return resolutionLocks.computeIfAbsent(node, ignored -> new Object());
     }
 
     /**
