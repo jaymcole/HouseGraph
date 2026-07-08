@@ -64,7 +64,17 @@ flow edge. `BaseNode.isExecutionEntryPoint()` marks these: it defaults to "has a
 but no flow-in" (such a node can only ever run via a direct `execute()`), which covers the
 usual trigger/listener sources automatically. A node that self-triggers *and* has a flow-in
 (e.g. `DiscoverCamerasNode`'s Discover button) overrides it to `true`. The UI shows the
-policy glyph and right-click menu only for entry points; the field is inert elsewhere.
+policy glyph and right-click policy submenu only for entry points; the field is inert elsewhere.
+
+### Per-node throughput: concurrency limit & timeout
+
+Two knobs on `BaseNode`, orthogonal to execution policy, for any node that does real work
+(an LLM call, a camera poll, a transform): `setMaxConcurrency(n)` caps how many runs may
+execute this node's `process()` at once across all concurrent runs (0 = unlimited; a per-node
+fair semaphore in the engine), and `setTimeoutMillis(ms)` aborts a `process()` that overruns
+(0 = none; the engine interrupts it and marks the node FAILED with a `TimeoutException`). Both
+are cooperative on interruption and persist via `GraphFileIO`. Set them from the node's
+right-click menu (shown for any flow-participating node, not just triggers).
 
 ## Discovery: `NodeRegistry`
 

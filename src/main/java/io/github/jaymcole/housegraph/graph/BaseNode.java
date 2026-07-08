@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 
 public abstract class BaseNode {
 
@@ -23,6 +24,27 @@ public abstract class BaseNode {
      * to preserve the engine's historical "run the next trigger after this one" behavior.
      */
     private volatile ExecutionPolicy executionPolicy = ExecutionPolicy.QUEUE;
+
+    /**
+     * Caps how many runs may execute this node's {@link #process()} at once, across all concurrent
+     * runs (0 = unlimited). For an expensive node — an LLM call, a rate-limited API, a flaky camera
+     * — a limit of 1 serializes it so overlapping runs queue for it rather than hammering it at
+     * once. Distinct from {@link ExecutionPolicy} (which is about re-triggering an entry node): this
+     * governs a single node's own throughput. The {@link Semaphore} is rebuilt whenever the limit
+     * changes; {@code null} means unlimited.
+     */
+    private volatile int maxConcurrency = 0;
+    private volatile Semaphore concurrencyLimiter;
+
+    /**
+     * How long this node's {@link #process()} may run before the engine interrupts it and marks the
+     * node {@code FAILED} with a {@link java.util.concurrent.TimeoutException} (0 = no timeout, in
+     * milliseconds). Meant for nodes that call out to something that can hang — a camera, an LLM,
+     * an HTTP API. Cooperative: it interrupts the thread, so it only aborts a {@code process()} that
+     * honors interruption (a blocking call that ignores it won't stop, same limit as RESTART).
+     */
+    private volatile long timeoutMillis = 0;
+
     private final List<NodeVariable> inputs = new ArrayList<>();
     private final List<NodeVariable> outputs = new ArrayList<>();
     private final List<FlowPort> flowInputs = new ArrayList<>();
@@ -324,6 +346,53 @@ public abstract class BaseNode {
      */
     public void setExecutionPolicy(ExecutionPolicy executionPolicy) {
         this.executionPolicy = executionPolicy == null ? ExecutionPolicy.QUEUE : executionPolicy;
+    }
+
+    /**
+     * The most runs allowed to execute this node's {@link #process()} at once, across all runs;
+     * 0 means unlimited. See the field.
+     *
+     * @return this node's concurrency limit, or 0 for unlimited
+     */
+    public int getMaxConcurrency() {
+        return maxConcurrency;
+    }
+
+    /**
+     * Sets the most runs allowed to execute this node's {@link #process()} at once (clamped to
+     * &ge; 0; 0 = unlimited). Rebuilds the underlying permit semaphore.
+     *
+     * @param max the concurrency cap, or 0 for unlimited
+     */
+    public void setMaxConcurrency(int max) {
+        int limit = Math.max(0, max);
+        this.maxConcurrency = limit;
+        this.concurrencyLimiter = limit == 0 ? null : new Semaphore(limit, true);
+    }
+
+    /** The permit semaphore enforcing {@link #getMaxConcurrency()}, or null when unlimited. Package-private: the engine acquires around {@code process()}. */
+    Semaphore concurrencyLimiter() {
+        return concurrencyLimiter;
+    }
+
+    /**
+     * How long this node's {@link #process()} may run before the engine aborts it (0 = no timeout),
+     * in milliseconds. See the field.
+     *
+     * @return this node's process timeout in milliseconds, or 0 for none
+     */
+    public long getTimeoutMillis() {
+        return timeoutMillis;
+    }
+
+    /**
+     * Sets how long this node's {@link #process()} may run before the engine interrupts it and marks
+     * it FAILED (clamped to &ge; 0; 0 = no timeout).
+     *
+     * @param millis the timeout in milliseconds, or 0 for none
+     */
+    public void setTimeoutMillis(long millis) {
+        this.timeoutMillis = Math.max(0, millis);
     }
 
     /**

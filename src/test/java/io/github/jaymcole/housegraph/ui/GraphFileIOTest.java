@@ -208,6 +208,32 @@ class GraphFileIOTest {
                 "a save with no execution policy must default to QUEUE");
     }
 
+    @Test
+    void concurrencyLimitAndTimeoutRoundTripAndDefaultToOffWhenAbsent() {
+        AddNode limited = new AddNode();
+        limited.setMaxConcurrency(2);
+        limited.setTimeoutMillis(5000);
+
+        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(limited, 0.0, 0.0)), List.of(), List.of()));
+        BaseNode reloaded = roundTripped.nodes().get(0).node();
+        assertEquals(2, reloaded.getMaxConcurrency());
+        assertEquals(5000L, reloaded.getTimeoutMillis());
+
+        // A node with defaults writes neither key; a save lacking them loads as unlimited / no timeout.
+        AddNode plain = new AddNode();
+        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
+        JSONObject plainNode = json.getJSONArray("nodes").getJSONObject(0);
+        assertFalse(plainNode.has("maxConcurrency"), "the default (unlimited) is not written");
+        assertFalse(plainNode.has("timeoutMillis"), "the default (no timeout) is not written");
+
+        BaseNode reloadedPlain = roundTrip(new GraphCanvas.GraphSnapshot(
+                List.of(new GraphCanvas.ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of())).nodes().get(0).node();
+        assertEquals(0, reloadedPlain.getMaxConcurrency());
+        assertEquals(0L, reloadedPlain.getTimeoutMillis());
+    }
+
     private static GraphCanvas.GraphSnapshot roundTrip(GraphCanvas.GraphSnapshot snapshot) {
         String text = GraphFileIO.toJson(snapshot).toString();
         return GraphFileIO.fromJson(new JSONObject(new JSONTokener(text)));

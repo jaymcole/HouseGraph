@@ -129,8 +129,12 @@ the save format above.
 
 Only **execution entry points** (`BaseNode.isExecutionEntryPoint()` — nodes that
 `execute()` themselves, like triggers, listeners, and the Discover-cameras button)
-get the glyph and the menu; a constant, loader, or mid-cascade transform node shows
-neither, and right-clicking it falls through to the canvas's add-node menu as before.
+get the policy glyph and the **Execution Policy** submenu. Any node that participates in
+flow (has a flow port) additionally gets **Concurrency limit** and **Process timeout**
+submenus (per-node `maxConcurrency` / `timeoutMillis` — see [nodes.md](nodes.md)), so a
+mid-cascade LLM or camera node is right-clickable even though it has no execution policy.
+A node with none of these (a constant, a resource) shows no menu and right-clicking it
+falls through to the canvas's add-node menu.
 
 Each policy has a small glyph (`ExecutionPolicyIcons`, drawn from primitive JavaFX
 shapes — no image assets): a ringed slash (Drop), a circular arrow (Restart), three

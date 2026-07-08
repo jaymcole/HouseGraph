@@ -15,6 +15,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -111,6 +117,17 @@ public class NodeGraph {
      */
     private final ExecutorService runExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
+    /**
+     * Fires the per-node process timeouts (see {@link BaseNode#getTimeoutMillis()}): a one-shot task
+     * scheduled here interrupts the firing thread if a node's {@code process()} overruns. A single
+     * daemon thread suffices — the tasks only set a flag and interrupt, never do real work.
+     */
+    private final ScheduledExecutorService watchdogScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "housegraph-timeout-watchdog");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     private volatile Executor callbackExecutor = Runnable::run;
 
     private static final Runnable NO_PREPARATION = () -> {
@@ -203,6 +220,7 @@ public class NodeGraph {
             removeNode(node);
         }
         runExecutor.shutdownNow();
+        watchdogScheduler.shutdownNow();
     }
 
     // --- Data edges ---------------------------------------------------------------
@@ -456,15 +474,7 @@ public class NodeGraph {
             }
 
             callbackExecutor.execute(() -> notifyNodeStarted(node));
-            try {
-                node.process();
-                setStatus(context, node, NodeProcessingStatus.SUCCESS);
-                node.setLastError(null);
-            } catch (Exception e) {
-                setStatus(context, node, NodeProcessingStatus.FAILED);
-                node.setLastError(e);
-                System.err.println("Node \"" + node.getName() + "\" failed to process: " + e);
-            }
+            runProcess(context, node);
             // Mirror this run's computed values onto the node before the (possibly async,
             // off-context) onExecuted callback runs, so it and later observers see them.
             context.commitValuesOf(node);
@@ -472,6 +482,60 @@ public class NodeGraph {
                 node.onExecuted();
                 notifyNodeExecuted(node);
             });
+        }
+    }
+
+    /**
+     * Runs {@code node}'s {@code process()} and records its status, honoring the node's concurrency
+     * limit and timeout. The concurrency permit (if any) caps how many runs execute this node at
+     * once — a run blocks here until one is free, so its firing stays pending and the graph isn't
+     * considered idle meanwhile. The timeout (if any) schedules a watchdog that interrupts this
+     * thread if {@code process()} overruns, marking the node {@code FAILED} with a
+     * {@link TimeoutException}; it's cooperative, so a {@code process()} that ignores interruption
+     * won't actually stop (same limitation as {@link ExecutionPolicy#RESTART}).
+     */
+    private void runProcess(ExecutionContext context, BaseNode node) {
+        Semaphore limiter = node.concurrencyLimiter();
+        if (limiter != null) {
+            limiter.acquireUninterruptibly();
+        }
+
+        long timeoutMillis = node.getTimeoutMillis();
+        AtomicBoolean timedOut = new AtomicBoolean(false);
+        ScheduledFuture<?> watchdog = null;
+        if (timeoutMillis > 0) {
+            Thread firingThread = Thread.currentThread();
+            watchdog = watchdogScheduler.schedule(() -> {
+                timedOut.set(true);
+                firingThread.interrupt();
+            }, timeoutMillis, TimeUnit.MILLISECONDS);
+        }
+
+        try {
+            node.process();
+            if (timedOut.get()) {
+                // process() returned but the watchdog had already fired (it swallowed the interrupt).
+                throw new TimeoutException(node.getName() + " exceeded its " + timeoutMillis + " ms timeout");
+            }
+            setStatus(context, node, NodeProcessingStatus.SUCCESS);
+            node.setLastError(null);
+        } catch (Exception e) {
+            Throwable error = timedOut.get() && !(e instanceof TimeoutException)
+                    ? new TimeoutException(node.getName() + " exceeded its " + timeoutMillis + " ms timeout")
+                    : e;
+            setStatus(context, node, NodeProcessingStatus.FAILED);
+            node.setLastError(error);
+            System.err.println("Node \"" + node.getName() + "\" failed to process: " + error);
+        } finally {
+            if (watchdog != null) {
+                watchdog.cancel(false);
+            }
+            // Clear any interrupt the watchdog raised so the firing thread continues (scheduling
+            // downstream) clean, and release the concurrency permit for the next waiting run.
+            Thread.interrupted();
+            if (limiter != null) {
+                limiter.release();
+            }
         }
     }
 

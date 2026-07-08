@@ -26,11 +26,12 @@ import java.util.Map;
  * {@link #save}/{@link #load} are the thin wrappers that touch an actual canvas.
  * <p>
  * Per node the file stores its {@code type}, canvas {@code x}/{@code y}, its
- * {@code executionPolicy} (see {@link ExecutionPolicy}), its persistable input/output
- * values (computed and secret values are omitted — see {@link NodeVariable#isPersistentValue}),
- * and any node-specific {@code state}. Reads are forgiving of older files: a missing
- * {@code executionPolicy} loads as the default {@code QUEUE}, and an unknown node type is
- * skipped rather than failing the whole load.
+ * {@code executionPolicy} (see {@link ExecutionPolicy}), its {@code maxConcurrency} and
+ * {@code timeoutMillis} (both written only when non-zero), its persistable input/output values
+ * (computed and secret values are omitted — see {@link NodeVariable#isPersistentValue}), and any
+ * node-specific {@code state}. Reads are forgiving of older files: a missing {@code executionPolicy}
+ * loads as the default {@code QUEUE}, missing {@code maxConcurrency}/{@code timeoutMillis} as 0
+ * (unlimited / no timeout), and an unknown node type is skipped rather than failing the whole load.
  */
 public final class GraphFileIO {
 
@@ -61,6 +62,12 @@ public final class GraphFileIO {
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
             nodeJson.put("executionPolicy", node.getExecutionPolicy().name());
+            if (node.getMaxConcurrency() != 0) {
+                nodeJson.put("maxConcurrency", node.getMaxConcurrency());
+            }
+            if (node.getTimeoutMillis() != 0) {
+                nodeJson.put("timeoutMillis", node.getTimeoutMillis());
+            }
             nodeJson.put("inputs", valuesToJson(node.getInputs()));
             nodeJson.put("outputs", valuesToJson(node.getOutputs()));
             Map<String, String> state = node.saveState();
@@ -124,6 +131,8 @@ public final class GraphFileIO {
             }
             // Absent in saves written before execution policies existed; default to QUEUE.
             node.setExecutionPolicy(parsePolicy(nodeJson.optString("executionPolicy", null)));
+            node.setMaxConcurrency(nodeJson.optInt("maxConcurrency", 0));
+            node.setTimeoutMillis(nodeJson.optLong("timeoutMillis", 0));
             applyValues(node.getInputs(), nodeJson.getJSONArray("inputs"));
             applyValues(node.getOutputs(), nodeJson.getJSONArray("outputs"));
             nodes.add(new GraphCanvas.ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));

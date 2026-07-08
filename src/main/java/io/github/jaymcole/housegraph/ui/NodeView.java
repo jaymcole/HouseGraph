@@ -240,10 +240,11 @@ public class NodeView extends BorderPane {
         setOnMousePressed(Event::consume);
         setOnMouseDragged(Event::consume);
 
-        // Right-click the node for its per-node settings (currently just the execution
-        // policy), so only nodes that have one get the menu; on others the event falls
-        // through to the canvas's own add-node menu, as before.
-        if (showsPolicy) {
+        // Right-click the node for its per-node settings (execution policy for triggers;
+        // concurrency limit / timeout for any node that does work). Nodes with none of these
+        // (a constant, a resource) get no menu and the event falls through to the canvas's
+        // add-node menu, as before.
+        if (showsPolicy || participatesInFlow()) {
             setOnContextMenuRequested(this::showContextMenu);
         }
 
@@ -340,9 +341,24 @@ public class NodeView extends BorderPane {
     /** Builds and shows the node's right-click menu fresh each time, so it reflects the node's current state. */
     private void showContextMenu(ContextMenuEvent event) {
         ContextMenu menu = new ContextMenu();
-        menu.getItems().add(buildExecutionPolicyMenu());
+        if (node.isExecutionEntryPoint()) {
+            menu.getItems().add(buildExecutionPolicyMenu());
+        }
+        if (participatesInFlow()) {
+            // Concurrency/timeout are per-node throughput controls, meaningful for any node that
+            // actually does work in a cascade (an LLM/camera node, a transform) - not just triggers.
+            menu.getItems().add(buildConcurrencyMenu());
+            menu.getItems().add(buildTimeoutMenu());
+        }
+        if (menu.getItems().isEmpty()) {
+            return;
+        }
         menu.show(this, event.getScreenX(), event.getScreenY());
         event.consume();
+    }
+
+    private boolean participatesInFlow() {
+        return !node.getFlowInputs().isEmpty() || !node.getFlowOutputs().isEmpty();
     }
 
     /**
@@ -372,6 +388,39 @@ public class NodeView extends BorderPane {
         ExecutionPolicy policy = node.getExecutionPolicy();
         policyIcon.getChildren().setAll(ExecutionPolicyIcons.create(policy));
         policyTooltip.setText(ExecutionPolicyIcons.label(policy));
+    }
+
+    /** Caps how many runs may execute this node at once ({@link io.github.jaymcole.housegraph.graph.BaseNode#getMaxConcurrency}). */
+    private Menu buildConcurrencyMenu() {
+        Menu menu = new Menu("Concurrency limit");
+        ToggleGroup group = new ToggleGroup();
+        int current = node.getMaxConcurrency();
+        for (int option : new int[]{0, 1, 2, 3, 4, 8}) {
+            RadioMenuItem item = new RadioMenuItem(option == 0 ? "Unlimited" : String.valueOf(option));
+            item.setToggleGroup(group);
+            item.setSelected(current == option);
+            item.setOnAction(event -> node.setMaxConcurrency(option));
+            menu.getItems().add(item);
+        }
+        return menu;
+    }
+
+    /** Bounds how long this node's process() may run before being aborted ({@link io.github.jaymcole.housegraph.graph.BaseNode#getTimeoutMillis}). */
+    private Menu buildTimeoutMenu() {
+        Menu menu = new Menu("Process timeout");
+        ToggleGroup group = new ToggleGroup();
+        long current = node.getTimeoutMillis();
+        long[] optionsMillis = {0, 1_000, 5_000, 15_000, 30_000, 60_000};
+        String[] labels = {"None", "1s", "5s", "15s", "30s", "1m"};
+        for (int i = 0; i < optionsMillis.length; i++) {
+            long option = optionsMillis[i];
+            RadioMenuItem item = new RadioMenuItem(labels[i]);
+            item.setToggleGroup(group);
+            item.setSelected(current == option);
+            item.setOnAction(event -> node.setTimeoutMillis(option));
+            menu.getItems().add(item);
+        }
+        return menu;
     }
 
     public void setSelected(boolean selected) {

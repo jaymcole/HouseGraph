@@ -79,6 +79,11 @@ This is the subtle part. Read the `NodeGraph` class Javadoc alongside this.
   reentrant per thread, turns a data cycle into the `IN_PROGRESS` check rather than a
   deadlock. Being per-run, it does **not** serialize two different concurrent runs that
   share the node — that's what makes `PARALLEL` genuinely parallel.
+- **Per-node throughput controls.** `runProcess` wraps each `process()` with the node's
+  optional concurrency limit (a per-node fair `Semaphore` — a run blocks for a permit, so
+  overlapping runs queue for an expensive node rather than hammer it) and timeout (a watchdog
+  that interrupts an overrun and marks the node `FAILED`). See `BaseNode.getMaxConcurrency()` /
+  `getTimeoutMillis()`.
 - **Structural methods stay `synchronized` on the `NodeGraph`** for their brief
   critical section (adding/removing nodes and edges, reading topology), but that
   lock is **never** held for a whole run — so a UI-thread edit isn't forced to

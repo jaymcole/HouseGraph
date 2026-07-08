@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -717,6 +718,85 @@ class NodeGraphTest {
         public void process() {
             processCount.incrementAndGet();
             ran.countDown();
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+    }
+
+    @Test
+    void concurrencyLimitKeepsConcurrentRunsOutOfANodeAtOnce() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        CountDownLatch bothEntered = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        ConcurrentNode shared = new ConcurrentNode(bothEntered, release);
+        shared.setMaxConcurrency(1);
+
+        graph.addNode(trigger);
+        graph.addNode(shared);
+        graph.registerFlowEdge(flowEdge(trigger, shared));
+        trigger.setExecutionPolicy(ExecutionPolicy.PARALLEL);
+
+        trigger.execute();
+        trigger.execute();
+        // Two PARALLEL runs, but a limit of 1 means only one may be inside process() at a time;
+        // the second is parked on the permit, so they never both enter (contrast with the
+        // parallel test, where they do).
+        assertFalse(bothEntered.await(400, TimeUnit.MILLISECONDS), "the limit must hold the second run out while the first is inside the node");
+        assertEquals(1, shared.processCount.get(), "exactly one run is inside the limited node");
+
+        release.countDown(); // first run finishes and frees the permit
+        graph.awaitIdle();
+        assertEquals(2, shared.processCount.get(), "the second run enters once the first releases the node");
+    }
+
+    @Test
+    void timeoutAbortsAnOverrunningNodeAndMarksItFailed() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        SleepNode sleeper = new SleepNode(4000); // would block for 4s
+        sleeper.setTimeoutMillis(150);
+
+        graph.addNode(trigger);
+        graph.addNode(sleeper);
+        graph.registerFlowEdge(flowEdge(trigger, sleeper));
+
+        long startNanos = System.nanoTime();
+        trigger.execute();
+        graph.awaitIdle();
+        long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000;
+
+        assertEquals(NodeProcessingStatus.FAILED, sleeper.getStatus(), "an overrun node ends FAILED");
+        assertTrue(sleeper.getLastError() instanceof TimeoutException, "the failure is reported as a TimeoutException");
+        assertTrue(elapsedMillis < 2000, "the node was aborted well before its 4s block would finish (took " + elapsedMillis + " ms)");
+    }
+
+    /** Sleeps for a fixed time, restoring the interrupt flag if interrupted - for testing the process timeout. */
+    private static final class SleepNode extends BaseNode {
+        private final long millis;
+
+        SleepNode(long millis) {
+            this.millis = millis;
+        }
+
+        @Override
+        public void process() {
+            try {
+                Thread.sleep(millis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         @Override
