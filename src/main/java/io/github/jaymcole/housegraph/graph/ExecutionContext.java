@@ -1,16 +1,24 @@
 package io.github.jaymcole.housegraph.graph;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Per-run execution state, isolated from every other concurrent run.
  * <p>
- * <b>Status: Stage-A spike.</b> This is the first slice of the concurrent-runs design in
- * {@code docs/design/per-node-execution-policy.md} — currently only the <em>computed-value
- * overlay</em>, the linchpin we wanted to de-risk before committing to the full
- * re-architecture. Node status, the visited set, activated flow-ports, join bookkeeping and
- * cancellation are <em>not</em> here yet; they join this class in later stages.
+ * <b>Status: Stage-A (in progress).</b> This is the foundation of the concurrent-runs design
+ * in {@code docs/design/per-node-execution-policy.md}. It now carries the run's
+ * <em>node statuses</em> and <em>flow-visited set</em> (previously mutable fields on the shared
+ * node/graph objects) as well as the <em>computed-value overlay</em> (the linchpin de-risked by
+ * the Stage-A spike). Still to move here in a later increment: activated flow-ports, join
+ * bookkeeping and cancellation.
+ * <p>
+ * The status/visited maps are consulted through a context passed by parameter; the value overlay
+ * is consulted through the {@link #run(Runnable) thread-local binding}. Both are concurrent
+ * because within one run several branch threads touch this context at once.
  * <p>
  * <b>The overlay.</b> A node's {@link NodeVariable} holds two kinds of value: a stable
  * <em>authored</em> value (a constant, a typed-in config field) that lives on the node, and a
@@ -30,16 +38,75 @@ public final class ExecutionContext {
     private static final ThreadLocal<ExecutionContext> CURRENT = new ThreadLocal<>();
 
     /**
-     * This run's computed values, keyed by variable identity. A {@code HashMap} suffices for the
-     * spike because a context is only ever touched by one thread at a time; the real per-run
-     * context, once a run fans out across branch threads, needs a null-tolerant concurrent map
-     * (a plain {@code ConcurrentHashMap} rejects the null values an unset output legitimately has).
+     * This run's computed values, keyed by variable identity. A synchronized {@code HashMap}
+     * (rather than a {@code ConcurrentHashMap}) because a run's branch threads write it in
+     * parallel <em>and</em> an unset output legitimately holds a {@code null} value, which
+     * {@code ConcurrentHashMap} forbids. Entries are only ever added during a run, never removed,
+     * so a {@code containsKey}-then-{@code get} pair needs no extra locking.
      */
-    private final Map<NodeVariable<?>, Object> computedValues = new HashMap<>();
+    private final Map<NodeVariable<?>, Object> computedValues = Collections.synchronizedMap(new HashMap<>());
+
+    /**
+     * This run's per-node status. Absent means {@link NodeProcessingStatus#NOT_STARTED} — so a
+     * fresh context starts every node un-run, replacing the old "reset all statuses at pass
+     * start" step. Concurrent because branch threads within one run resolve nodes in parallel.
+     */
+    private final Map<BaseNode, NodeProcessingStatus> statuses = new ConcurrentHashMap<>();
+
+    /** Nodes already cascaded through in this run's flow traversal (dedup); replaces the old graph field. */
+    private final Set<BaseNode> flowVisited = ConcurrentHashMap.newKeySet();
+
+    /** Which flow-out ports each node fired this run (empty means "fire all"); replaces the old {@link BaseNode} field. */
+    private final Map<BaseNode, Set<FlowPort>> activatedOutputs = new ConcurrentHashMap<>();
 
     /** The context bound to the calling thread, or null if none (then {@link NodeVariable} uses authored values). */
     static ExecutionContext current() {
         return CURRENT.get();
+    }
+
+    NodeProcessingStatus statusOf(BaseNode node) {
+        return statuses.getOrDefault(node, NodeProcessingStatus.NOT_STARTED);
+    }
+
+    void setStatus(BaseNode node, NodeProcessingStatus status) {
+        statuses.put(node, status);
+    }
+
+    /** Marks {@code node} as cascaded-through in this run; returns false if it already was (dedup). */
+    boolean markFlowVisited(BaseNode node) {
+        return flowVisited.add(node);
+    }
+
+    /** Records that {@code node} fired {@code port} this run (from {@link BaseNode#activate}). */
+    void activate(BaseNode node, FlowPort port) {
+        activatedOutputs.computeIfAbsent(node, ignored -> ConcurrentHashMap.newKeySet()).add(port);
+    }
+
+    /** The flow-out ports {@code node} fired this run; empty means "fire all" (see {@link BaseNode#activate}). */
+    Set<FlowPort> activatedOf(BaseNode node) {
+        return activatedOutputs.getOrDefault(node, Set.of());
+    }
+
+    /**
+     * Copies this run's computed values for {@code node}'s variables back onto the variables
+     * themselves, so post-run observers (the UI's {@code onExecuted()}, tests, the next run's
+     * authored-value fallback) can read them once no context is bound. Called right after the
+     * node's {@code process()}. Last-writer-wins across concurrent runs — it's a display mirror,
+     * not the isolated in-run value (which stays in this overlay). See the class Javadoc.
+     */
+    void commitValuesOf(BaseNode node) {
+        for (NodeVariable<?> variable : node.getInputs()) {
+            commit(variable);
+        }
+        for (NodeVariable<?> variable : node.getOutputs()) {
+            commit(variable);
+        }
+    }
+
+    private void commit(NodeVariable<?> variable) {
+        if (computedValues.containsKey(variable)) {
+            variable.commitComputed(computedValues.get(variable));
+        }
     }
 
     boolean hasValue(NodeVariable<?> variable) {

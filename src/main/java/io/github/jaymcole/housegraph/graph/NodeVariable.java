@@ -59,6 +59,18 @@ public class NodeVariable<T> {
     }
 
     /**
+     * Writes a run's computed value straight onto the variable (bypassing the overlay), so it's
+     * visible to readers with no context bound. Package-private, called only by
+     * {@link ExecutionContext#commitValuesOf} after a node's {@code process()}. See that class.
+     *
+     * @param computed the value computed during the run
+     */
+    @SuppressWarnings("unchecked")
+    void commitComputed(Object computed) {
+        this.value = (T) computed;
+    }
+
+    /**
      * Marks this variable as holding a secret, so persistence never writes its value to
      * disk (see the graph's file IO). Fluent, for use at field initialisation:
      * {@code new NodeVariable<>("Value", String.class).markSecret()}.

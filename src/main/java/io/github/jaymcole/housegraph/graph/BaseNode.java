@@ -7,7 +7,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class BaseNode {
 
@@ -28,15 +27,6 @@ public abstract class BaseNode {
     private final List<NodeVariable> outputs = new ArrayList<>();
     private final List<FlowPort> flowInputs = new ArrayList<>();
     private final List<FlowPort> flowOutputs = new ArrayList<>();
-
-    /**
-     * Which flow-out ports {@link #process()} chose to fire this pass. Written by the
-     * thread running this node's process() and read afterward by the engine when it
-     * decides which branches to cascade into - possibly a different thread (a node can
-     * be resolved as another node's data dependency before it's reached via flow), so
-     * this is a concurrent set for its cross-thread happens-before guarantees.
-     */
-    private final Set<FlowPort> activatedOutputs = ConcurrentHashMap.newKeySet();
 
     private Runnable portsChangedListener = () -> {
     };
@@ -266,7 +256,13 @@ public abstract class BaseNode {
         if (!getFlowOutputs().contains(port)) {
             throw new IllegalArgumentException(getName() + " tried to activate a flow port it doesn't own");
         }
-        activatedOutputs.add(port);
+        // Recorded on the current run's context (bound by the engine while process() runs), so
+        // concurrent runs of the same node don't share activation. activate() is only ever
+        // called from within process(), where a context is always bound.
+        ExecutionContext context = ExecutionContext.current();
+        if (context != null) {
+            context.activate(this, port);
+        }
     }
 
     public List<NodeVariable> getInputs() {
@@ -365,16 +361,6 @@ public abstract class BaseNode {
 
     void setStatus(NodeProcessingStatus status) {
         this.status = status;
-    }
-
-    /** The flow-out ports process() chose to fire this pass; empty means "fire all" - see {@link #activate}. */
-    Set<FlowPort> getActivatedOutputs() {
-        return activatedOutputs;
-    }
-
-    /** Cleared by the engine before each process() so activation never leaks across passes. */
-    void clearActivatedOutputs() {
-        activatedOutputs.clear();
     }
 
     void setLastError(Throwable lastError) {

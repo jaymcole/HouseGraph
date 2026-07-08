@@ -81,13 +81,6 @@ public class NodeGraph {
     private final Map<BaseNode, Set<FlowEdge>> incomingFlowEdges = new HashMap<>();
 
     /**
-     * Tracks which nodes have already been cascaded through during the current
-     * execute() pass. Concurrent sibling branches (see class Javadoc) can race to
-     * claim the same node, so this needs to be a thread-safe set, not a plain HashSet.
-     */
-    private final Set<BaseNode> flowVisited = ConcurrentHashMap.newKeySet();
-
-    /**
      * Per-entry-node execution state backing the {@link ExecutionPolicy} decision made in
      * {@link #execute(BaseNode, Runnable)}. Keyed by the node {@code execute()} is called on;
      * each value tracks whether a pass from that node is in flight and holds at most one
@@ -300,9 +293,9 @@ public class NodeGraph {
 
     /**
      * Pulls a fresh value through {@code node}'s incoming data edges (resolving
-     * upstream nodes first) and runs its process(). Every call is a fresh pass: all
-     * nodes' statuses are reset first, so this never serves a stale cached value.
-     * Blocks the calling thread until the pull completes (see the class Javadoc).
+     * upstream nodes first) and runs its process(). Every call runs in a fresh
+     * {@link ExecutionContext}, so every node starts un-run and this never serves a stale
+     * cached value. Blocks the calling thread until the pull completes (see the class Javadoc).
      *
      * @param node the node to resolve
      * @throws IllegalStateException if the data edges form a cycle
@@ -435,15 +428,14 @@ public class NodeGraph {
      */
     private void resolveEntry(BaseNode node) {
         requireRegistered(node);
-        resetAllStatuses();
-        resolveInternal(node);
+        ExecutionContext context = new ExecutionContext();
+        context.run(() -> resolveInternal(context, node));
     }
 
     private void executeEntry(BaseNode node, PassToken token) {
         requireRegistered(node);
-        resetAllStatuses();
-        flowVisited.clear();
-        executeInternal(node, token);
+        ExecutionContext context = new ExecutionContext();
+        context.run(() -> executeInternal(context, node, token));
     }
 
     private void runOnExecutionThreadAndWait(Runnable task) {
@@ -461,28 +453,30 @@ public class NodeGraph {
         }
     }
 
-    private void executeInternal(BaseNode node, PassToken token) {
+    private void executeInternal(ExecutionContext context, BaseNode node, PassToken token) {
         // Cooperative RESTART cancellation: a cancelled pass stops advancing the cascade at
         // the next node boundary. The node currently mid-process() isn't interrupted (see
         // ExecutionPolicy.RESTART) - only not-yet-reached downstream work is skipped.
         if (token.isCancelled()) {
             return;
         }
-        if (!flowVisited.add(node)) {
+        if (!context.markFlowVisited(node)) {
             return;
         }
-        resolveInternal(node);
+        resolveInternal(context, node);
 
         // Which out-ports fired: whatever process() activated, or - if it activated
         // nothing - all of them (see BaseNode.activate). A branch/decider node narrows
         // the cascade to just its chosen port(s) simply by activating them.
-        Set<FlowPort> activated = node.getActivatedOutputs();
+        Set<FlowPort> activated = context.activatedOf(node);
 
         // Fan out to the chosen outgoing flow edges concurrently, each on its own
         // virtual thread, rather than recursing straight through them one at a time - a
         // slow sibling branch (e.g. behind a debug delay node) must not hold up the
         // others. This call still doesn't return - i.e. the cascade isn't considered
         // done - until every branch has finished, same as the old sequential version.
+        // Each branch re-binds the run's context on its own thread (context.run), since the
+        // thread-local binding doesn't cross the virtual-thread handoff.
         List<CompletableFuture<Void>> branches = new ArrayList<>();
         for (FlowEdge flowEdge : getOutgoingFlowEdges(node)) {
             if (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort())) {
@@ -492,7 +486,8 @@ public class NodeGraph {
                 break;
             }
             callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
-            branches.add(CompletableFuture.runAsync(() -> executeInternal(flowEdge.getTargetNode(), token), branchExecutor));
+            branches.add(CompletableFuture.runAsync(
+                    () -> context.run(() -> executeInternal(context, flowEdge.getTargetNode(), token)), branchExecutor));
         }
         for (CompletableFuture<Void> branch : branches) {
             branch.join();
@@ -509,9 +504,9 @@ public class NodeGraph {
      * IN_PROGRESS check below rather than deadlocking on itself, exactly as it did
      * back when this whole traversal only ever ran on one thread.
      */
-    private void resolveInternal(BaseNode node) {
+    private void resolveInternal(ExecutionContext context, BaseNode node) {
         synchronized (node) {
-            NodeProcessingStatus status = node.getStatus();
+            NodeProcessingStatus status = context.statusOf(node);
             if (status == NodeProcessingStatus.IN_PROGRESS) {
                 throw new IllegalStateException("Cycle detected in data graph at node: " + node.getName());
             }
@@ -519,31 +514,42 @@ public class NodeGraph {
                 return;
             }
 
-            node.setStatus(NodeProcessingStatus.IN_PROGRESS);
+            setStatus(context, node, NodeProcessingStatus.IN_PROGRESS);
             for (Edge edge : getIncomingDataEdges(node)) {
-                resolveInternal(edge.getSourceNode());
+                resolveInternal(context, edge.getSourceNode());
                 propagateValue(edge);
                 callbackExecutor.execute(() -> notifyDataEdgeTraversed(edge));
             }
 
             callbackExecutor.execute(() -> notifyNodeStarted(node));
             try {
-                // Reset here (not at pass start) so it's cleared no matter how this
-                // node is reached, right before the process() that may re-populate it.
-                node.clearActivatedOutputs();
                 node.process();
-                node.setStatus(NodeProcessingStatus.SUCCESS);
+                setStatus(context, node, NodeProcessingStatus.SUCCESS);
                 node.setLastError(null);
             } catch (Exception e) {
-                node.setStatus(NodeProcessingStatus.FAILED);
+                setStatus(context, node, NodeProcessingStatus.FAILED);
                 node.setLastError(e);
                 System.err.println("Node \"" + node.getName() + "\" failed to process: " + e);
             }
+            // Mirror this run's computed values onto the node before the (possibly async,
+            // off-context) onExecuted callback runs, so it and later observers see them.
+            context.commitValuesOf(node);
             callbackExecutor.execute(() -> {
                 node.onExecuted();
                 notifyNodeExecuted(node);
             });
         }
+    }
+
+    /**
+     * Records {@code node}'s status for this run (authoritative, used for cycle detection and
+     * dedup) and mirrors it onto the node itself, so post-run observers — the UI and tests
+     * calling {@link BaseNode#getStatus()} — can still see how a node's last run ended. The
+     * mirror is last-run-wins across concurrent runs; only the context copy drives execution.
+     */
+    private void setStatus(ExecutionContext context, BaseNode node, NodeProcessingStatus status) {
+        context.setStatus(node, status);
+        node.setStatus(status);
     }
 
     @SuppressWarnings("unchecked")
@@ -572,15 +578,6 @@ public class NodeGraph {
     private void notifyFlowEdgeTraversed(FlowEdge edge) {
         for (GraphExecutionListener listener : executionListeners) {
             listener.onFlowEdgeTraversed(edge);
-        }
-    }
-
-    private void resetAllStatuses() {
-        // getNodes() (not the raw field) since a structural edit from another thread
-        // can now interleave with this - see class Javadoc - and iterating the live
-        // mutable set directly would risk a ConcurrentModificationException.
-        for (BaseNode node : getNodes()) {
-            node.setStatus(NodeProcessingStatus.NOT_STARTED);
         }
     }
 

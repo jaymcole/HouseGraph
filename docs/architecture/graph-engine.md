@@ -42,9 +42,14 @@ no control-only special-casing. See the `FlowPort` Javadoc.
 
 `NodeProcessingStatus`: `NOT_STARTED → IN_PROGRESS → SUCCESS | FAILED`.
 
-- Statuses are reset to `NOT_STARTED` at the start of every top-level pass.
+- Per-pass state — status, the flow-visited set, activated flow-ports, and computed
+  values — lives in a per-pass `ExecutionContext`, not on the shared node/graph objects.
+  A fresh context per pass means every node starts `NOT_STARTED` with no explicit reset
+  step. (`BaseNode.getStatus()` is a display mirror of the last run's status, for the UI
+  and tests; the engine drives execution off the context copy.) This is the foundation for
+  the concurrent-runs work — see `docs/design/per-node-execution-policy.md`.
 - `IN_PROGRESS` doubles as the **cycle-detection marker**: if resolution reaches a
-  node already `IN_PROGRESS` on the same thread, that's a data cycle and the
+  node already `IN_PROGRESS` in the same pass, that's a data cycle and the
   engine throws `IllegalStateException` (rather than overflowing the stack).
 - A completed node (`SUCCESS`/`FAILED`) is not re-run within the same pass — a
   node reached by two branches runs once. A failed `process()` is caught: the
@@ -97,12 +102,12 @@ coalesced follow-up pass is submitted lazily from inside the pass ahead of it, `
 tracks an `outstandingPasses` count rather than just draining the executor queue — otherwise
 it would return before the coalesced pass ran.
 
-**Why `PARALLEL` needs a refactor.** Pass state lives as mutable fields on the shared
-node/graph objects — `BaseNode.status` (reset for *all* nodes at pass start via
-`resetAllStatuses()`), `flowVisited`, `activatedOutputs`, and the data values written into each
-node's `NodeVariable`. Two concurrent passes over any overlapping node would corrupt each
-other. Real parallelism requires extracting that into a per-pass `ExecutionContext`; until then
-`PARALLEL` is a no-op alias for `QUEUE`.
+**Why `PARALLEL` isn't enabled yet.** Per-pass state has been extracted into a per-pass
+`ExecutionContext` (status, flow-visited, activated ports, computed values) — the foundation
+concurrent passes need — but the engine still submits every pass to the single serialized
+thread, so passes don't actually overlap and `PARALLEL` remains a no-op alias for `QUEUE`.
+Flipping to genuinely concurrent runs is the in-progress work tracked in
+`docs/design/per-node-execution-policy.md`.
 
 ## The callback-executor seam (why the engine has no JavaFX)
 
