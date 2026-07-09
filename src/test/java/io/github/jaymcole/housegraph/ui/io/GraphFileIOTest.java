@@ -1,7 +1,10 @@
 package io.github.jaymcole.housegraph.ui.io;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
-import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
+import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
@@ -37,30 +40,30 @@ class GraphFileIOTest {
 
         AddNode add = new AddNode();
 
-        GraphCanvas.GraphSnapshot snapshot = new GraphCanvas.GraphSnapshot(
+        GraphSnapshot snapshot = new GraphSnapshot(
                 List.of(
-                        new GraphCanvas.ClipboardNode(constant, 10.0, 20.0),
-                        new GraphCanvas.ClipboardNode(add, 100.0, 20.0)),
-                List.of(new GraphCanvas.ClipboardDataEdge(0, 0, 1, 0, List.of())),
+                        new ClipboardNode(constant, 10.0, 20.0),
+                        new ClipboardNode(add, 100.0, 20.0)),
+                List.of(new ClipboardDataEdge(0, 0, 1, 0, List.of())),
                 List.of());
 
-        GraphCanvas.GraphSnapshot roundTripped = roundTrip(snapshot);
+        GraphSnapshot roundTripped = roundTrip(snapshot);
 
         assertEquals(2, roundTripped.nodes().size());
 
-        GraphCanvas.ClipboardNode reconstructedConstant = roundTripped.nodes().get(0);
+        ClipboardNode reconstructedConstant = roundTripped.nodes().get(0);
         assertTrue(reconstructedConstant.node() instanceof ConstantFloatNode);
         assertNotSame(constant, reconstructedConstant.node());
         assertEquals(10.0, reconstructedConstant.x());
         assertEquals(20.0, reconstructedConstant.y());
         assertEquals(5f, reconstructedConstant.node().getOutputs().get(0).getValue());
 
-        GraphCanvas.ClipboardNode reconstructedAdd = roundTripped.nodes().get(1);
+        ClipboardNode reconstructedAdd = roundTripped.nodes().get(1);
         assertTrue(reconstructedAdd.node() instanceof AddNode);
         assertEquals(100.0, reconstructedAdd.x());
 
         assertEquals(1, roundTripped.dataEdges().size());
-        GraphCanvas.ClipboardDataEdge edge = roundTripped.dataEdges().get(0);
+        ClipboardDataEdge edge = roundTripped.dataEdges().get(0);
         assertEquals(0, edge.sourceNodeIndex());
         assertEquals(0, edge.sourceVariableIndex());
         assertEquals(1, edge.targetNodeIndex());
@@ -75,18 +78,18 @@ class GraphFileIOTest {
         // Non-zero source port index (as a decider's second branch would have) to prove
         // the specific port an edge leaves from survives the round trip, not just the
         // nodes; and a couple of waypoints to prove manual routing survives too.
-        GraphCanvas.GraphSnapshot snapshot = new GraphCanvas.GraphSnapshot(
+        GraphSnapshot snapshot = new GraphSnapshot(
                 List.of(
-                        new GraphCanvas.ClipboardNode(a, 0.0, 0.0),
-                        new GraphCanvas.ClipboardNode(b, 50.0, 0.0)),
+                        new ClipboardNode(a, 0.0, 0.0),
+                        new ClipboardNode(b, 50.0, 0.0)),
                 List.of(),
-                List.of(new GraphCanvas.ClipboardFlowEdge(0, 1, 1, 0,
+                List.of(new ClipboardFlowEdge(0, 1, 1, 0,
                         List.of(new Point2D(12.5, 34.0), new Point2D(60.0, -8.0)))));
 
-        GraphCanvas.GraphSnapshot roundTripped = roundTrip(snapshot);
+        GraphSnapshot roundTripped = roundTrip(snapshot);
 
         assertEquals(1, roundTripped.flowEdges().size());
-        GraphCanvas.ClipboardFlowEdge flowEdge = roundTripped.flowEdges().get(0);
+        ClipboardFlowEdge flowEdge = roundTripped.flowEdges().get(0);
         assertEquals(0, flowEdge.sourceNodeIndex());
         assertEquals(1, flowEdge.sourcePortIndex());
         assertEquals(1, flowEdge.targetNodeIndex());
@@ -108,7 +111,7 @@ class GraphFileIOTest {
         root.put("dataEdges", List.of());
         root.put("flowEdges", List.of());
 
-        GraphCanvas.GraphSnapshot snapshot = GraphFileIO.fromJson(root);
+        GraphSnapshot snapshot = GraphFileIO.fromJson(root);
 
         assertTrue(snapshot.nodes().isEmpty());
     }
@@ -119,8 +122,8 @@ class GraphFileIOTest {
         node.plain.setValue("visible");
         node.secret.setValue("TOP_SECRET");
 
-        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
+        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
 
         JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
         assertEquals("visible", outputs.get(0), "a manually-authored value is still written");
@@ -136,8 +139,8 @@ class GraphFileIOTest {
         ComputedHolder node = new ComputedHolder();
         node.value.setValue(Float.POSITIVE_INFINITY);
 
-        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
+        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
 
         JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
         assertTrue(outputs.isNull(0), "a computed value is not written to disk");
@@ -163,7 +166,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphCanvas.GraphSnapshot snapshot = GraphFileIO.fromJson(root);
+        GraphSnapshot snapshot = GraphFileIO.fromJson(root);
 
         BaseNode loaded = snapshot.nodes().get(0).node();
         List<String> outputNames = loaded.getOutputs().stream().map(variable -> variable.name).toList();
@@ -176,8 +179,8 @@ class GraphFileIOTest {
         SecretLoaderNode source = new SecretLoaderNode();
         source.loadState(Map.of("key", "API_KEY"));
 
-        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(source, 0.0, 0.0)), List.of(), List.of()));
+        GraphSnapshot roundTripped = roundTrip(new GraphSnapshot(
+                List.of(new ClipboardNode(source, 0.0, 0.0)), List.of(), List.of()));
 
         assertEquals(1, roundTripped.nodes().size());
         assertEquals(Map.of("key", "API_KEY"), roundTripped.nodes().get(0).node().saveState());
@@ -188,8 +191,8 @@ class GraphFileIOTest {
         AddNode restarting = new AddNode();
         restarting.setExecutionPolicy(ExecutionPolicy.RESTART);
 
-        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(restarting, 0.0, 0.0)), List.of(), List.of()));
+        GraphSnapshot roundTripped = roundTrip(new GraphSnapshot(
+                List.of(new ClipboardNode(restarting, 0.0, 0.0)), List.of(), List.of()));
         assertEquals(ExecutionPolicy.RESTART, roundTripped.nodes().get(0).node().getExecutionPolicy());
 
         // A save written before policies existed has no "executionPolicy" key; it must load as QUEUE.
@@ -204,7 +207,7 @@ class GraphFileIOTest {
         legacyRoot.put("dataEdges", new JSONArray());
         legacyRoot.put("flowEdges", new JSONArray());
 
-        GraphCanvas.GraphSnapshot legacy = GraphFileIO.fromJson(legacyRoot);
+        GraphSnapshot legacy = GraphFileIO.fromJson(legacyRoot);
         assertEquals(ExecutionPolicy.QUEUE, legacy.nodes().get(0).node().getExecutionPolicy(),
                 "a save with no execution policy must default to QUEUE");
     }
@@ -215,22 +218,22 @@ class GraphFileIOTest {
         limited.setMaxConcurrency(2);
         limited.setTimeoutMillis(5000);
 
-        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(limited, 0.0, 0.0)), List.of(), List.of()));
+        GraphSnapshot roundTripped = roundTrip(new GraphSnapshot(
+                List.of(new ClipboardNode(limited, 0.0, 0.0)), List.of(), List.of()));
         BaseNode reloaded = roundTripped.nodes().get(0).node();
         assertEquals(2, reloaded.getMaxConcurrency());
         assertEquals(5000L, reloaded.getTimeoutMillis());
 
         // A node with defaults writes neither key; a save lacking them loads as unlimited / no timeout.
         AddNode plain = new AddNode();
-        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
+        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
         JSONObject plainNode = json.getJSONArray("nodes").getJSONObject(0);
         assertFalse(plainNode.has("maxConcurrency"), "the default (unlimited) is not written");
         assertFalse(plainNode.has("timeoutMillis"), "the default (no timeout) is not written");
 
-        BaseNode reloadedPlain = roundTrip(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of())).nodes().get(0).node();
+        BaseNode reloadedPlain = roundTrip(new GraphSnapshot(
+                List.of(new ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of())).nodes().get(0).node();
         assertEquals(0, reloadedPlain.getMaxConcurrency());
         assertEquals(0L, reloadedPlain.getTimeoutMillis());
     }
@@ -241,16 +244,16 @@ class GraphFileIOTest {
         AddNode add = new AddNode();
         add.getInputs().get(0).setRequired(true);
 
-        GraphCanvas.GraphSnapshot roundTripped = roundTrip(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(add, 0.0, 0.0)), List.of(), List.of()));
+        GraphSnapshot roundTripped = roundTrip(new GraphSnapshot(
+                List.of(new ClipboardNode(add, 0.0, 0.0)), List.of(), List.of()));
         BaseNode reloaded = roundTripped.nodes().get(0).node();
         assertTrue(reloaded.getInputs().get(0).isRequired(), "the required input must reload as required");
         assertFalse(reloaded.getInputs().get(1).isRequired(), "an input left optional must reload optional");
 
         // A node with no required inputs writes no requiredInputs key at all.
         AddNode plain = new AddNode();
-        JSONObject json = GraphFileIO.toJson(new GraphCanvas.GraphSnapshot(
-                List.of(new GraphCanvas.ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
+        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
         assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("requiredInputs"),
                 "no requiredInputs key is written when nothing is required");
     }
@@ -277,7 +280,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphCanvas.GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = GraphFileIO.fromJson(root);
         assertFalse(loaded.nodes().get(0).node().getInputs().get(0).isRequired(),
                 "an explicit false in requiredInputs overrides the author default");
     }
@@ -297,12 +300,12 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphCanvas.GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = GraphFileIO.fromJson(root);
         assertTrue(loaded.nodes().get(0).node().getInputs().get(0).isRequired(),
                 "a missing requiredInputs key must leave the author default (required) intact");
     }
 
-    private static GraphCanvas.GraphSnapshot roundTrip(GraphCanvas.GraphSnapshot snapshot) {
+    private static GraphSnapshot roundTrip(GraphSnapshot snapshot) {
         String text = GraphFileIO.toJson(snapshot).toString();
         return GraphFileIO.fromJson(new JSONObject(new JSONTokener(text)));
     }

@@ -1,6 +1,10 @@
 package io.github.jaymcole.housegraph.ui.io;
 
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
+import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
@@ -22,7 +26,7 @@ import java.util.Map;
 
 /**
  * Saves/loads a {@link GraphCanvas}'s entire contents to/from a JSON file, reusing the
- * same index-based node/edge shape ({@link GraphCanvas.GraphSnapshot}) built for
+ * same index-based node/edge shape ({@link GraphSnapshot}) built for
  * copy/paste. The JSON conversion ({@link #toJson}/{@link #fromJson}) is deliberately
  * kept free of any JavaFX/GraphCanvas dependency so it can be unit-tested headlessly;
  * {@link #save}/{@link #load} are the thin wrappers that touch an actual canvas.
@@ -58,9 +62,9 @@ public final class GraphFileIO {
         canvas.loadSnapshot(fromJson(root));
     }
 
-    static JSONObject toJson(GraphCanvas.GraphSnapshot snapshot) {
+    static JSONObject toJson(GraphSnapshot snapshot) {
         JSONArray nodesJson = new JSONArray();
-        for (GraphCanvas.ClipboardNode entry : snapshot.nodes()) {
+        for (ClipboardNode entry : snapshot.nodes()) {
             BaseNode node = entry.node();
             JSONObject nodeJson = new JSONObject();
             nodeJson.put("type", node.getClass().getName());
@@ -87,7 +91,7 @@ public final class GraphFileIO {
         }
 
         JSONArray dataEdgesJson = new JSONArray();
-        for (GraphCanvas.ClipboardDataEdge edge : snapshot.dataEdges()) {
+        for (ClipboardDataEdge edge : snapshot.dataEdges()) {
             JSONObject edgeJson = new JSONObject();
             edgeJson.put("sourceNode", edge.sourceNodeIndex());
             edgeJson.put("sourceVariable", edge.sourceVariableIndex());
@@ -98,7 +102,7 @@ public final class GraphFileIO {
         }
 
         JSONArray flowEdgesJson = new JSONArray();
-        for (GraphCanvas.ClipboardFlowEdge edge : snapshot.flowEdges()) {
+        for (ClipboardFlowEdge edge : snapshot.flowEdges()) {
             JSONObject edgeJson = new JSONObject();
             edgeJson.put("sourceNode", edge.sourceNodeIndex());
             edgeJson.put("sourcePort", edge.sourcePortIndex());
@@ -115,8 +119,8 @@ public final class GraphFileIO {
         return root;
     }
 
-    static GraphCanvas.GraphSnapshot fromJson(JSONObject root) {
-        List<GraphCanvas.ClipboardNode> nodes = new ArrayList<>();
+    static GraphSnapshot fromJson(JSONObject root) {
+        List<ClipboardNode> nodes = new ArrayList<>();
         JSONArray nodesJson = root.getJSONArray("nodes");
         for (int i = 0; i < nodesJson.length(); i++) {
             JSONObject nodeJson = nodesJson.getJSONObject(i);
@@ -149,32 +153,32 @@ public final class GraphFileIO {
             if (nodeJson.has("requiredInputs")) {
                 applyRequired(node.getInputs(), nodeJson.getJSONArray("requiredInputs"));
             }
-            nodes.add(new GraphCanvas.ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));
+            nodes.add(new ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));
         }
 
-        List<GraphCanvas.ClipboardDataEdge> dataEdges = new ArrayList<>();
+        List<ClipboardDataEdge> dataEdges = new ArrayList<>();
         JSONArray dataEdgesJson = root.getJSONArray("dataEdges");
         for (int i = 0; i < dataEdgesJson.length(); i++) {
             JSONObject edgeJson = dataEdgesJson.getJSONObject(i);
-            dataEdges.add(new GraphCanvas.ClipboardDataEdge(
+            dataEdges.add(new ClipboardDataEdge(
                     edgeJson.getInt("sourceNode"), edgeJson.getInt("sourceVariable"),
                     edgeJson.getInt("targetNode"), edgeJson.getInt("targetVariable"),
                     waypointsFromJson(edgeJson)));
         }
 
-        List<GraphCanvas.ClipboardFlowEdge> flowEdges = new ArrayList<>();
+        List<ClipboardFlowEdge> flowEdges = new ArrayList<>();
         JSONArray flowEdgesJson = root.getJSONArray("flowEdges");
         for (int i = 0; i < flowEdgesJson.length(); i++) {
             JSONObject edgeJson = flowEdgesJson.getJSONObject(i);
             // sourcePort/targetPort default to 0 so a save file written before flow
             // ports had identity (every node had a single port) still loads correctly.
-            flowEdges.add(new GraphCanvas.ClipboardFlowEdge(
+            flowEdges.add(new ClipboardFlowEdge(
                     edgeJson.getInt("sourceNode"), edgeJson.optInt("sourcePort", 0),
                     edgeJson.getInt("targetNode"), edgeJson.optInt("targetPort", 0),
                     waypointsFromJson(edgeJson)));
         }
 
-        return new GraphCanvas.GraphSnapshot(nodes, dataEdges, flowEdges);
+        return new GraphSnapshot(nodes, dataEdges, flowEdges);
     }
 
     private static JSONArray waypointsToJson(List<Point2D> waypoints) {

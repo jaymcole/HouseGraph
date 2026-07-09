@@ -12,6 +12,9 @@
  *       ({@code ValueEditors}, {@code SecretsEditor}).</li>
  *   <li>{@link io.github.jaymcole.housegraph.ui.command} — reversible mutations
  *       ({@code Command}) tracked by {@code UndoManager}.</li>
+ *   <li>{@link io.github.jaymcole.housegraph.ui.snapshot} — the snapshot data model
+ *       ({@code GraphSnapshot} and its {@code Clipboard*} records) shared by copy/paste and
+ *       save/load.</li>
  *   <li>{@link io.github.jaymcole.housegraph.ui.io} — save/load ({@code GraphFileIO}).</li>
  * </ul>
  * All code here runs on the JavaFX Application Thread; the engine marshals its callbacks
