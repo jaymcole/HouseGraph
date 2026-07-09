@@ -138,11 +138,13 @@ public class NodeView extends BorderPane {
                 titleBar.getChildren().add(flowInPort);
             }
         }
-        // A small glyph for the execution policy, tucked just left of the title — but only
-        // for nodes the policy actually applies to (execution entry points; see
-        // BaseNode.isExecutionEntryPoint). A constant or a resource node is never triggered,
-        // so it gets no glyph and no policy menu. Refreshed whenever the policy changes.
-        boolean showsPolicy = node.isExecutionEntryPoint();
+        // A small glyph for the execution policy, tucked just left of the title — for any node the
+        // policy applies to, i.e. any that participates in flow. That's an execution entry point
+        // (where the policy gates the whole run) or a mid-cascade flow node (where it gates that
+        // node's own process() re-entry; see NodeGraph.ReentryGate). A pure data node — a constant,
+        // a converter with no flow ports — is never triggered, so it gets no glyph and no policy
+        // menu. Refreshed whenever the policy changes.
+        boolean showsPolicy = participatesInFlow();
         if (showsPolicy) {
             Tooltip.install(policyIcon, policyTooltip);
             refreshPolicyIcon();
@@ -247,11 +249,11 @@ public class NodeView extends BorderPane {
         setOnMousePressed(Event::consume);
         setOnMouseDragged(Event::consume);
 
-        // Right-click the node for its per-node settings (execution policy for triggers;
-        // concurrency limit / timeout for any node that does work; which inputs are required,
-        // for any node with inputs). Nodes with none of these (a constant, a resource with no
-        // inputs) get no menu and the event falls through to the canvas's add-node menu, as before.
-        if (showsPolicy || participatesInFlow() || !node.getInputs().isEmpty()) {
+        // Right-click the node for its per-node settings (execution policy, concurrency limit and
+        // timeout for any node that participates in flow; which inputs are required, for any node
+        // with inputs). Nodes with none of these (a constant, a resource with no inputs) get no menu
+        // and the event falls through to the canvas's add-node menu, as before.
+        if (participatesInFlow() || !node.getInputs().isEmpty()) {
             setOnContextMenuRequested(this::showContextMenu);
         }
 
@@ -368,12 +370,12 @@ public class NodeView extends BorderPane {
     /** Builds and shows the node's right-click menu fresh each time, so it reflects the node's current state. */
     private void showContextMenu(ContextMenuEvent event) {
         ContextMenu menu = new ContextMenu();
-        if (node.isExecutionEntryPoint()) {
-            menu.getItems().add(buildExecutionPolicyMenu());
-        }
         if (participatesInFlow()) {
-            // Concurrency/timeout are per-node throughput controls, meaningful for any node that
-            // actually does work in a cascade (an LLM/camera node, a transform) - not just triggers.
+            // Execution policy gates re-entry (a whole run at an entry node, or this node's own
+            // process() mid-cascade); concurrency/timeout are per-node throughput controls. All
+            // three are meaningful for any node that participates in flow - a trigger, an LLM/camera
+            // node, a transform - not just entry points.
+            menu.getItems().add(buildExecutionPolicyMenu());
             menu.getItems().add(buildConcurrencyMenu());
             menu.getItems().add(buildTimeoutMenu());
         }

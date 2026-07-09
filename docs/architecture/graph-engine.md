@@ -91,24 +91,46 @@ This is the subtle part. Read the `NodeGraph` class Javadoc alongside this.
 
 ## Execution policy (re-entrant triggers)
 
-`execute()` is only ever called on **entry-point nodes** — the ones a trigger fires
-(a Trigger button, a Repeating Trigger, an event listener, a Discord command). When one
-of those is triggered again while a pass it started is still in flight, the node's
-`ExecutionPolicy` (a `volatile` field on `BaseNode`, default `QUEUE`) decides what happens:
+Every node carries an `ExecutionPolicy` (a `volatile` field on `BaseNode`, default `QUEUE`). The
+same four values are enforced at **two scopes** — the difference is what "in flight" means and what
+gets dropped/queued/restarted. Full design: [`docs/design/per-node-execution-policy.md`](../design/per-node-execution-policy.md).
 
 | Policy | Behavior |
 | --- | --- |
-| `DROP` | Ignore the new trigger while a pass from this node is running or queued. |
-| `RESTART` | Cancel the in-flight pass's remaining cascade (cooperatively — a node already inside `process()` still finishes; only not-yet-reached downstream nodes are skipped) and run a fresh pass with the newest inputs. |
-| `QUEUE` (default) | Run after the in-flight run. **Coalesces to the latest**: at most one run is kept pending, so a burst of triggers collapses to a single follow-up carrying the newest inputs, not an unbounded backlog. |
+| `DROP` | Ignore the new arrival while one is running or queued. |
+| `RESTART` | Cancel the in-flight work (cooperatively — a node already inside `process()` still finishes) and run fresh with the newest inputs. |
+| `QUEUE` (default) | Run after the in-flight one. **Coalesces to the latest**: at most one is kept pending, so a burst collapses to a single follow-up, not an unbounded backlog. |
 | `PARALLEL` | Start an independent concurrent run every time — no single-flight gate, no coalescing. Safe because each run has an isolated context. |
 
-`DROP`/`QUEUE`/`RESTART` keep a single in-flight run per entry node via `EntryExecution`;
-different entry nodes, and `PARALLEL` re-fires, run concurrently. A per-run `PassToken` that
-`RESTART` flips and `Run.fire` checks at each node boundary stops a superseded run's remaining
-cascade. Because a coalesced follow-up run is started lazily from the run ahead of it (and runs
-are fire-and-forget), `awaitIdle()` waits on an `outstandingPasses` count that a run decrements
-only once its last firing completes — never on draining a queue.
+**Entry-node scope (whole run).** `execute()` is called on an **entry-point node** — the one a
+trigger fires (a Trigger button, a Repeating Trigger, an event listener, a Discord command). When
+one is triggered again while a run it started is still in flight, its policy gates the whole run.
+`DROP`/`QUEUE`/`RESTART` keep a single in-flight run per entry node via `EntryExecution`; different
+entry nodes, and `PARALLEL` re-fires, run concurrently. A per-run `PassToken` that `RESTART` flips
+and `Run.fire` checks at each node boundary stops a superseded run's remaining cascade.
+
+**Mid-cascade scope (one node's `process()`).** A node reached along a flow edge during a run
+re-applies its policy at a narrower grain via a `ReentryGate` (keyed by node in `NodeGraph`): the
+gate is held only while some run is inside that node's `process()`. If a **second** run's flow
+reaches the node while the gate is held, its policy decides — `DROP` abandons that branch, `QUEUE`
+parks it as a single coalesced waiter (a newer arrival evicts an older one) and hands it the node
+when the holder's `process()` returns, `RESTART` additionally interrupts the holder, `PARALLEL`
+never gates. The gate is released the instant `process()` returns — before downstream is scheduled
+— so the window is exactly that node's own `process()`. This is what lets one trigger fan out into
+branches with different re-entrancy behavior (a slow branch that `DROP`s overlaps while a fast
+sibling `QUEUE`s). A node still fires at most once per run (`flowVisited`); the gate is only about
+*different* runs overlapping on it.
+
+**How the two compose.** The entry policy decides whether concurrent runs start at all, so a
+mid-cascade gate only ever sees overlap when the entry is `PARALLEL` (or when distinct entry nodes
+feed a shared node). One consequence of the default: two `PARALLEL` runs that fan into a shared
+downstream node now **serialize** at it unless that node is itself set `PARALLEL` (its default
+`QUEUE` makes it process one run at a time).
+
+Because a coalesced follow-up run is started lazily from the run ahead of it (and runs are
+fire-and-forget), `awaitIdle()` waits on an `outstandingPasses` count that a run decrements only
+once its last firing completes — never on draining a queue. A firing parked on a mid-cascade
+`QUEUE` gate keeps its run non-idle until it runs or is coalesced away.
 
 ## The callback-executor seam (why the engine has no JavaFX)
 

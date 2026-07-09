@@ -148,18 +148,18 @@ Key rules to preserve when editing this format:
 
 Right-clicking a node opens a context menu (`NodeView.showContextMenu`) whose
 **Execution Policy** submenu sets the node's `ExecutionPolicy` — what happens when
-the node is triggered again mid-pass (see [graph-engine.md](graph-engine.md)). The
-menu is rebuilt on each open so it reflects the node's current policy. All four
-policies (including `PARALLEL`) are selectable. The chosen policy round-trips through
-the save format above.
+the node is re-entered while work it started is still in flight (see
+[graph-engine.md](graph-engine.md)). The menu is rebuilt on each open so it reflects the
+node's current policy. All four policies (including `PARALLEL`) are selectable. The chosen
+policy round-trips through the save format above.
 
-Only **execution entry points** (`BaseNode.isExecutionEntryPoint()` — nodes that
-`execute()` themselves, like triggers, listeners, and the Discover-cameras button)
-get the policy glyph and the **Execution Policy** submenu. Any node that participates in
-flow (has a flow port) additionally gets **Concurrency limit** and **Process timeout**
-submenus (per-node `maxConcurrency` / `timeoutMillis` — see [nodes.md](nodes.md)), so a
-mid-cascade LLM or camera node is right-clickable even though it has no execution policy.
-Any node with inputs also gets a **Required inputs** submenu: a checkbox per input toggling
+The **Execution Policy** submenu and the policy glyph appear for **any node that participates
+in flow** (`NodeView.participatesInFlow()` — has a flow port), not just execution entry points.
+The policy is meaningful at both scopes: at an entry point it gates a whole re-triggered run, and
+at a mid-cascade flow node it gates re-entry of that node's own `process()` across concurrent runs
+(see [graph-engine.md](graph-engine.md)). The same flow-participating nodes also get **Concurrency
+limit** and **Process timeout** submenus (per-node `maxConcurrency` / `timeoutMillis` — see
+[nodes.md](nodes.md)). Any node with inputs also gets a **Required inputs** submenu: a checkbox per input toggling
 its [`required`](nodes.md) flag (which drives the misconfigured indicator above). Like the
 other submenus this mutates the model directly rather than through the undo stack, and the
 per-input choice round-trips through the save format (`requiredInputs`). A node with none of

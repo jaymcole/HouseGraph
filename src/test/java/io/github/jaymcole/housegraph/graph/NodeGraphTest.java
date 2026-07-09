@@ -569,7 +569,9 @@ class NodeGraphTest {
         // Blocks until TWO runs have entered its process() at once. Only reachable if both
         // PARALLEL runs are in flight concurrently AND the per-run resolution lock lets two
         // runs into the same shared node at the same time - a global node lock would deadlock
-        // this at one entry.
+        // this at one entry. The shared node is itself set PARALLEL: its default QUEUE policy would
+        // otherwise gate the second run's re-entrant arrival (see the mid-cascade policy tests),
+        // serializing it and never letting both enter at once.
         CountDownLatch bothEntered = new CountDownLatch(2);
         CountDownLatch release = new CountDownLatch(1);
         ConcurrentNode shared = new ConcurrentNode(bothEntered, release);
@@ -578,6 +580,7 @@ class NodeGraphTest {
         graph.addNode(shared);
         graph.registerFlowEdge(flowEdge(trigger, shared));
         trigger.setExecutionPolicy(ExecutionPolicy.PARALLEL);
+        shared.setExecutionPolicy(ExecutionPolicy.PARALLEL);
 
         trigger.execute();
         trigger.execute();
@@ -893,6 +896,183 @@ class NodeGraphTest {
         assertEquals(2, gate.processCount.get(), "the gate runs once per pass (the cancelled one plus the restart)");
         assertEquals(1, sink.processCount.get(),
                 "pass 1's cascade to the sink is cancelled after the gate; only the restarted pass reaches it");
+    }
+
+    // --- Per-node (mid-cascade) execution policy ------------------------------------------------
+    //
+    // Unlike the entry-node tests above (whose policy decision runs synchronously on the calling
+    // thread, so a re-trigger's outcome is settled the instant execute() returns), a mid-cascade
+    // node's gate is consulted on a run's firing thread. These tests therefore use the same
+    // bounded-wait idiom as the concurrent-runs tests (parallelPolicy..., concurrencyLimit...): the
+    // entry trigger is PARALLEL so two runs overlap, and one holds the gated node's process() while
+    // the other's re-entrant arrival is observed.
+
+    @Test
+    void dropPolicyOnMidCascadeNodeDropsAReentrantBranchWhileTheFastSiblingKeepsRunning() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        trigger.setExecutionPolicy(ExecutionPolicy.PARALLEL); // let both triggers run as concurrent runs
+
+        CountDownLatch releaseSlow = new CountDownLatch(1);
+        GateNode slow = new GateNode(releaseSlow);
+        slow.setExecutionPolicy(ExecutionPolicy.DROP);
+        CountingSinkNode afterSlow = new CountingSinkNode();     // downstream of the slow branch
+        GateNode fast = new GateNode(new CountDownLatch(0));     // sibling branch, never blocks
+
+        graph.addNode(trigger);
+        graph.addNode(slow);
+        graph.addNode(afterSlow);
+        graph.addNode(fast);
+        graph.registerFlowEdge(flowEdge(trigger, slow));
+        graph.registerFlowEdge(flowEdge(slow, afterSlow));
+        graph.registerFlowEdge(flowEdge(trigger, fast));
+
+        trigger.execute(); // run 1: enters the slow node's process() and holds its gate
+        assertTrue(slow.started.await(2, TimeUnit.SECONDS), "run 1 should reach and hold the slow node");
+        trigger.execute(); // run 2: concurrent (PARALLEL entry)
+        awaitAtLeast(fast.processCount, 2); // run 2 has fanned out (its fast sibling fired)
+
+        // Run 2's arrival at the DROP node finds it busy with run 1 and is dropped: the node never
+        // runs a second time, and run 2's branch is abandoned before the node downstream of it.
+        Thread.sleep(300);
+        assertEquals(1, slow.processCount.get(), "run 2's re-entrant arrival at the DROP node is dropped while run 1 holds it");
+
+        releaseSlow.countDown();
+        graph.awaitIdle();
+        assertEquals(1, slow.processCount.get(), "the slow branch ran exactly once");
+        assertEquals(1, afterSlow.processCount.get(), "run 2 never got past the dropped slow node");
+        assertEquals(2, fast.processCount.get(), "the fast sibling branch ran for both triggers, unaffected by the slow branch's gate");
+    }
+
+    @Test
+    void queuePolicyOnMidCascadeNodeCoalescesReentrantArrivalsBehindTheInFlightOne() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        trigger.setExecutionPolicy(ExecutionPolicy.PARALLEL);
+
+        CountDownLatch releaseSlow = new CountDownLatch(1);
+        GateNode slow = new GateNode(releaseSlow);
+        slow.setExecutionPolicy(ExecutionPolicy.QUEUE);
+        GateNode fast = new GateNode(new CountDownLatch(0));
+
+        graph.addNode(trigger);
+        graph.addNode(slow);
+        graph.addNode(fast);
+        graph.registerFlowEdge(flowEdge(trigger, slow));
+        graph.registerFlowEdge(flowEdge(trigger, fast));
+
+        trigger.execute(); // run 1: holds the slow node's gate
+        assertTrue(slow.started.await(2, TimeUnit.SECONDS), "run 1 should reach and hold the slow node");
+        trigger.execute(); // run 2: queues behind run 1 at the slow node
+        trigger.execute(); // run 3: coalesces run 2 away (latest wins)
+        awaitAtLeast(fast.processCount, 3); // all three runs have fanned out
+
+        // The queued arrivals wait for the gate rather than running alongside run 1.
+        Thread.sleep(300);
+        assertEquals(1, slow.processCount.get(), "queued arrivals wait behind run 1, not run concurrently");
+
+        releaseSlow.countDown();
+        graph.awaitIdle();
+        assertEquals(2, slow.processCount.get(),
+                "runs 2 and 3 coalesce into a single follow-up behind run 1 (unlike DROP, which would leave it at 1)");
+    }
+
+    @Test
+    void parallelPolicyOnMidCascadeNodeRunsReentrantArrivalsConcurrently() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        trigger.setExecutionPolicy(ExecutionPolicy.PARALLEL);
+
+        // Blocks until two runs are inside its process() at once - only reachable if the mid-cascade
+        // node is PARALLEL (the default QUEUE would hold the second out, and this would time out).
+        CountDownLatch bothEntered = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        ConcurrentNode shared = new ConcurrentNode(bothEntered, release);
+        shared.setExecutionPolicy(ExecutionPolicy.PARALLEL);
+
+        graph.addNode(trigger);
+        graph.addNode(shared);
+        graph.registerFlowEdge(flowEdge(trigger, shared));
+
+        trigger.execute();
+        trigger.execute();
+        assertTrue(bothEntered.await(2, TimeUnit.SECONDS), "two PARALLEL runs enter the mid-cascade node concurrently");
+
+        release.countDown();
+        graph.awaitIdle();
+        assertEquals(2, shared.processCount.get(), "both re-entrant arrivals ran");
+    }
+
+    @Test
+    void restartPolicyOnMidCascadeNodeInterruptsTheInFlightProcess() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        trigger.setExecutionPolicy(ExecutionPolicy.PARALLEL);
+
+        CountDownLatch finish = new CountDownLatch(1);
+        InterruptibleGateNode slow = new InterruptibleGateNode(finish);
+        slow.setExecutionPolicy(ExecutionPolicy.RESTART);
+
+        graph.addNode(trigger);
+        graph.addNode(slow);
+        graph.registerFlowEdge(flowEdge(trigger, slow));
+
+        trigger.execute(); // run 1: enters the node's process() and blocks
+        assertTrue(slow.started.await(2, TimeUnit.SECONDS), "run 1 should reach and hold the node");
+        trigger.execute(); // run 2: RESTART interrupts run 1's process, then takes the gate
+        awaitAtLeast(slow.processCount, 2); // run 2 entered after run 1 was interrupted
+
+        finish.countDown(); // let run 2 finish promptly
+        graph.awaitIdle();
+        assertEquals(2, slow.processCount.get(), "the interrupted first run and the restart both ran the node");
+        assertTrue(slow.interrupts.get() >= 1, "RESTART interrupted the in-flight process()");
+    }
+
+    /** Like {@link GateNode} but exits its block when interrupted (recording it) - for the RESTART mid-cascade test. */
+    private static final class InterruptibleGateNode extends BaseNode {
+        final CountDownLatch started = new CountDownLatch(1);
+        final CountDownLatch finish;
+        final AtomicInteger processCount = new AtomicInteger();
+        final AtomicInteger interrupts = new AtomicInteger();
+
+        InterruptibleGateNode(CountDownLatch finish) {
+            this.finish = finish;
+        }
+
+        @Override
+        public void process() {
+            processCount.incrementAndGet();
+            started.countDown();
+            try {
+                finish.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                interrupts.incrementAndGet();
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+    }
+
+    /** Spins until {@code counter} reaches {@code target} (or fails after 2s) - for observing an async mid-cascade run. */
+    private static void awaitAtLeast(AtomicInteger counter, int target) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (counter.get() < target) {
+            assertTrue(System.nanoTime() < deadline,
+                    "counter did not reach " + target + " within 2s (was " + counter.get() + ")");
+            Thread.sleep(5);
+        }
     }
 
     /** Blocks in process() until released, counting each entry - holds a pass in flight at a known point. */

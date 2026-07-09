@@ -57,8 +57,10 @@ optional.
 
 Every node carries an `ExecutionPolicy` (`getExecutionPolicy()`/`setExecutionPolicy()`,
 default `QUEUE`, persisted by `GraphFileIO`) that governs what happens when the node is
-**triggered again while a pass it started is still in flight** — drop it, restart, or
-queue (coalesced). The engine, not the node, enforces it — see [graph-engine.md](graph-engine.md).
+**re-entered while work it started is still in flight** — drop it, restart, or queue (coalesced).
+It applies at two scopes (a whole run at an entry node, one node's `process()` mid-cascade); the
+engine, not the node, enforces it — see [graph-engine.md](graph-engine.md) and the detailed section
+below.
 
 ### Flow joins (AND-barriers)
 
@@ -70,15 +72,24 @@ is the concrete node (numbered flow-in ports, adjustable 2–8). The engine coun
 (`ExecutionContext`) and fires the join once they reach its wired-edge count; an unwired port
 doesn't count, and a join whose branch is pruned by an upstream `If` just doesn't fire that run.
 
-### Execution policy
+### Execution policy (two scopes)
 
-It only matters for **execution entry points** — nodes `execute()` is called on directly
-(a trigger button, a timer, an inbound event), as opposed to nodes only reached along a
-flow edge. `BaseNode.isExecutionEntryPoint()` marks these: it defaults to "has a flow-out
-but no flow-in" (such a node can only ever run via a direct `execute()`), which covers the
-usual trigger/listener sources automatically. A node that self-triggers *and* has a flow-in
-(e.g. `DiscoverCamerasNode`'s Discover button) overrides it to `true`. The UI shows the
-policy glyph and right-click policy submenu only for entry points; the field is inert elsewhere.
+The policy is enforced at two scopes, and matters for **any node a run flows through** (it's inert
+only on a pure data node with no flow ports):
+
+- **At an execution entry point** — a node `execute()` is called on directly (a trigger button, a
+  timer, an inbound event) — it gates the **whole run** started by a re-trigger.
+  `BaseNode.isExecutionEntryPoint()` marks these (default: "has a flow-out but no flow-in"; a node
+  that self-triggers *and* has a flow-in, like `DiscoverCamerasNode`'s Discover button, overrides it
+  to `true`).
+- **At a mid-cascade node** — one reached along a flow edge — it gates re-entry of that node's own
+  `process()` when a *second* run overlaps it. This lets two branches of one trigger differ (a slow
+  branch that `DROP`s overlaps, a fast branch that `QUEUE`s them). A consequence of the `QUEUE`
+  default: two `PARALLEL` runs fanning into a shared node serialize at it unless it's set `PARALLEL`.
+
+The UI shows the policy glyph and right-click policy submenu for **any node that participates in
+flow** (`participatesInFlow()`), at both scopes. See [graph-engine.md](graph-engine.md) and
+[`../design/per-node-execution-policy.md`](../design/per-node-execution-policy.md) for the mechanics.
 
 ### Per-node throughput: concurrency limit & timeout
 

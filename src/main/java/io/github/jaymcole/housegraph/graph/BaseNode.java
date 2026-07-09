@@ -17,11 +17,15 @@ public abstract class BaseNode {
     private boolean configured = false;
 
     /**
-     * What happens when this node is {@link #execute() triggered} again while a pass it
-     * started is still in flight. Only meaningful for entry-point nodes (the ones that
-     * actually get {@code execute()}d); inert for pure transform nodes. Read on the
-     * triggering thread, so kept {@code volatile}. Defaults to {@link ExecutionPolicy#QUEUE}
-     * to preserve the engine's historical "run the next trigger after this one" behavior.
+     * What happens when this node is re-entered while work it started is still in flight. Applied at
+     * two scopes (see {@link ExecutionPolicy} and {@link NodeGraph}): if this node is an
+     * <em>execution entry point</em>, it gates a whole re-triggered run; if it's reached
+     * <em>mid-cascade</em> along a flow edge, it gates re-entry of this node's own {@code process()}
+     * across concurrent runs. Meaningful for any node a run flows through; inert for a pure data node
+     * (one with no flow ports). Read on triggering/firing threads, so kept {@code volatile}. Defaults
+     * to {@link ExecutionPolicy#QUEUE} — an entry re-trigger runs after the current one, and a
+     * mid-cascade node processes one run at a time (opt into {@link ExecutionPolicy#PARALLEL} to let
+     * concurrent runs overlap on it).
      */
     private volatile ExecutionPolicy executionPolicy = ExecutionPolicy.QUEUE;
 
@@ -438,9 +442,12 @@ public abstract class BaseNode {
     /**
      * Whether this node can be an <em>execution entry point</em> — something calls
      * {@link #execute()} on it directly (a trigger button, a timer, an inbound event),
-     * rather than it only running when reached along an incoming flow edge. Only entry
-     * points can be re-triggered while a pass is in flight, so only they have a meaningful
-     * {@link ExecutionPolicy}; the UI surfaces the policy selector for these nodes alone.
+     * rather than it only running when reached along an incoming flow edge. At an entry point the
+     * {@link ExecutionPolicy} gates a whole re-triggered run; a non-entry flow node still has a
+     * meaningful policy (it gates re-entry of its own {@code process()} across concurrent runs), so
+     * this predicate no longer decides <em>whether</em> a node has a policy — the UI surfaces the
+     * selector for every node that participates in flow. It still governs the whole-run gate in
+     * {@link NodeGraph#execute(BaseNode, Runnable)}.
      * <p>
      * The default covers the common case structurally: a node with a flow output but no
      * flow input can <em>only</em> ever run via a direct {@code execute()} (nothing can

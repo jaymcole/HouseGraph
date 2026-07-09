@@ -54,21 +54,33 @@ import java.util.concurrent.atomic.AtomicInteger;
  * ({@code flowVisited} dedup); a node pulled as a shared data dependency runs once per run, guarded
  * by its own intrinsic lock in {@link #resolveInternal} (which, reentrant per-thread, also turns a
  * data cycle into a clean {@link IllegalStateException} rather than a stack overflow). Because
- * reconvergence no longer waits for all incoming branches, joining is an explicit concern — see the
- * design doc {@code docs/design/per-node-execution-policy.md} (a join node is planned).
+ * reconvergence no longer waits for all incoming branches, joining is an explicit concern handled by
+ * a flow-join node (see {@link BaseNode#isFlowJoin()}); the design doc
+ * {@code docs/design/per-node-execution-policy.md} covers the whole concurrent-runs model.
  * <p>
  * Structural methods (adding/removing nodes and edges, reading the topology) stay
  * {@code synchronized} on this instance for their own brief critical section, but that
  * lock is never held for a whole run — so a UI-thread edit isn't forced to wait out a slow
  * in-flight trigger.
  * <p>
- * <b>Re-entrant triggers.</b> When {@link #execute(BaseNode, Runnable)} is called on a node
- * whose earlier run is still in flight, the node's {@link ExecutionPolicy} decides the outcome:
- * {@code DROP} ignores it, {@code RESTART} cancels the in-flight run's remaining cascade and runs a
- * fresh one, {@code QUEUE} (the default) coalesces to a single pending follow-up run, and
- * {@code PARALLEL} starts an independent concurrent run every time. {@code DROP}/{@code QUEUE}/
- * {@code RESTART} keep a single in-flight run per entry node via {@link EntryExecution}; different
- * entry nodes (and {@code PARALLEL} re-fires) run concurrently.
+ * <b>Re-entrant triggers, two scopes.</b> {@link ExecutionPolicy} is applied at two levels. At the
+ * <em>entry node</em> — when {@link #execute(BaseNode, Runnable)} is called while an earlier run of
+ * that node is still in flight — the policy gates the <em>whole run</em>: {@code DROP} ignores it,
+ * {@code RESTART} cancels the in-flight run's remaining cascade and runs a fresh one, {@code QUEUE}
+ * (the default) coalesces to a single pending follow-up run, and {@code PARALLEL} starts an
+ * independent concurrent run every time. {@code DROP}/{@code QUEUE}/{@code RESTART} keep a single
+ * in-flight run per entry node via {@link EntryExecution}; different entry nodes (and
+ * {@code PARALLEL} re-fires) run concurrently.
+ * <p>
+ * At a <em>mid-cascade node</em> — one reached along a flow edge during a run — the same policy is
+ * re-applied at a narrower, <em>process-scoped</em> grain via a {@link ReentryGate} (see
+ * {@link #reentryGates}): if a sibling run is currently inside that node's {@code process()}, this
+ * run's arrival is dropped / coalesced-and-queued / restarts it, exactly as above but scoped to the
+ * node's own {@code process()} rather than a whole run. This is what lets one trigger fan out into
+ * branches with <em>different</em> re-entrancy behavior — a slow branch that {@code DROP}s overlaps
+ * while a fast sibling branch keeps firing. Note the composition: the entry policy governs whether
+ * concurrent runs start at all, so a mid-cascade gate only ever sees overlap when the entry is
+ * {@code PARALLEL} (or when distinct entry nodes feed a shared node).
  * <p>
  * This class never imports anything from JavaFX: node/edge execution callbacks
  * ({@link BaseNode#onExecuted()}, {@link GraphExecutionListener}) are dispatched
@@ -93,6 +105,19 @@ public class NodeGraph {
      * camera, resource publishers). Entries are dropped when a node leaves the graph.
      */
     private final Map<BaseNode, EntryExecution> entryExecutions = new ConcurrentHashMap<>();
+
+    /**
+     * Per-node <em>process-scoped</em> re-entry gates backing an {@link ExecutionPolicy} carried by a
+     * <em>mid-cascade</em> node (one reached along a flow edge, not the run's entry). Distinct from
+     * {@link #entryExecutions}: that gates a whole run at its entry node, whereas a gate here spans
+     * only the window in which some run is executing this node's {@code process()}. When a second
+     * run's flow reaches the node while that window is open, the node's policy decides the outcome —
+     * so two branches fanning out from one trigger can carry different re-entrancy behavior (a slow
+     * branch that {@code DROP}s overlaps, a fast branch that {@code QUEUE}s them). Consulted from
+     * {@link Run#fire}; keyed by node; concurrent because sibling runs fire nodes on many threads;
+     * entries dropped when a node leaves the graph.
+     */
+    private final Map<BaseNode, ReentryGate> reentryGates = new ConcurrentHashMap<>();
 
     /**
      * Number of triggered passes that have been accepted but not yet finished, including a
@@ -198,6 +223,13 @@ public class NodeGraph {
         // Drop any policy bookkeeping for this node; an in-flight pass keeps its own
         // captured reference and finishes unaffected.
         entryExecutions.remove(node);
+        // Release the node's re-entry gate too, and free any run parked on it (QUEUE/RESTART) so
+        // its firing task returns and its run can quiesce rather than waiting on a gate no one
+        // will ever signal now the node is gone.
+        ReentryGate gate = reentryGates.remove(node);
+        if (gate != null) {
+            gate.cancelWaiter();
+        }
         node.setGraph(null);
         return present;
     }
@@ -410,6 +442,17 @@ public class NodeGraph {
             }
         }
         endPass();
+    }
+
+    /**
+     * Passes a mid-cascade {@code node}'s firing through its {@link ReentryGate} under {@code policy}
+     * (never {@code PARALLEL} — the caller skips gating for that). Returns the held gate if this run
+     * may run the node's {@code process()} (the caller must later {@link ReentryGate#release()} it),
+     * or {@code null} if this branch should be abandoned. May block the calling firing thread for a
+     * {@code QUEUE}/{@code RESTART} arrival while an earlier run holds the gate.
+     */
+    private ReentryGate acquireReentryGate(BaseNode node, ExecutionPolicy policy) {
+        return reentryGates.computeIfAbsent(node, ignored -> new ReentryGate()).acquire(policy);
     }
 
     private void beginPass() {
@@ -643,6 +686,13 @@ public class NodeGraph {
         private final AtomicInteger pending = new AtomicInteger();
         private final Runnable onComplete;
 
+        /**
+         * The node this run was triggered on. Its re-entrancy was already decided by the whole-run
+         * gate in {@link #execute(BaseNode, Runnable)}, so {@link #fire} skips the per-node
+         * process-scoped gate for it (only nodes reached along a flow edge are gated there).
+         */
+        private BaseNode entryNode;
+
         Run(Runnable onComplete) {
             this.onComplete = onComplete;
         }
@@ -653,6 +703,7 @@ public class NodeGraph {
 
         /** Runs {@code prepare} in this run's context (so an event payload lands in its own value overlay), then fires {@code entry}. */
         void start(BaseNode entry, Runnable prepare) {
+            this.entryNode = entry;
             try {
                 context.run(prepare);
             } catch (RuntimeException e) {
@@ -692,13 +743,37 @@ public class NodeGraph {
          * without waiting for them. The last firing to complete (pending count reaching zero) ends
          * the run. Cooperative RESTART cancellation is checked here and before each downstream
          * schedule; a node already mid-{@code process()} isn't interrupted (see {@link ExecutionPolicy#RESTART}).
+         * <p>
+         * A mid-cascade node (anything but this run's {@link #entryNode}) with a non-{@code PARALLEL}
+         * policy is first passed through its {@link ReentryGate}: if another run is currently inside
+         * this node's {@code process()}, the node's policy decides whether this firing is dropped,
+         * coalesced-and-queued behind it, or restarts it. The gate is released the instant this run's
+         * {@code process()} returns — before any downstream is scheduled — so the gated window is
+         * exactly the node's own {@code process()} (see {@link #reentryGates}).
          */
         private void fire(BaseNode node) {
+            ReentryGate held = null;
             try {
                 if (token.isCancelled()) {
                     return;
                 }
+                ExecutionPolicy policy = node.getExecutionPolicy();
+                if (node != entryNode && policy != ExecutionPolicy.PARALLEL) {
+                    held = acquireReentryGate(node, policy);
+                    if (held == null) {
+                        // DROP hit a busy node, or a QUEUE/RESTART wait was coalesced away by a newer
+                        // arrival: abandon this branch. Downstream past this node is skipped for this run.
+                        return;
+                    }
+                }
                 context.run(() -> resolveInternal(context, node));
+
+                // Gated window is this node's process(): release before cascading downstream so a
+                // sibling run waiting on this node can proceed as soon as our process() is done.
+                if (held != null) {
+                    held.release();
+                    held = null;
+                }
 
                 // Which out-ports fired: whatever process() activated, or - if it activated nothing
                 // - all of them (see BaseNode.activate). A branch node narrows the cascade this way.
@@ -716,6 +791,10 @@ public class NodeGraph {
             } catch (RuntimeException e) {
                 System.err.println("Triggered execution of \"" + node.getName() + "\" failed: " + rootCause(e));
             } finally {
+                if (held != null) {
+                    // process() threw before we released: don't leak the gate or a sibling run parks forever.
+                    held.release();
+                }
                 if (pending.decrementAndGet() == 0) {
                     onComplete.run();
                 }
@@ -735,6 +814,101 @@ public class NodeGraph {
         Runnable pendingPrepare;
         /** Cancellation handle for the in-flight run, used by a RESTART trigger. */
         PassToken runningToken;
+    }
+
+    /**
+     * A single mid-cascade node's process-scoped re-entry gate (see {@link #reentryGates}). At most
+     * one run <em>holds</em> the gate at a time — the one currently inside the node's
+     * {@code process()} — and its {@link ExecutionPolicy} decides what a second run's arrival does:
+     * {@code DROP} abandons the arrival, {@code QUEUE} coalesces it behind the holder (at most one
+     * waiter; a newer arrival evicts an older one), {@code RESTART} interrupts the holder and then
+     * queues like {@code QUEUE}. {@code PARALLEL} never reaches here — those firings skip the gate.
+     * All state is guarded by this object's own monitor. Non-blocking to release; a waiting arrival
+     * parks a cheap virtual thread until it's handed the gate or coalesced away.
+     */
+    private static final class ReentryGate {
+        /** A run currently holds the gate (is inside, or about to enter, the node's {@code process()}). */
+        private boolean busy;
+        /** The holder's firing thread, so a {@code RESTART} arrival can interrupt its {@code process()}. */
+        private Thread holderThread;
+        /** The one coalesced arrival waiting for the gate, or null when none waits. */
+        private Waiter waiter;
+
+        /**
+         * Acquires the gate for the calling firing thread under {@code policy}. Returns {@code this}
+         * if the caller may run the node's {@code process()} (and must later {@link #release()} it),
+         * or {@code null} if this branch should be abandoned — a {@code DROP} that found the gate
+         * busy, or a {@code QUEUE}/{@code RESTART} wait that a newer arrival (or node removal)
+         * coalesced away. For a busy {@code RESTART} the holder's thread is interrupted (cooperative)
+         * before this arrival waits.
+         */
+        synchronized ReentryGate acquire(ExecutionPolicy policy) {
+            if (!busy) {
+                busy = true;
+                holderThread = Thread.currentThread();
+                return this;
+            }
+            if (policy == ExecutionPolicy.DROP) {
+                return null;
+            }
+            if (policy == ExecutionPolicy.RESTART && holderThread != null) {
+                holderThread.interrupt();
+            }
+            if (waiter != null) {
+                waiter.cancelled = true; // evict the older waiter: coalesce to the latest arrival
+            }
+            Waiter self = new Waiter();
+            waiter = self;
+            notifyAll(); // wake a freshly-evicted waiter so it returns and abandons its branch
+            while (!self.signaled && !self.cancelled) {
+                try {
+                    wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    if (waiter == self) {
+                        waiter = null;
+                    }
+                    return null;
+                }
+            }
+            if (self.cancelled) {
+                return null;
+            }
+            // Signaled: the previous holder handed us the still-held gate.
+            holderThread = Thread.currentThread();
+            return this;
+        }
+
+        /**
+         * Releases the gate after the holder's {@code process()} returns. Hands it straight to the
+         * coalesced waiter if one is queued (which then runs the node), otherwise marks the node free.
+         */
+        synchronized void release() {
+            if (waiter != null) {
+                waiter.signaled = true; // hand off: busy stays true, the waiter becomes the new holder
+                waiter = null;
+                holderThread = null;    // the woken waiter records its own thread
+                notifyAll();
+            } else {
+                busy = false;
+                holderThread = null;
+            }
+        }
+
+        /** Frees a run parked here (used when the node is removed); the waiter abandons its branch. */
+        synchronized void cancelWaiter() {
+            if (waiter != null) {
+                waiter.cancelled = true;
+                waiter = null;
+                notifyAll();
+            }
+        }
+
+        /** One coalesced pending arrival: exactly one of the flags is eventually set. */
+        private static final class Waiter {
+            boolean signaled;  // gate handed to this waiter → run the node
+            boolean cancelled; // evicted by a newer arrival (or node removal) → abandon
+        }
     }
 
     /**
