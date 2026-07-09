@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.ui.command;
 
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 import io.github.jaymcole.housegraph.ui.view.NodeView;
 
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
@@ -17,12 +18,12 @@ import java.util.List;
 public class PasteCommand implements Command {
 
     private final GraphCanvas canvas;
-    private final GraphCanvas.GraphSnapshot snapshot;
+    private final GraphSnapshot snapshot;
     private final double offsetX;
     private final double offsetY;
     private List<NodeView> pastedNodes;
 
-    public PasteCommand(GraphCanvas canvas, GraphCanvas.GraphSnapshot snapshot, double offsetX, double offsetY) {
+    public PasteCommand(GraphCanvas canvas, GraphSnapshot snapshot, double offsetX, double offsetY) {
         this.canvas = canvas;
         this.snapshot = snapshot;
         this.offsetX = offsetX;

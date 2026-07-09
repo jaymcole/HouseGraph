@@ -18,17 +18,21 @@ ui/
 │                      EdgeInteractionListener, ExecutionPolicyIcons, NodeContentProvider
 ├── editor/            ValueEditors, SecretsEditor
 ├── command/           Command, UndoManager, and every *Command
+├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
 └── io/                GraphFileIO
 ```
 
 Splitting the layer across packages means the pieces that call across those
 boundaries are `public` (Java has no sub-package visibility): `GraphCanvas`'s
-canvas-mutation methods and its snapshot records, `UndoManager`'s
-`execute`/`record`/`undo`/`redo`, and `AbstractEdgeView`'s waypoint accessors are
-all part of that intentional API surface. Anything used only within a single
-sub-package stays package-private. The test tree mirrors this layout
-(`GraphFileIOTest` lives under `ui/io/`, in the same package as `GraphFileIO`, so
-it can drive its package-private `toJson`/`fromJson` headlessly).
+canvas-mutation methods, `UndoManager`'s `execute`/`record`/`undo`/`redo`, and
+`AbstractEdgeView`'s waypoint accessors are all part of that intentional API
+surface. Anything used only within a single sub-package stays package-private.
+The `snapshot/` records are a plain data model — a captured slice of the graph —
+that `GraphCanvas` (copy/paste), `command/` (paste), and `io/` (save/load) all
+build on, so they live on their own rather than nested inside the canvas widget.
+The test tree mirrors this layout (`GraphFileIOTest` lives under `ui/io/`, in the
+same package as `GraphFileIO`, so it can drive its package-private
+`toJson`/`fromJson` headlessly).
 
 ## `GraphCanvas` — the hub
 
@@ -121,11 +125,11 @@ Current commands: `AddNodeCommand`, `RemoveNodesCommand`, `MoveNodesCommand`,
 ## Save / load: `GraphFileIO`
 
 `GraphFileIO` serializes a canvas to JSON and back, reusing the same index-based
-snapshot shape (`GraphCanvas.GraphSnapshot` / `ClipboardNode` / `ClipboardDataEdge`
-/ `ClipboardFlowEdge`) built for copy/paste. The JSON conversion
-(`toJson`/`fromJson`) is deliberately free of any JavaFX/GraphCanvas dependency so
-it can be unit-tested headlessly; `save`/`load` are the thin wrappers that touch a
-real canvas.
+`snapshot` shape (`GraphSnapshot` / `ClipboardNode` / `ClipboardDataEdge` /
+`ClipboardFlowEdge`, in the [`ui.snapshot`](#package-layout) package) built for
+copy/paste. The JSON conversion (`toJson`/`fromJson`) is deliberately free of any
+JavaFX/GraphCanvas dependency so it can be unit-tested headlessly; `save`/`load`
+are the thin wrappers that touch a real canvas.
 
 The toolbar (`App`) exposes three file actions. **Quick Save** writes straight to
 the *current file* — the file most recently saved to or loaded from — with no

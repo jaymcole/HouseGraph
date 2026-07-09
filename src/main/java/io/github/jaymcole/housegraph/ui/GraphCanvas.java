@@ -16,6 +16,10 @@ import io.github.jaymcole.housegraph.ui.view.FlowEdgeView;
 import io.github.jaymcole.housegraph.ui.view.FlowPortView;
 import io.github.jaymcole.housegraph.ui.view.NodeView;
 import io.github.jaymcole.housegraph.ui.view.PortView;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
+import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
@@ -75,36 +79,6 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private static final KeyCodeCombination UNDO_COMBO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination REDO_COMBO =
             new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
-
-    /**
-     * One node plus its canvas position, as captured for copy/paste or save/load.
-     * Package-visible (not private) so {@link GraphFileIO} can build/read these
-     * without needing anything else from GraphCanvas's internals.
-     */
-    public record ClipboardNode(BaseNode node, double x, double y) {
-    }
-
-    /**
-     * A data edge between two snapshotted nodes, referenced by index into the node list
-     * and variable list, plus its manual routing {@code waypoints} (content coordinates,
-     * empty for a straight edge) so re-routing survives copy/paste and save/load.
-     */
-    public record ClipboardDataEdge(int sourceNodeIndex, int sourceVariableIndex, int targetNodeIndex, int targetVariableIndex,
-                             List<Point2D> waypoints) {
-    }
-
-    /**
-     * A flow edge between two snapshotted nodes, referenced by index into the node list,
-     * plus which flow port on each (index into the node's flow-out / flow-in list) so a
-     * multi-branch node's edges reconnect to the right ports, and its routing waypoints.
-     */
-    public record ClipboardFlowEdge(int sourceNodeIndex, int sourcePortIndex, int targetNodeIndex, int targetPortIndex,
-                             List<Point2D> waypoints) {
-    }
-
-    /** A self-contained slice of the graph (some or all of its nodes, plus the edges between them). */
-    public record GraphSnapshot(List<ClipboardNode> nodes, List<ClipboardDataEdge> dataEdges, List<ClipboardFlowEdge> flowEdges) {
-    }
 
     private final NodeGraph graph;
     private final Group content = new Group();

@@ -16,14 +16,18 @@ by concern into sub-packages:
 | `view/` | node/edge/port views (`NodeView`, `PortView`, `FlowPortView`, `EdgeView`, `FlowEdgeView`, `AbstractEdgeView`, `ConnectionView`, `EdgeAnchor`, `EdgeInteractionListener`), the `ExecutionPolicyIcons` glyphs, and the `NodeContentProvider` inline-UI extension point |
 | `editor/` | inline value + secret editing (`ValueEditors`, `SecretsEditor`) |
 | `command/` | undo/redo — the `Command` interface, `UndoManager`, and every `*Command` |
+| `snapshot/` | the snapshot data model — `GraphSnapshot` and its `Clipboard*` records (a captured slice of the graph, shared by copy/paste and save/load) |
 | `io/` | save/load (`GraphFileIO`) |
 
 Because these live in separate packages now, the cross-package API surface each
-one exposes (e.g. `GraphCanvas`'s canvas-mutation methods and snapshot records,
-`UndoManager`'s `execute`/`record`, `AbstractEdgeView`'s waypoint accessors) is
-`public`; keep genuinely package-local helpers package-private. When you add a
-file, put it in the sub-package that matches its concern (and mirror it under the
-matching test package).
+one exposes (e.g. `GraphCanvas`'s canvas-mutation methods, `UndoManager`'s
+`execute`/`record`, `AbstractEdgeView`'s waypoint accessors) is `public`; keep
+genuinely package-local helpers package-private. Prefer standalone files over
+public nested types for anything shared across packages (that's why the snapshot
+records live in `snapshot/` rather than inside `GraphCanvas`); a `private` nested
+helper used in only one file is fine to leave nested. When you add a file, put it
+in the sub-package that matches its concern (and mirror it under the matching test
+package).
 
 Hold these when editing here:
 
