@@ -1,4 +1,7 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
+
+import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.view.NodeView;
 
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 
@@ -11,7 +14,7 @@ import java.util.List;
  * of the specific pasted nodes across an undo/redo cycle, and nothing else depends on
  * that identity surviving.
  */
-class PasteCommand implements Command {
+public class PasteCommand implements Command {
 
     private final GraphCanvas canvas;
     private final GraphCanvas.GraphSnapshot snapshot;
@@ -19,7 +22,7 @@ class PasteCommand implements Command {
     private final double offsetY;
     private List<NodeView> pastedNodes;
 
-    PasteCommand(GraphCanvas canvas, GraphCanvas.GraphSnapshot snapshot, double offsetX, double offsetY) {
+    public PasteCommand(GraphCanvas canvas, GraphCanvas.GraphSnapshot snapshot, double offsetX, double offsetY) {
         this.canvas = canvas;
         this.snapshot = snapshot;
         this.offsetX = offsetX;

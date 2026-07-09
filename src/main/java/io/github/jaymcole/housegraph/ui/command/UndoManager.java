@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -7,13 +7,13 @@ import java.util.Deque;
  * Linear undo/redo history of {@link Command}s. Executing a new command clears the
  * redo stack, matching standard editor behavior (you can't redo past a fresh edit).
  */
-class UndoManager {
+public class UndoManager {
 
     private final Deque<Command> undoStack = new ArrayDeque<>();
     private final Deque<Command> redoStack = new ArrayDeque<>();
 
     /** Runs a command for the first time and records it for undo. */
-    void execute(Command command) {
+    public void execute(Command command) {
         command.execute();
         undoStack.push(command);
         redoStack.clear();
@@ -25,12 +25,12 @@ class UndoManager {
      * updates position on every mouse-moved event for real-time feedback, and only
      * gets wrapped into a single undo step once the gesture ends.
      */
-    void record(Command command) {
+    public void record(Command command) {
         undoStack.push(command);
         redoStack.clear();
     }
 
-    void undo() {
+    public void undo() {
         if (undoStack.isEmpty()) {
             return;
         }
@@ -39,7 +39,7 @@ class UndoManager {
         redoStack.push(command);
     }
 
-    void redo() {
+    public void redo() {
         if (redoStack.isEmpty()) {
             return;
         }
@@ -49,7 +49,7 @@ class UndoManager {
     }
 
     /** Wipes all history - e.g. loading a different graph makes the previous one's history meaningless. */
-    void clear() {
+    public void clear() {
         undoStack.clear();
         redoStack.clear();
     }

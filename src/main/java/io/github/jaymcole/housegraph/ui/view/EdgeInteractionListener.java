@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.view;
 
 import javafx.geometry.Point2D;
 
@@ -9,7 +9,7 @@ import java.util.List;
  * owns selection and the undo history — so the edge view itself needs no direct
  * dependency on {@link GraphCanvas}.
  */
-interface EdgeInteractionListener {
+public interface EdgeInteractionListener {
 
     /** A single click on the edge: select just this one, replacing the current selection. */
     void selectEdge(AbstractEdgeView edge);

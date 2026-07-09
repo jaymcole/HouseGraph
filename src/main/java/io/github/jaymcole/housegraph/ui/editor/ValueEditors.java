@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.editor;
 
 import java.util.HashMap;
 import java.util.Map;

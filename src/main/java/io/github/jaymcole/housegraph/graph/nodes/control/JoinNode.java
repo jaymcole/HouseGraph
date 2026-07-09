@@ -3,7 +3,7 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
-import io.github.jaymcole.housegraph.ui.NodeContentProvider;
+import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;

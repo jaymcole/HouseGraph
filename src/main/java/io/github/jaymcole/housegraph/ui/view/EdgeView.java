@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.view;
 
 import javafx.scene.Group;
 import javafx.scene.paint.Color;

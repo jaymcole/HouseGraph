@@ -6,7 +6,7 @@ import io.github.jaymcole.housegraph.discord.SlashCommandRegistry;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.storage.SecretsStore;
-import io.github.jaymcole.housegraph.ui.NodeContentProvider;
+import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Button;

@@ -1,9 +1,13 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
+
+import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.view.FlowEdgeView;
+import io.github.jaymcole.housegraph.ui.view.FlowPortView;
 
 import io.github.jaymcole.housegraph.graph.FlowPort;
 
 /** Reversible creation of a flow edge by dragging between two flow ports - see {@link CreateEdgeCommand}, same idea for flow ports. */
-class CreateFlowEdgeCommand implements Command {
+public class CreateFlowEdgeCommand implements Command {
 
     private final GraphCanvas canvas;
     private final FlowPortView a;
@@ -12,7 +16,7 @@ class CreateFlowEdgeCommand implements Command {
     private FlowPortView replacedSource;
     private FlowPortView replacedTarget;
 
-    CreateFlowEdgeCommand(GraphCanvas canvas, FlowPortView a, FlowPortView b) {
+    public CreateFlowEdgeCommand(GraphCanvas canvas, FlowPortView a, FlowPortView b) {
         this.canvas = canvas;
         this.a = a;
         this.b = b;

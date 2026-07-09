@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.view;
 
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import javafx.scene.Group;
@@ -27,7 +27,7 @@ import javafx.scene.shape.StrokeLineCap;
  *   <li>Parallel — two upright bars: "run alongside".</li>
  * </ul>
  */
-final class ExecutionPolicyIcons {
+public final class ExecutionPolicyIcons {
 
     /** The glyph box edge, in px; also the drawing coordinate space (0..SIZE on each axis). */
     static final double SIZE = 14;

@@ -1,14 +1,17 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
+
+import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.view.NodeView;
 
 /** Reversible add of a single freshly-created node at a given canvas position (e.g. from the "Add Node" menu). */
-class AddNodeCommand implements Command {
+public class AddNodeCommand implements Command {
 
     private final GraphCanvas canvas;
     private final NodeView nodeView;
     private final double x;
     private final double y;
 
-    AddNodeCommand(GraphCanvas canvas, NodeView nodeView, double x, double y) {
+    public AddNodeCommand(GraphCanvas canvas, NodeView nodeView, double x, double y) {
         this.canvas = canvas;
         this.nodeView = nodeView;
         this.x = x;

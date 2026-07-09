@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.view;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import javafx.scene.Node;
