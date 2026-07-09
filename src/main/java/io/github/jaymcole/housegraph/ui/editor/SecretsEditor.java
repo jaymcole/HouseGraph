@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.editor;
 
 import io.github.jaymcole.housegraph.storage.SecretsStore;
 import javafx.geometry.Insets;

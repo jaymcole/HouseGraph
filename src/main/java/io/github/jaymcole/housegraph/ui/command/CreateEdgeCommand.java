@@ -1,4 +1,8 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
+
+import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.view.EdgeView;
+import io.github.jaymcole.housegraph.ui.view.PortView;
 
 /**
  * Reversible creation of a data edge by dragging between two ports. An input can only
@@ -8,7 +12,7 @@ package io.github.jaymcole.housegraph.ui;
  * started. What was replaced (if anything) is re-checked on every execute(), so this
  * stays correct across repeated undo/redo cycles.
  */
-class CreateEdgeCommand implements Command {
+public class CreateEdgeCommand implements Command {
 
     private final GraphCanvas canvas;
     private final PortView a;
@@ -17,7 +21,7 @@ class CreateEdgeCommand implements Command {
     private PortView replacedSource;
     private PortView replacedTarget;
 
-    CreateEdgeCommand(GraphCanvas canvas, PortView a, PortView b) {
+    public CreateEdgeCommand(GraphCanvas canvas, PortView a, PortView b) {
         this.canvas = canvas;
         this.a = a;
         this.b = b;

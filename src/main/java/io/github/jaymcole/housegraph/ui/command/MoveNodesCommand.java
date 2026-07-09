@@ -1,4 +1,6 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
+
+import io.github.jaymcole.housegraph.ui.view.NodeView;
 
 import java.util.List;
 
@@ -8,7 +10,7 @@ import java.util.List;
  * (for real-time visual feedback); this just gets {@link UndoManager#record}ed once
  * the gesture ends, rather than {@link UndoManager#execute}d.
  */
-class MoveNodesCommand implements Command {
+public class MoveNodesCommand implements Command {
 
     private final List<NodeView> nodes;
     private final double[] fromX;
@@ -16,7 +18,7 @@ class MoveNodesCommand implements Command {
     private final double[] toX;
     private final double[] toY;
 
-    MoveNodesCommand(List<NodeView> nodes, double[] fromX, double[] fromY, double[] toX, double[] toY) {
+    public MoveNodesCommand(List<NodeView> nodes, double[] fromX, double[] fromY, double[] toX, double[] toY) {
         this.nodes = nodes;
         this.fromX = fromX;
         this.fromY = fromY;

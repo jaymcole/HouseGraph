@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.view;
 
 import javafx.geometry.Point2D;
 import javafx.scene.Group;
@@ -8,7 +8,7 @@ import javafx.scene.Group;
  * (data) and {@link FlowPortView} (control flow) that {@link AbstractEdgeView} needs
  * to draw and hit-test a connection, without caring which kind of port it is.
  */
-interface EdgeAnchor {
+public interface EdgeAnchor {
 
     /** This anchor's centre in the pannable/zoomable content coordinate space. */
     Point2D getCenterInContent(Group content);

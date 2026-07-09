@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.view;
 
 import javafx.animation.PauseTransition;
 import javafx.geometry.Bounds;
@@ -36,7 +36,7 @@ import java.util.List;
  * double-click adds a waypoint. Selection and undo-recording are delegated back to the
  * canvas through an {@link EdgeInteractionListener}, since both are canvas-wide concerns.
  */
-abstract class AbstractEdgeView extends Group implements ConnectionView {
+public abstract class AbstractEdgeView extends Group implements ConnectionView {
 
     private static final Color SELECTED_STROKE = Color.web("#e5c07b");
     private static final Color PULSE_STROKE = Color.web("#61dafb");
@@ -290,12 +290,12 @@ abstract class AbstractEdgeView extends Group implements ConnectionView {
     }
 
     /** A defensive copy of this edge's routing waypoints, in content coordinates (for save/copy). */
-    List<Point2D> getWaypoints() {
+    public List<Point2D> getWaypoints() {
         return new ArrayList<>(waypoints);
     }
 
     /** Replaces the routing waypoints wholesale — for restoring from a save, paste, or undo. */
-    void setWaypoints(List<Point2D> points) {
+    public void setWaypoints(List<Point2D> points) {
         waypoints.clear();
         waypoints.addAll(points);
         rebuildHandles();

@@ -5,6 +5,31 @@ value editing, undo/redo, and save/load. It is the only package that owns
 JavaFX-thread concerns, and it is the top of the dependency stack — it depends on
 `graph/` (and below), never the reverse.
 
+## Package layout
+
+`GraphCanvas` is the hub and lives at the `ui/` root. The rest of the layer is
+grouped by concern into sub-packages:
+
+```
+ui/
+├── GraphCanvas.java   the hub (canvas host, drag controller, execution listener)
+├── view/              NodeView, PortView, FlowPortView, EdgeView, FlowEdgeView,
+│                      AbstractEdgeView, ConnectionView, EdgeAnchor,
+│                      EdgeInteractionListener, ExecutionPolicyIcons, NodeContentProvider
+├── editor/            ValueEditors, SecretsEditor
+├── command/           Command, UndoManager, and every *Command
+└── io/                GraphFileIO
+```
+
+Splitting the layer across packages means the pieces that call across those
+boundaries are `public` (Java has no sub-package visibility): `GraphCanvas`'s
+canvas-mutation methods and its snapshot records, `UndoManager`'s
+`execute`/`record`/`undo`/`redo`, and `AbstractEdgeView`'s waypoint accessors are
+all part of that intentional API surface. Anything used only within a single
+sub-package stays package-private. The test tree mirrors this layout
+(`GraphFileIOTest` lives under `ui/io/`, in the same package as `GraphFileIO`, so
+it can drive its package-private `toJson`/`fromJson` headlessly).
+
 ## `GraphCanvas` — the hub
 
 `GraphCanvas extends Pane` is an infinite, pannable, zoomable canvas that hosts

@@ -1,4 +1,12 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
+
+import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.view.ConnectionView;
+import io.github.jaymcole.housegraph.ui.view.EdgeView;
+import io.github.jaymcole.housegraph.ui.view.FlowEdgeView;
+import io.github.jaymcole.housegraph.ui.view.FlowPortView;
+import io.github.jaymcole.housegraph.ui.view.NodeView;
+import io.github.jaymcole.housegraph.ui.view.PortView;
 
 import javafx.geometry.Point2D;
 
@@ -18,7 +26,7 @@ import java.util.List;
  * pair, and undo() recreates it, restores those waypoints, and stores the fresh view
  * reference for next time.
  */
-class RemoveNodesCommand implements Command {
+public class RemoveNodesCommand implements Command {
 
     private static final class CapturedDataEdge {
         final PortView source;
@@ -59,7 +67,7 @@ class RemoveNodesCommand implements Command {
      *                            touching one of {@code nodesToRemove}, plus any separately
      *                            selected connection not touching a deleted node
      */
-    RemoveNodesCommand(GraphCanvas canvas, Collection<NodeView> nodesToRemove, Collection<ConnectionView> connectionsToRemove) {
+    public RemoveNodesCommand(GraphCanvas canvas, Collection<NodeView> nodesToRemove, Collection<ConnectionView> connectionsToRemove) {
         this.canvas = canvas;
         this.nodes = new ArrayList<>(nodesToRemove);
         this.x = new double[nodes.size()];

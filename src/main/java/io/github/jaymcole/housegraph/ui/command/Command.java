@@ -1,7 +1,7 @@
-package io.github.jaymcole.housegraph.ui;
+package io.github.jaymcole.housegraph.ui.command;
 
 /** A reversible canvas mutation, tracked by {@link UndoManager}. */
-interface Command {
+public interface Command {
 
     void execute();
 
