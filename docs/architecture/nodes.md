@@ -125,7 +125,12 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 ## Node categories (current folders under `graph/nodes/`)
 
 `camera`, `constants`, `control`, `converters`, `debug`, `discord`, `iot`,
-`loader`, `math`, `ml`, `object`, `resource`, `viewers`.
+`loader`, `math`, `ml`, `object`, `resource`, `viewers`, `web`.
+
+`web` holds nodes for hosting on the local network — currently the web-server
+resource node, which serves a directory of static files as `<name>.local` and
+drives the `web` package's `LocalWebServer` (mirroring how `camera`/`discord`
+nodes drive their client packages). See [integrations.md](integrations.md).
 
 `ml` holds nodes backed by locally-run machine-learning models. They drive the
 JVM-native inference clients in the `ml` package (models run through Deep Java

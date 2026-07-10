@@ -75,7 +75,8 @@ central design idea (see [Core standards](#core-architectural-standards)):
   `App extends Application`. The split exists so JavaFX launches cleanly from a
   plain classpath jar — do not move `main` into `App`.
 - **Key dependencies:** `net.dv8tion:JDA` (Discord gateway), `org.json` (save
-  files, config, secrets blob), `slf4j-api` (JDA logs through SLF4J). HouseGraph's
+  files, config, secrets blob), `org.jmdns:jmdns` (mDNS/Bonjour for the web-server
+  node's `.local` hosting), `slf4j-api` (JDA and jmdns log through SLF4J). HouseGraph's
   own code logs through the in-house `logging/` package; a bundled SLF4J provider
   (`logging/slf4j/`) routes JDA's SLF4J logs into that same pipeline, so there is no
   separate console binding — see [`docs/architecture/logging.md`](docs/architecture/logging.md).

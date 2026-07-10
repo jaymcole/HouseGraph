@@ -1,8 +1,9 @@
 # External Integrations
 
-HouseGraph talks to three external worlds: Discord (chat bots), IP cameras
-(ONVIF/Reolink), and an Arduino "squirrel alarm" sign. Each integration keeps its
-client code in a dedicated package and surfaces to the graph through nodes under
+HouseGraph talks to several external worlds: Discord (chat bots), IP cameras
+(ONVIF/Reolink), an Arduino "squirrel alarm" sign, and the local network itself
+(hosting a website on a `.local` name). Each integration keeps its client code in
+a dedicated package and surfaces to the graph through nodes under
 `graph/nodes/<category>/`. None of the engine depends on these — they depend on
 the engine.
 
@@ -83,6 +84,38 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   > Note: `extras/` is not Java — it's device firmware colocated with the node
   > that drives it. It is not compiled by Gradle.
 
+## Local web hosting (`web/`, nodes in `graph/nodes/web/`)
+
+Serves a directory of static files as a website reachable on the LAN at
+`http://<name>.local:<port>/`. Like the other integrations, a JavaFX-free client
+package (`web/`) holds the machinery and `graph.nodes.web` holds the node.
+
+- **`LocalWebServer`** (`web/`) — the long-lived resource behind the web-server
+  node, pairing two pieces:
+  - the JDK's built-in `com.sun.net.httpserver.HttpServer` (no dependency) serving
+    a base directory, with a directory-index (`index.html`) fallback,
+    extension-based `Content-Type`, and **path-traversal rejection** (the resolved
+    file must stay inside the base). Requests run on a virtual-thread executor.
+  - **jmdns** multicast DNS advertising a `<name>.local` A record plus an
+    `_http._tcp` service, so the site resolves from any mDNS-aware device (macOS
+    always, Windows 10+, Linux with Avahi). The JDK has no mDNS of its own, hence
+    the dependency. jmdns is bound to a non-loopback site-local IPv4 address.
+
+  `start(root, name, port)` binds the socket and joins the multicast group (call it
+  off the UI thread); `stop()` tears both halves down and is idempotent. If mDNS
+  fails, `start` unwinds the HTTP server so it's all-or-nothing.
+- **`WebServerNode`** (`graph/nodes/web/`) — the resource node. Website name,
+  directory (chosen with a Browse… button), and port are authored inline and
+  persisted via `saveState` — a **directory path, never the files** (the site is
+  served live from disk). Liveness is user-driven (Start/Stop, off the UI thread),
+  and it registers its `LocalWebServer` in `ResourceRegistry` under the site name;
+  torn down in `onRemoved()`. Follows the `DiscordBotNode` resource pattern — see
+  [resources.md](resources.md).
+
+**No secrets** — the server hosts public static files and touches nothing in
+`SecretsStore`. Note the served directory is exposed on the LAN while running; the
+traversal guard keeps requests inside that directory.
+
 ## Local ML inference (`ml/`, nodes in `graph/nodes/ml/`)
 
 Vision/ML models run **in-JVM**, locally, through
@@ -125,5 +158,5 @@ factor shared model lifecycle/loading into `ml/` rather than duplicating per nod
 
 **When you change this, update…** this file whenever you add/modify an
 integration (a new Discord capability, a new camera protocol, a new IoT device or
-device command, a new local model / inference engine) or change how an
-integration handles credentials.
+device command, a new local model / inference engine, a change to the web-server
+hosting or mDNS behavior) or change how an integration handles credentials.

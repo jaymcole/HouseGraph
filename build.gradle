@@ -37,6 +37,12 @@ dependencies {
     // library logs land in the same console/file/window pipeline as the app's own.
     implementation 'org.slf4j:slf4j-api:2.0.13'
 
+    // Pure-Java mDNS/Bonjour, for the web-server node: advertises a "<name>.local"
+    // hostname + _http._tcp service on the LAN (the JDK has no mDNS of its own).
+    // See the web package and graph/nodes/web/WebServerNode. jmdns logs through SLF4J,
+    // which our bundled provider routes into LogManager alongside everything else.
+    implementation 'org.jmdns:jmdns:3.5.9'
+
     // Deep Java Library: JVM-native ML inference (see the ml package). The BOM
     // pins all DJL artifacts to one version. The PyTorch engine downloads the
     // matching native library (and models download their weights) on first use,

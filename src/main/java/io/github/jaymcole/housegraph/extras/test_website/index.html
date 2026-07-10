@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HouseGraph Web Server — Test Page</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:,">
+</head>
+<body>
+    <main class="card">
+        <div class="badge">🏠 HouseGraph</div>
+        <h1>It works!</h1>
+        <p>
+            This page is being served by a <strong>Web Server</strong> node from a
+            directory of static files, advertised on your network over mDNS.
+        </p>
+
+        <dl class="facts">
+            <dt>Served from</dt>
+            <dd id="url">—</dd>
+            <dt>Host</dt>
+            <dd id="host">—</dd>
+            <dt>Loaded at</dt>
+            <dd id="time">—</dd>
+        </dl>
+
+        <p class="hint">
+            Files in this folder (<code>index.html</code>, <code>style.css</code>,
+            <code>app.js</code>) are served live — edit one, refresh, and the change
+            shows up. Try visiting <code>/style.css</code> directly to confirm assets load.
+        </p>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

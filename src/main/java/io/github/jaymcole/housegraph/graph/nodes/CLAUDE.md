@@ -5,7 +5,7 @@ Start at the repo-root [`CLAUDE.md`](../../../../../../../../../CLAUDE.md) if yo
 
 Every concrete node lives here, one folder per **category** (`camera`,
 `constants`, `control`, `converters`, `debug`, `discord`, `iot`, `loader`,
-`math`, `object`, `resource`, `viewers`).
+`math`, `object`, `resource`, `viewers`, `web`).
 
 ## Adding a node — there is no registration step
 
