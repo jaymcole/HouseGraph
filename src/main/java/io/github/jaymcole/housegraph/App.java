@@ -9,6 +9,7 @@ import io.github.jaymcole.housegraph.storage.AppPreferences;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
 import io.github.jaymcole.housegraph.ui.editor.SecretsEditor;
+import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
 import io.github.jaymcole.housegraph.ui.log.LogWindow;
 import javafx.application.Application;
 import javafx.scene.Scene;
@@ -40,6 +41,8 @@ public class App extends Application {
         // Stand up logging first (console + file + in-memory window buffer) so everything
         // from here on is captured. Idempotent, so a second entry point can call it too.
         Logging.bootstrap(AppDirectories.get().logs());
+        // Reapply any per-output levels the user chose in a previous session.
+        LogLevelPreferences.restore(preferences);
 
         graph = new NodeGraph();
         GraphCanvas canvas = new GraphCanvas(graph);
@@ -79,7 +82,7 @@ public class App extends Application {
         // this one) so it survives independently and can be closed and reopened without
         // losing history — the buffer keeps capturing while it's shut.
         Button logsButton = new Button("Logs…");
-        logsButton.setOnAction(e -> LogWindow.show());
+        logsButton.setOnAction(e -> LogWindow.show(preferences));
 
         ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, secretsButton, logsButton);
 

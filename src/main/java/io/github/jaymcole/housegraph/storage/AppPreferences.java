@@ -49,8 +49,15 @@ public final class AppPreferences {
         return loadFrom(AppDirectories.get().config().resolve(FILE));
     }
 
-    /** Package-visible: loads from an explicit file (so tests can use a temp dir). */
-    static AppPreferences loadFrom(Path file) {
+    /**
+     * Loads preferences from an explicit file rather than the machine default — handy for a
+     * portable install, and for tests that point at a temp dir. Reading is forgiving in the
+     * same way as {@link #load()}.
+     *
+     * @param file the preferences JSON file to read (may be absent)
+     * @return the loaded preferences (empty if the file is missing or unreadable)
+     */
+    public static AppPreferences loadFrom(Path file) {
         Map<String, String> values = new LinkedHashMap<>();
         if (Files.isRegularFile(file)) {
             try {

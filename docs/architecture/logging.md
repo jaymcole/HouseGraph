@@ -77,7 +77,10 @@ toggle-to-front singleton.
 - It shows three independent controls that mirror the model: a **display filter** (hides
   rows below a level without discarding them), a **per-output level** dropdown for *every*
   registered sink (make the file quiet while the window stays verbose), and
-  **auto-scroll** / **clear**.
+  **auto-scroll** / **clear**. Per-output level choices are **remembered across launches**:
+  `LogLevelPreferences` (in `ui/log/`) saves each sink's level to `AppPreferences` keyed by
+  sink name, and `App` reapplies them right after bootstrap. That glue lives in the UI layer,
+  not `logging/`, so the core stays free of a `storage` dependency.
 - All table mutation is on the FX thread; the buffer listener marshals each record with
   `Platform.runLater`. The window's row list is bounded to the buffer capacity.
 

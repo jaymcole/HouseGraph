@@ -7,6 +7,7 @@ import io.github.jaymcole.housegraph.logging.LogManager;
 import io.github.jaymcole.housegraph.logging.LogRecord;
 import io.github.jaymcole.housegraph.logging.LogSink;
 import io.github.jaymcole.housegraph.logging.Logging;
+import io.github.jaymcole.housegraph.storage.AppPreferences;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -54,6 +55,7 @@ public final class LogWindow {
 
     private static LogWindow instance;
 
+    private final AppPreferences preferences;
     private final Stage stage;
     private final LogBufferSink buffer = Logging.buffer();
 
@@ -71,15 +73,18 @@ public final class LogWindow {
     /**
      * Opens the log window, creating it on first use and bringing the existing one to the
      * front thereafter. Must be called on the FX thread.
+     *
+     * @param preferences the shared store used to remember per-output level choices
      */
-    public static void show() {
+    public static void show(AppPreferences preferences) {
         if (instance == null) {
-            instance = new LogWindow();
+            instance = new LogWindow(preferences);
         }
         instance.open();
     }
 
-    private LogWindow() {
+    private LogWindow(AppPreferences preferences) {
+        this.preferences = preferences;
         stage = new Stage();
         stage.setTitle("HouseGraph Logs");
         stage.setScene(new Scene(buildRoot(), 900, 500));
@@ -145,7 +150,10 @@ public final class LogWindow {
             ComboBox<LogLevel> combo = new ComboBox<>();
             combo.getItems().setAll(LogLevel.values());
             combo.getSelectionModel().select(sink.getLevel());
-            combo.valueProperty().addListener((obs, was, level) -> sink.setLevel(level));
+            combo.valueProperty().addListener((obs, was, level) -> {
+                sink.setLevel(level);
+                LogLevelPreferences.persist(preferences, sink);
+            });
             box.getChildren().addAll(new Label(sink.name()), combo);
         }
         return box;
