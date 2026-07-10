@@ -3,6 +3,8 @@ package io.github.jaymcole.housegraph.graph.nodes.loader;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.storage.SecretsStore;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import javafx.scene.Node;
@@ -27,6 +29,8 @@ import java.util.Map;
  */
 @Display.Name("Secret Loader")
 public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
+
+    private static final Logger log = Log.get(SecretLoaderNode.class);
 
     private final NodeVariable<String> value = new NodeVariable<>("Value", String.class).markSecret();
     private String selectedKey;
@@ -76,7 +80,7 @@ public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
         try {
             return SecretsStore.open().keys();
         } catch (RuntimeException e) {
-            System.err.println("Could not list secrets: " + e.getMessage());
+            log.warn("Could not list secrets: {}", e.getMessage());
             return List.of();
         }
     }
@@ -88,7 +92,7 @@ public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
                 return fromStore;
             }
         } catch (RuntimeException e) {
-            System.err.println("Could not read secret from store: " + e.getMessage());
+            log.error("Could not read secret from store: {}", e.getMessage());
         }
         return System.getenv(key);
     }

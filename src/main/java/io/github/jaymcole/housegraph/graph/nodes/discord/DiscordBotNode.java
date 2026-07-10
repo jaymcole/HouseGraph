@@ -4,6 +4,8 @@ import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.DiscordBot;
 import io.github.jaymcole.housegraph.discord.SlashCommandRegistry;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.storage.SecretsStore;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
@@ -33,6 +35,8 @@ import java.util.Map;
  */
 @Display.Name("Discord Bot")
 public class DiscordBotNode extends BaseNode implements NodeContentProvider {
+
+    private static final Logger log = Log.get(DiscordBotNode.class);
 
     private final DiscordBot bot = new DiscordBot();
     private String resourceName = "discord";
@@ -159,7 +163,7 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
             } catch (Exception ex) {
                 // The exception text won't contain the token, but keep the UI message
                 // generic and log only the type/message, never the token itself.
-                System.err.println("Discord connect failed: " + ex);
+                log.error("Discord connect failed: {}", ex);
                 Platform.runLater(() -> {
                     statusLabel.setText("Connect failed — check token & MESSAGE_CONTENT intent");
                     setEditingLocked(false);
@@ -192,7 +196,7 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         try {
             return SecretsStore.open().get(tokenSecret);
         } catch (RuntimeException e) {
-            System.err.println("Could not read token secret: " + e.getMessage());
+            log.warn("Could not read token secret: {}", e.getMessage());
             return null;
         }
     }
@@ -201,7 +205,7 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         try {
             return SecretsStore.open().keys();
         } catch (RuntimeException e) {
-            System.err.println("Could not list secrets: " + e.getMessage());
+            log.warn("Could not list secrets: {}", e.getMessage());
             return List.of();
         }
     }

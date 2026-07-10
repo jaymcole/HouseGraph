@@ -2,6 +2,8 @@ package io.github.jaymcole.housegraph.graph;
 
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 
 import java.io.File;
 import java.io.IOException;
@@ -29,6 +31,8 @@ import java.util.jar.JarFile;
  * loaded even after it's since been disabled.
  */
 public final class NodeRegistry {
+
+    private static final Logger log = Log.get(NodeRegistry.class);
 
     public static final String BASE_PACKAGE = "io.github.jaymcole.housegraph.graph.nodes";
 
@@ -60,7 +64,7 @@ public final class NodeRegistry {
                 }
             }
         } catch (IOException | URISyntaxException e) {
-            System.err.println("Failed to scan for node classes under " + BASE_PACKAGE + ": " + e);
+            log.error("Failed to scan for node classes under {}", BASE_PACKAGE, e);
         }
         entries.sort(Comparator.comparing(Entry::categoryPath).thenComparing(entry -> entry.nodeClass().getSimpleName()));
         return entries;
@@ -86,7 +90,7 @@ public final class NodeRegistry {
         try {
             return nodeClass.getDeclaredConstructor().newInstance();
         } catch (ReflectiveOperationException e) {
-            System.err.println("Failed to instantiate node " + nodeClass.getName() + ": " + e);
+            log.error("Failed to instantiate node {}", nodeClass.getName(), e);
             return null;
         }
     }
@@ -167,7 +171,7 @@ public final class NodeRegistry {
                 out.add(new Entry(nodeClass, categoryOf(nodeClass), displayNameOf(nodeClass)));
             }
         } catch (ClassNotFoundException | NoClassDefFoundError e) {
-            System.err.println("Skipping unloadable class " + className + ": " + e);
+            log.warn("Skipping unloadable class {}: {}", className, e);
         }
     }
 

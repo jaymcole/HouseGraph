@@ -1,5 +1,7 @@
 package io.github.jaymcole.housegraph.camera;
 
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 import org.json.JSONObject;
 import org.json.JSONTokener;
@@ -28,6 +30,8 @@ import java.util.Optional;
  * camera node's Password input via a Secret Loader.
  */
 public final class CameraConfigStore {
+
+    private static final Logger log = Log.get(CameraConfigStore.class);
 
     private static final String FILE = "cameras.json";
 
@@ -182,7 +186,7 @@ public final class CameraConfigStore {
             JSONObject registry = root.optJSONObject("cameras");
             return registry == null ? new JSONObject() : registry;
         } catch (IOException | RuntimeException e) {
-            System.err.println("Could not read camera registry " + file + ": " + e.getMessage());
+            log.warn("Could not read camera registry {}: {}", file, e.getMessage());
             return new JSONObject();
         }
     }

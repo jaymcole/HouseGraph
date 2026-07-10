@@ -7,6 +7,8 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.ObjectProperties;
 import io.github.jaymcole.housegraph.graph.ObjectProperties.Property;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,6 +30,8 @@ import java.util.Map;
  */
 @Display.Name("Object Decomposer")
 public class ObjectDecomposerNode extends BaseNode {
+
+    private static final Logger log = Log.get(ObjectDecomposerNode.class);
 
     private final NodeVariable<Object> objectInput = new NodeVariable<>("Object", Object.class).required();
     private final Map<String, NodeVariable> outputsByProperty = new LinkedHashMap<>();
@@ -166,7 +170,7 @@ public class ObjectDecomposerNode extends BaseNode {
         try {
             return Class.forName(className, false, Thread.currentThread().getContextClassLoader());
         } catch (ClassNotFoundException e) {
-            System.err.println("Object Decomposer: dropping property of unknown type " + className);
+            log.warn("Object Decomposer: dropping property of unknown type {}", className);
             return null;
         }
     }

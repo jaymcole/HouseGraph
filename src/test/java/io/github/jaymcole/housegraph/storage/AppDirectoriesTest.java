@@ -72,6 +72,7 @@ class AppDirectoriesTest {
         assertTrue(Files.isDirectory(dirs.saves()));
         assertTrue(Files.isDirectory(dirs.config()));
         assertTrue(Files.isDirectory(dirs.cache()));
+        assertTrue(Files.isDirectory(dirs.logs()));
     }
 
     @Test
