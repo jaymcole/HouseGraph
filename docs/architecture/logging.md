@@ -47,7 +47,7 @@ the app, and never JavaFX), so any layer may log without creating an import cycl
 | Sink | Destination | Default level | Notes |
 | --- | --- | --- | --- |
 | `ConsoleSink` | `System.out` (`WARN`/`ERROR` → `System.err`) | `INFO` | Always present, even before bootstrap and in tests, so nothing is silently lost. |
-| `FileSink` | `housegraph.log` under `AppDirectories.logs()` | `DEBUG` | Appends, flushes per record; a write failure disables the file once rather than crashing. |
+| `FileSink` | `housegraph.log` under `AppDirectories.logs()` | `DEBUG` | Appends, flushes per record; a write failure disables the file once rather than crashing. **Size-rotated**: past `DEFAULT_MAX_BYTES` (5 MiB) it rolls to `housegraph.log.1`, `.2`, … keeping `DEFAULT_MAX_BACKUPS` (5) generations, so the logs never grow without bound. |
 | `LogBufferSink` | bounded in-memory ring (`Logging.BUFFER_CAPACITY`) | `DEBUG` | Keeps capturing whether or not the window is open — this is what makes the window losslessly re-openable. Notifies live listeners; `snapshot()` replays history. |
 
 `ConsoleSink` and `FileSink` share `LogFormat` (`HH:mm:ss.SSS LEVEL [source] message`,
