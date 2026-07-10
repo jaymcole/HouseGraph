@@ -81,16 +81,33 @@ toggle-to-front singleton.
 - All table mutation is on the FX thread; the buffer listener marshals each record with
   `Platform.runLater`. The window's row list is bounded to the buffer capacity.
 
-## Not covered here: JDA/SLF4J
+## The SLF4J bridge (`logging/slf4j/`)
 
-The Discord library (JDA) logs through SLF4J, backed by `slf4j-simple` and tuned down in
-`src/main/resources/simplelogger.properties`. That path is separate from this system;
-bridging SLF4J into `LogManager` (so JDA lines also appear in the window) is a possible
-future addition, not something done today.
+Third-party libraries — notably JDA — log through SLF4J. Instead of a stock console binding
+(`slf4j-simple`), HouseGraph ships its **own SLF4J provider** so those logs flow into the
+same `LogManager` pipeline (console, file, window) as the app's own.
+
+- `HouseGraphSlf4jProvider` implements SLF4J 2.x's `SLF4JServiceProvider` and is registered
+  via `META-INF/services/org.slf4j.spi.SLF4JServiceProvider`. Dropping the class + that
+  service file on the classpath is all it takes — SLF4J discovers it. It is the **only**
+  SLF4J provider on the classpath (`build.gradle` depends on `slf4j-api`, not
+  `slf4j-simple`), so there's no binding ambiguity.
+- `HouseGraphSlf4jLogger` (via `HouseGraphLoggerFactory`) forwards each call into
+  `LogManager`, shortening the SLF4J logger's FQCN to a simple name so bridged lines read
+  like the app's own `[Source]` labels.
+- `Slf4jBridge` holds the **bridge's own minimum level** (the SLF4J→`LogLevel` mapping too).
+  It defaults to `WARN` — libraries are chatty, and this matches the old `slf4j-simple`
+  "warn" setting — gating below-threshold messages before they reach `LogManager` (and
+  reporting that gate through SLF4J's `isXxxEnabled()` so a library skips the work). Override
+  at startup with `-Dhousegraph.slf4j.level=…` or at runtime via `Slf4jBridge.setLevel`.
+
+This adapter is the one part of the logging system that depends on a third-party API (the
+SLF4J API); it lives in its own subpackage to keep the core dependency-free.
 
 ---
 
 **When you change this, update…** this file (and the relevant Javadoc) whenever you change
 the level model, add/alter a sink or its default level, change the bootstrap seam, the
-buffer's lossless-reopen contract, or the log window's controls. New on-disk log location →
-also update [`storage-and-secrets.md`](storage-and-secrets.md).
+buffer's lossless-reopen contract, the log window's controls, or the SLF4J bridge (provider
+registration, the bridge level, or the level mapping). New on-disk log location → also
+update [`storage-and-secrets.md`](storage-and-secrets.md).
