@@ -32,6 +32,7 @@ Use this map of change → what to update:
 | Save-file JSON format | `GraphFileIO` Javadoc **and** [`docs/architecture/ui.md`](docs/architecture/ui.md) (keep backward-compat notes) |
 | Resource registry / pub-sub semantics | `ResourceRegistry` Javadoc **and** [`docs/architecture/resources.md`](docs/architecture/resources.md) |
 | Secret storage / crypto / on-disk locations | `SecretsStore` / `AppDirectories` Javadoc **and** [`docs/architecture/storage-and-secrets.md`](docs/architecture/storage-and-secrets.md) |
+| Logging levels / sinks / bootstrap / the log window | `LogManager` / `Logging` / `LogWindow` Javadoc **and** [`docs/architecture/logging.md`](docs/architecture/logging.md) |
 | Discord / camera / IoT integration | [`docs/architecture/integrations.md`](docs/architecture/integrations.md) |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
@@ -74,10 +75,10 @@ central design idea (see [Core standards](#core-architectural-standards)):
   `App extends Application`. The split exists so JavaFX launches cleanly from a
   plain classpath jar — do not move `main` into `App`.
 - **Key dependencies:** `net.dv8tion:JDA` (Discord gateway), `org.json` (save
-  files, config, secrets blob), `ai.djl` (Deep Java Library — local ML inference on
-  its PyTorch engine; native runtime + model weights download on first use),
-  `slf4j-simple` (logging; tuned down to warn in
-  `src/main/resources/simplelogger.properties`).
+  files, config, secrets blob), `slf4j-api` (JDA logs through SLF4J). HouseGraph's
+  own code logs through the in-house `logging/` package; a bundled SLF4J provider
+  (`logging/slf4j/`) routes JDA's SLF4J logs into that same pipeline, so there is no
+  separate console binding — see [`docs/architecture/logging.md`](docs/architecture/logging.md).
 
 ---
 
@@ -103,6 +104,8 @@ subsystems depend on the engine, never the reverse.
    │ name-keyed   │  │ dirs, secrets,  │  │ integration     │
    │ lookup+events│  │ preferences     │  │ clients         │
    └──────────────┘  └─────────────────┘  └─────────────────┘
+
+   logging/  — cross-cutting; depends on nothing, so any layer may log
 ```
 
 | Concern | Package | Deep dive |
@@ -114,6 +117,7 @@ subsystems depend on the engine, never the reverse.
 | Canvas, views, undo, save/load | `ui` | [ui.md](docs/architecture/ui.md) |
 | Named resources & event pub/sub | `resource` | [resources.md](docs/architecture/resources.md) |
 | On-disk locations, secrets, preferences | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
+| Logging (levels, sinks, the log window) | `logging`, `ui.log` | [logging.md](docs/architecture/logging.md) |
 | Discord / cameras / Arduino IoT | `discord`, `camera`, `extras/squirrel_status` | [integrations.md](docs/architecture/integrations.md) |
 | Local ML inference (DJL, no Python) | `ml` (`ImageNetClassifier`, `AnimalVerdict`) | [integrations.md](docs/architecture/integrations.md) |
 | Tests | `src/test/...` | [testing.md](docs/architecture/testing.md) |

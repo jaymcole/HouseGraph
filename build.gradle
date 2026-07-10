@@ -32,7 +32,10 @@ dependencies {
     implementation('net.dv8tion:JDA:5.2.1') {
         exclude module: 'opus-java' // no voice — drop the native audio dependency
     }
-    implementation 'org.slf4j:slf4j-simple:2.0.13'
+    // JDA logs through SLF4J. Rather than a stock binding (slf4j-simple), HouseGraph ships
+    // its own SLF4J provider (logging/slf4j/) that routes those logs into LogManager, so
+    // library logs land in the same console/file/window pipeline as the app's own.
+    implementation 'org.slf4j:slf4j-api:2.0.13'
 
     // Deep Java Library: JVM-native ML inference (see the ml package). The BOM
     // pins all DJL artifacts to one version. The PyTorch engine downloads the

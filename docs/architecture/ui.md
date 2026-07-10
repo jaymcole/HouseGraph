@@ -5,6 +5,36 @@ value editing, undo/redo, and save/load. It is the only package that owns
 JavaFX-thread concerns, and it is the top of the dependency stack — it depends on
 `graph/` (and below), never the reverse.
 
+## Package layout
+
+`GraphCanvas` is the hub and lives at the `ui/` root. The rest of the layer is
+grouped by concern into sub-packages:
+
+```
+ui/
+├── GraphCanvas.java   the hub (canvas host, drag controller, execution listener)
+├── view/              NodeView, PortView, FlowPortView, EdgeView, FlowEdgeView,
+│                      AbstractEdgeView, ConnectionView, EdgeAnchor,
+│                      EdgeInteractionListener, ExecutionPolicyIcons, NodeContentProvider
+├── editor/            ValueEditors, SecretsEditor
+├── command/           Command, UndoManager, and every *Command
+├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
+├── log/               LogWindow (the standalone log viewer)
+└── io/                GraphFileIO
+```
+
+Splitting the layer across packages means the pieces that call across those
+boundaries are `public` (Java has no sub-package visibility): `GraphCanvas`'s
+canvas-mutation methods, `UndoManager`'s `execute`/`record`/`undo`/`redo`, and
+`AbstractEdgeView`'s waypoint accessors are all part of that intentional API
+surface. Anything used only within a single sub-package stays package-private.
+The `snapshot/` records are a plain data model — a captured slice of the graph —
+that `GraphCanvas` (copy/paste), `command/` (paste), and `io/` (save/load) all
+build on, so they live on their own rather than nested inside the canvas widget.
+The test tree mirrors this layout (`GraphFileIOTest` lives under `ui/io/`, in the
+same package as `GraphFileIO`, so it can drive its package-private
+`toJson`/`fromJson` headlessly).
+
 ## `GraphCanvas` — the hub
 
 `GraphCanvas extends Pane` is an infinite, pannable, zoomable canvas that hosts
@@ -96,11 +126,11 @@ Current commands: `AddNodeCommand`, `RemoveNodesCommand`, `MoveNodesCommand`,
 ## Save / load: `GraphFileIO`
 
 `GraphFileIO` serializes a canvas to JSON and back, reusing the same index-based
-snapshot shape (`GraphCanvas.GraphSnapshot` / `ClipboardNode` / `ClipboardDataEdge`
-/ `ClipboardFlowEdge`) built for copy/paste. The JSON conversion
-(`toJson`/`fromJson`) is deliberately free of any JavaFX/GraphCanvas dependency so
-it can be unit-tested headlessly; `save`/`load` are the thin wrappers that touch a
-real canvas.
+`snapshot` shape (`GraphSnapshot` / `ClipboardNode` / `ClipboardDataEdge` /
+`ClipboardFlowEdge`, in the [`ui.snapshot`](#package-layout) package) built for
+copy/paste. The JSON conversion (`toJson`/`fromJson`) is deliberately free of any
+JavaFX/GraphCanvas dependency so it can be unit-tested headlessly; `save`/`load`
+are the thin wrappers that touch a real canvas.
 
 The toolbar (`App`) exposes three file actions. **Quick Save** writes straight to
 the *current file* — the file most recently saved to or loaded from — with no
@@ -173,9 +203,27 @@ policy's glyph just left of the title (with a tooltip) and refreshes it when the
 policy changes; the same glyphs appear beside the menu items. To add or restyle a
 policy icon, edit `ExecutionPolicyIcons` — nothing else needs to change.
 
+## The log window: `log/LogWindow`
+
+The **Logs…** toolbar button opens `LogWindow`, the on-screen log viewer. Unlike the
+modal `SecretsEditor`, it is a **standalone, non-modal top-level stage** not owned by the
+main window, so it lives independently and can be closed and reopened at will. `show()` is
+a toggle-to-front singleton.
+
+It renders the shared `LogBufferSink` (from the `logging/` package): on open it replays
+`snapshot()` — the full retained history, including everything captured while it was closed
+— then follows live records through a listener that marshals each one with
+`Platform.runLater`; on close it detaches the listener. Because the buffer keeps capturing
+regardless, reopening is lossless. The window exposes a display-level filter, a per-sink
+level dropdown for every registered output, and auto-scroll/clear. Per-output level choices
+are persisted across launches by `LogLevelPreferences` (saved to `AppPreferences` by sink
+name, reapplied by `App` after bootstrap). The logging model itself (levels, sinks,
+bootstrap) lives in [logging.md](logging.md) — `LogWindow` is only its UI.
+
 ---
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the `NodeContentProvider`
-extension point, add a `ValueEditors` type, or alter the `GraphFileIO` JSON format
-(also update the `GraphFileIO` Javadoc and keep backward-compat notes).
+extension point, add a `ValueEditors` type, alter the `GraphFileIO` JSON format
+(also update the `GraphFileIO` Javadoc and keep backward-compat notes), or change
+the log window's behavior (also keep [logging.md](logging.md) in sync).

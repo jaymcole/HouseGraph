@@ -29,6 +29,9 @@ design idea:
   first use and run locally thereafter.
 - Encrypted secret store (AES-256-GCM) so tokens and passwords never touch save
   files.
+- Logging with levels and multiple outputs (console, a log file, and an in-app
+  **Logs** window), each independently filterable. The log window is standalone
+  and can be closed and reopened without losing history.
 
 ## Build & run
 
@@ -57,6 +60,7 @@ in sync**. Subsystem deep-dives live in
 | [ui.md](docs/architecture/ui.md) | canvas, views, undo, save/load |
 | [resources.md](docs/architecture/resources.md) | named resources & event pub/sub |
 | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) | on-disk layout, encrypted secrets |
+| [logging.md](docs/architecture/logging.md) | log levels, sinks, and the log window |
 | [integrations.md](docs/architecture/integrations.md) | Discord, cameras, the Arduino device |
 | [testing.md](docs/architecture/testing.md) | test conventions |
 

@@ -1,5 +1,8 @@
 package io.github.jaymcole.housegraph.graph;
 
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -90,6 +93,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * actually run on the FX Application Thread.
  */
 public class NodeGraph {
+
+    private static final Logger log = Log.get(NodeGraph.class);
 
     private final Set<BaseNode> nodes = new LinkedHashSet<>();
     private final Map<BaseNode, Set<Edge>> outgoingDataEdges = new HashMap<>();
@@ -568,7 +573,7 @@ public class NodeGraph {
                     : e;
             setStatus(context, node, NodeProcessingStatus.FAILED);
             node.setLastError(error);
-            System.err.println("Node \"" + node.getName() + "\" failed to process: " + error);
+            log.error("Node \"{}\" failed to process: {}", node.getName(), error);
         } finally {
             if (watchdog != null) {
                 watchdog.cancel(false);
@@ -707,7 +712,7 @@ public class NodeGraph {
             try {
                 context.run(prepare);
             } catch (RuntimeException e) {
-                System.err.println("Trigger preparation for \"" + entry.getName() + "\" failed: " + rootCause(e));
+                log.error("Trigger preparation for \"{}\" failed: {}", entry.getName(), rootCause(e));
             }
             // Always schedule, even if prepare threw, so the run reaches onComplete and balances its beginPass().
             schedule(entry);
@@ -789,7 +794,7 @@ public class NodeGraph {
                     schedule(flowEdge.getTargetNode());
                 }
             } catch (RuntimeException e) {
-                System.err.println("Triggered execution of \"" + node.getName() + "\" failed: " + rootCause(e));
+                log.error("Triggered execution of \"{}\" failed: {}", node.getName(), rootCause(e));
             } finally {
                 if (held != null) {
                     // process() threw before we released: don't leak the gate or a sibling run parks forever.

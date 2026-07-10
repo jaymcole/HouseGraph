@@ -5,7 +5,7 @@ import io.github.jaymcole.housegraph.camera.ReolinkClient;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
-import io.github.jaymcole.housegraph.ui.NodeContentProvider;
+import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.image.Image;

@@ -17,6 +17,8 @@ the orientation layer; each subsystem has its own deep-dive, linked below.
 - [resources.md](resources.md) — named resources and event pub/sub.
 - [storage-and-secrets.md](storage-and-secrets.md) — on-disk layout, encrypted
   secrets, preferences.
+- [logging.md](logging.md) — log levels, the console/file/buffer sinks, and the
+  standalone log window.
 - [integrations.md](integrations.md) — Discord, cameras, the Arduino IoT device.
 - [testing.md](testing.md) — test conventions and the headless-testability rule.
 
@@ -55,12 +57,14 @@ ui/  ──────────────►  graph/ (engine + node model)
 | `GraphCanvas` | The JavaFX canvas hosting node/edge views and user interaction. |
 | `ResourceRegistry` | App-wide, name-keyed lookup + event pub/sub for long-lived resources. |
 | `SecretsStore` / `AppDirectories` | Encrypted secrets / OS-appropriate file locations. |
+| `LogManager` / `Logger` | Process-wide log hub + the front-end code logs through. Fans out to level-filtered sinks (console, file, in-memory window buffer). |
 
 ## Lifecycle of a graph
 
-1. **Launch.** `Launcher.main` → `App.start` builds a `NodeGraph` and a
-   `GraphCanvas`, wires the toolbar (Save / Load / Secrets), and reopens the last
-   file recorded in `AppPreferences`.
+1. **Launch.** `Launcher.main` → `App.start` stands up logging
+   (`Logging.bootstrap`), builds a `NodeGraph` and a `GraphCanvas`, wires the
+   toolbar (Save / Load / Secrets / Logs), and reopens the last file recorded in
+   `AppPreferences`.
 2. **Edit.** The user adds nodes (from the classpath-discovered Add-Node menu),
    drags data edges between ports and flow edges between the triangular anchors,
    types values into editable fields, and moves/copies/deletes — all tracked for
@@ -74,7 +78,7 @@ ui/  ──────────────►  graph/ (engine + node model)
    restores it. Computed and secret values are never written.
 5. **Shutdown.** `App.stop` calls `NodeGraph.dispose()`, which removes every node
    (firing `onRemoved()` so timers/sockets/threads are released) and stops the
-   execution threads.
+   execution threads, then `Logging.shutdown()` to flush and close the log file.
 
 ---
 

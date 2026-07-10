@@ -1,5 +1,7 @@
 package io.github.jaymcole.housegraph.storage;
 
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
@@ -23,6 +25,8 @@ import java.util.Optional;
  */
 public final class AppPreferences {
 
+    private static final Logger log = Log.get(AppPreferences.class);
+
     private static final String FILE = "preferences.json";
 
     /** Preference key for the absolute path of the most recently saved/opened graph. */
@@ -45,8 +49,15 @@ public final class AppPreferences {
         return loadFrom(AppDirectories.get().config().resolve(FILE));
     }
 
-    /** Package-visible: loads from an explicit file (so tests can use a temp dir). */
-    static AppPreferences loadFrom(Path file) {
+    /**
+     * Loads preferences from an explicit file rather than the machine default — handy for a
+     * portable install, and for tests that point at a temp dir. Reading is forgiving in the
+     * same way as {@link #load()}.
+     *
+     * @param file the preferences JSON file to read (may be absent)
+     * @return the loaded preferences (empty if the file is missing or unreadable)
+     */
+    public static AppPreferences loadFrom(Path file) {
         Map<String, String> values = new LinkedHashMap<>();
         if (Files.isRegularFile(file)) {
             try {
@@ -56,7 +67,7 @@ public final class AppPreferences {
                 }
             } catch (IOException | RuntimeException e) {
                 // Never let a bad preferences file block startup — just start fresh.
-                System.err.println("Ignoring unreadable preferences file " + file + ": " + e);
+                log.warn("Ignoring unreadable preferences file {}: {}", file, e);
             }
         }
         return new AppPreferences(file, values);

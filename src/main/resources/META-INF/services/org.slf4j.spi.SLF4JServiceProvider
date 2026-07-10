@@ -1,0 +1,3 @@
+# Binds SLF4J (used by JDA and other libraries) to HouseGraph's logging system, so their
+# logs flow through LogManager into the console, the log file, and the log window.
+io.github.jaymcole.housegraph.logging.slf4j.HouseGraphSlf4jProvider

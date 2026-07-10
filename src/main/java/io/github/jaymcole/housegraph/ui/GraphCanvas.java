@@ -1,5 +1,26 @@
 package io.github.jaymcole.housegraph.ui;
 
+import io.github.jaymcole.housegraph.ui.command.AddNodeCommand;
+import io.github.jaymcole.housegraph.ui.command.CreateEdgeCommand;
+import io.github.jaymcole.housegraph.ui.command.CreateFlowEdgeCommand;
+import io.github.jaymcole.housegraph.ui.command.MoveNodesCommand;
+import io.github.jaymcole.housegraph.ui.command.PasteCommand;
+import io.github.jaymcole.housegraph.ui.command.RemoveNodesCommand;
+import io.github.jaymcole.housegraph.ui.command.SetWaypointsCommand;
+import io.github.jaymcole.housegraph.ui.command.UndoManager;
+import io.github.jaymcole.housegraph.ui.view.AbstractEdgeView;
+import io.github.jaymcole.housegraph.ui.view.ConnectionView;
+import io.github.jaymcole.housegraph.ui.view.EdgeInteractionListener;
+import io.github.jaymcole.housegraph.ui.view.EdgeView;
+import io.github.jaymcole.housegraph.ui.view.FlowEdgeView;
+import io.github.jaymcole.housegraph.ui.view.FlowPortView;
+import io.github.jaymcole.housegraph.ui.view.NodeView;
+import io.github.jaymcole.housegraph.ui.view.PortView;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
+import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
+import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
+
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowEdge;
@@ -7,6 +28,8 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import javafx.application.Platform;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
@@ -53,41 +76,13 @@ import java.util.function.Function;
  */
 public class GraphCanvas extends Pane implements NodeView.DragController, GraphExecutionListener, EdgeInteractionListener {
 
+    private static final Logger log = Log.get(GraphCanvas.class);
+
     private static final KeyCodeCombination COPY_COMBO = new KeyCodeCombination(KeyCode.C, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination PASTE_COMBO = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination UNDO_COMBO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination REDO_COMBO =
             new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
-
-    /**
-     * One node plus its canvas position, as captured for copy/paste or save/load.
-     * Package-visible (not private) so {@link GraphFileIO} can build/read these
-     * without needing anything else from GraphCanvas's internals.
-     */
-    record ClipboardNode(BaseNode node, double x, double y) {
-    }
-
-    /**
-     * A data edge between two snapshotted nodes, referenced by index into the node list
-     * and variable list, plus its manual routing {@code waypoints} (content coordinates,
-     * empty for a straight edge) so re-routing survives copy/paste and save/load.
-     */
-    record ClipboardDataEdge(int sourceNodeIndex, int sourceVariableIndex, int targetNodeIndex, int targetVariableIndex,
-                             List<Point2D> waypoints) {
-    }
-
-    /**
-     * A flow edge between two snapshotted nodes, referenced by index into the node list,
-     * plus which flow port on each (index into the node's flow-out / flow-in list) so a
-     * multi-branch node's edges reconnect to the right ports, and its routing waypoints.
-     */
-    record ClipboardFlowEdge(int sourceNodeIndex, int sourcePortIndex, int targetNodeIndex, int targetPortIndex,
-                             List<Point2D> waypoints) {
-    }
-
-    /** A self-contained slice of the graph (some or all of its nodes, plus the edges between them). */
-    record GraphSnapshot(List<ClipboardNode> nodes, List<ClipboardDataEdge> dataEdges, List<ClipboardFlowEdge> flowEdges) {
-    }
 
     private final NodeGraph graph;
     private final Group content = new Group();
@@ -244,7 +239,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         }
     }
 
-    void removeNode(NodeView nodeView) {
+    public void removeNode(NodeView nodeView) {
         graph.removeNode(nodeView.getNode());
         removeNodeView(nodeView);
     }
@@ -313,7 +308,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 createEdge(source, target).setWaypoints(captured.waypoints());
             } catch (RuntimeException e) {
                 // e.g. the port's type changed and no longer matches - drop just this edge.
-                System.err.println("Could not reconnect edge after rebuild: " + e.getMessage());
+                log.warn("Could not reconnect edge after rebuild: {}", e.getMessage());
             }
         }
         for (CapturedRebuildFlowEdge captured : capturedFlow) {
@@ -329,7 +324,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             } catch (RuntimeException e) {
                 // The other endpoint may no longer be in the graph (e.g. removed as part of
                 // the same teardown) - drop just this edge, same as the data-edge reconnect.
-                System.err.println("Could not reconnect flow edge after rebuild: " + e.getMessage());
+                log.warn("Could not reconnect flow edge after rebuild: {}", e.getMessage());
             }
         }
     }
@@ -484,7 +479,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** The live edge currently feeding a given input port, if any - e.g. so CreateEdgeCommand can capture what it's about to replace. */
-    EdgeView findEdgeViewTargeting(PortView port) {
+    public EdgeView findEdgeViewTargeting(PortView port) {
         for (EdgeView edgeView : edgeViews.values()) {
             if (edgeView.hasTarget(port)) {
                 return edgeView;
@@ -493,7 +488,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return null;
     }
 
-    EdgeView createEdge(PortView a, PortView b) {
+    public EdgeView createEdge(PortView a, PortView b) {
         PortView outputPort = a.getDirection() == PortView.Direction.OUTPUT ? a : b;
         PortView inputPort = a.getDirection() == PortView.Direction.OUTPUT ? b : a;
 
@@ -633,7 +628,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** The live flow edge currently feeding a given flow-in port, if any - see findEdgeViewTargeting(). */
-    FlowEdgeView findFlowEdgeViewTargeting(FlowPortView port) {
+    public FlowEdgeView findFlowEdgeViewTargeting(FlowPortView port) {
         for (FlowEdgeView flowEdgeView : flowEdgeViews.values()) {
             if (flowEdgeView.hasTarget(port)) {
                 return flowEdgeView;
@@ -642,7 +637,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return null;
     }
 
-    FlowEdgeView createFlowEdge(FlowPortView a, FlowPortView b) {
+    public FlowEdgeView createFlowEdge(FlowPortView a, FlowPortView b) {
         FlowPortView outPort = a.getDirection() == FlowPort.Direction.OUT ? a : b;
         FlowPortView inPort = a.getDirection() == FlowPort.Direction.OUT ? b : a;
 
@@ -768,7 +763,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** Package-visible (not just private) so a Command can make sure whatever it removes doesn't linger in the selection. */
-    void deselectNode(NodeView node) {
+    public void deselectNode(NodeView node) {
         if (selectedNodes.remove(node)) {
             node.setSelected(false);
         }
@@ -805,7 +800,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** Package-visible (not just private) so a Command can make sure whatever it removes doesn't linger in the selection. */
-    void deselectConnection(ConnectionView connection) {
+    public void deselectConnection(ConnectionView connection) {
         if (selectedConnections.remove(connection)) {
             connection.setSelected(false);
         }
@@ -859,7 +854,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * canvas, and by PasteCommand.undo() (removing a paste needs exactly this same
      * cascade, and re-recording it as its own undo step would be wrong).
      */
-    void deleteNodes(Collection<NodeView> nodesToDelete) {
+    public void deleteNodes(Collection<NodeView> nodesToDelete) {
         List<NodeView> nodes = new ArrayList<>(nodesToDelete);
         List<ConnectionView> connectionsToDelete = new ArrayList<>();
 
@@ -947,7 +942,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * that adds nodes and then immediately wires edges between them needs this first,
      * or the edges render in the wrong place until something else triggers a layout.
      */
-    void forceLayout() {
+    public void forceLayout() {
         content.applyCss();
         content.layout();
     }
@@ -958,7 +953,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * paste (factory duplicates the clipboard's live node instances) and load-from-file
      * (factory just returns the already-freshly-built node parsed from JSON).
      */
-    List<NodeView> place(GraphSnapshot snapshot, Function<ClipboardNode, BaseNode> nodeFactory, double offsetX, double offsetY) {
+    public List<NodeView> place(GraphSnapshot snapshot, Function<ClipboardNode, BaseNode> nodeFactory, double offsetX, double offsetY) {
         List<NodeView> placed = new ArrayList<>();
         for (ClipboardNode entry : snapshot.nodes()) {
             BaseNode node = nodeFactory.apply(entry);
@@ -1039,7 +1034,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** Clears the current selection and selects exactly the given nodes - e.g. what a paste selects afterward. */
-    void selectOnly(Collection<NodeView> nodes) {
+    public void selectOnly(Collection<NodeView> nodes) {
         clearSelection();
         for (NodeView nodeView : nodes) {
             selectNode(nodeView);
@@ -1047,7 +1042,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** Everything currently on the canvas, in the same shape used for copy/paste — for save-to-file. */
-    GraphSnapshot snapshotAll() {
+    public GraphSnapshot snapshotAll() {
         return snapshotOf(nodeViews);
     }
 
@@ -1056,7 +1051,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * Not itself undoable, and wipes prior undo history - loading a different graph is
      * a new-document boundary, not an edit you'd undo back through.
      */
-    void loadSnapshot(GraphSnapshot snapshot) {
+    public void loadSnapshot(GraphSnapshot snapshot) {
         clearAll();
         place(snapshot, ClipboardNode::node, 0, 0);
         undoManager.clear();
