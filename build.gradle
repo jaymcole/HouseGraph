@@ -18,7 +18,9 @@ java {
 
 javafx {
     version = '21.0.4'
-    modules = ['javafx.controls', 'javafx.fxml']
+    // javafx.swing supplies SwingFXUtils, the bridge from a JavaFX Image to the
+    // java.awt BufferedImage that DJL's ImageFactory consumes (see the ml package).
+    modules = ['javafx.controls', 'javafx.fxml', 'javafx.swing']
 }
 
 application {
@@ -31,6 +33,15 @@ dependencies {
         exclude module: 'opus-java' // no voice — drop the native audio dependency
     }
     implementation 'org.slf4j:slf4j-simple:2.0.13'
+
+    // Deep Java Library: JVM-native ML inference (see the ml package). The BOM
+    // pins all DJL artifacts to one version. The PyTorch engine downloads the
+    // matching native library (and models download their weights) on first use,
+    // cached under the user's home — no Python, no manual native jars.
+    implementation platform('ai.djl:bom:0.36.0')
+    implementation 'ai.djl:api'
+    implementation 'ai.djl.pytorch:pytorch-model-zoo'
+    runtimeOnly 'ai.djl.pytorch:pytorch-engine'
 
     testImplementation platform('org.junit:junit-bom:5.10.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'

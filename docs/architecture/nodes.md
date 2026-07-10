@@ -125,7 +125,14 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 ## Node categories (current folders under `graph/nodes/`)
 
 `camera`, `constants`, `control`, `converters`, `debug`, `discord`, `iot`,
-`loader`, `math`, `object`, `resource`, `viewers`.
+`loader`, `math`, `ml`, `object`, `resource`, `viewers`.
+
+`ml` holds nodes backed by locally-run machine-learning models. They drive the
+JVM-native inference clients in the `ml` package (models run through Deep Java
+Library — no Python), the same way `camera` nodes drive the `camera` clients. The
+first is `ml/AnimalClassifierNode` (a squirrel/bird/other/none image classifier);
+detectors and other model-backed nodes will join it. See
+[integrations.md](integrations.md) for the model-inference story.
 
 Add a new folder only when a node genuinely doesn't fit an existing category; if
 you do, note it here.

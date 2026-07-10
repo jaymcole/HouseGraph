@@ -24,6 +24,9 @@ design idea:
   detection.
 - Integrations: Discord bots (via JDA), ONVIF/Reolink IP-camera discovery and
   motion detection, and an Arduino UNO R4 WiFi LED-matrix device.
+- Local, JVM-native ML inference (via Deep Java Library — no Python): an **Animal
+  Classifier** node tells a squirrel from a bird from a frame. Weights download on
+  first use and run locally thereafter.
 - Encrypted secret store (AES-256-GCM) so tokens and passwords never touch save
   files.
 

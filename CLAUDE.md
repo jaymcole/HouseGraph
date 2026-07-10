@@ -74,7 +74,9 @@ central design idea (see [Core standards](#core-architectural-standards)):
   `App extends Application`. The split exists so JavaFX launches cleanly from a
   plain classpath jar — do not move `main` into `App`.
 - **Key dependencies:** `net.dv8tion:JDA` (Discord gateway), `org.json` (save
-  files, config, secrets blob), `slf4j-simple` (logging; tuned down to warn in
+  files, config, secrets blob), `ai.djl` (Deep Java Library — local ML inference on
+  its PyTorch engine; native runtime + model weights download on first use),
+  `slf4j-simple` (logging; tuned down to warn in
   `src/main/resources/simplelogger.properties`).
 
 ---
@@ -113,6 +115,7 @@ subsystems depend on the engine, never the reverse.
 | Named resources & event pub/sub | `resource` | [resources.md](docs/architecture/resources.md) |
 | On-disk locations, secrets, preferences | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
 | Discord / cameras / Arduino IoT | `discord`, `camera`, `extras/squirrel_status` | [integrations.md](docs/architecture/integrations.md) |
+| Local ML inference (DJL, no Python) | `ml` (`ImageNetClassifier`, `AnimalVerdict`) | [integrations.md](docs/architecture/integrations.md) |
 | Tests | `src/test/...` | [testing.md](docs/architecture/testing.md) |
 
 ---

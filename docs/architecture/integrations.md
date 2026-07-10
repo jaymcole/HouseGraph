@@ -83,8 +83,44 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   > Note: `extras/` is not Java — it's device firmware colocated with the node
   > that drives it. It is not compiled by Gradle.
 
+## Local ML inference (`ml/`, nodes in `graph/nodes/ml/`)
+
+Vision/ML models run **in-JVM**, locally, through
+[Deep Java Library](https://djl.ai) (DJL) on its PyTorch engine — no Python, no
+external service. This mirrors how `camera`/`discord` split a headless client
+package from its UI nodes: the `ml` package holds JavaFX-free inference clients;
+`graph.nodes.ml` holds the nodes that drive them.
+
+- **`ImageNetClassifier`** (`ml/`) — a shared, lazily-loaded ResNet-50 / ImageNet
+  classifier. The DJL `ZooModel` is loaded once on first use and reused
+  process-wide (a singleton), so multiple classifier nodes don't each pay the
+  load cost; a fresh `Predictor` is created per call because `Predictor` isn't
+  thread-safe (the model is), which suits the engine's concurrent execution.
+  Label-agnostic on purpose — it returns raw ImageNet classes; deciding what they
+  *mean* is the caller's job.
+- **`AnimalVerdict`** (`ml/`) — the pure, headless-testable policy that collapses
+  ImageNet's 1000 labels into `squirrel` / `bird` / `other` / `none`.
+- **`AnimalClassifierNode`** (`graph/nodes/ml/`) — converts its JavaFX `Image`
+  input to a `BufferedImage` (via `SwingFXUtils`, hence the `javafx.swing`
+  module), classifies it, and emits `Category`/`Confidence` plus `Is Squirrel` /
+  `Is Bird` gates (1/0) that wire straight into an `If`.
+
+**Runtime download, not a bundled model.** The first classification after launch
+downloads the PyTorch native library and the model weights into DJL's on-disk
+cache (under the user's home); later runs are fast and offline. First use
+therefore needs network access, like the camera/Discord integrations.
+
+**No secrets, no credentials** — models are public and fetched by DJL; nothing
+here touches `SecretsStore`.
+
+**Roadmap.** This is the classifier-first step toward feature parity with the
+Python sibling project (AnimalNotifier). Detectors (YOLO/MegaDetector-style),
+more classifiers, and a local LLM (via Jlama) are expected to land in `ml/` next;
+factor shared model lifecycle/loading into `ml/` rather than duplicating per node.
+
 ---
 
 **When you change this, update…** this file whenever you add/modify an
 integration (a new Discord capability, a new camera protocol, a new IoT device or
-device command) or change how an integration handles credentials.
+device command, a new local model / inference engine) or change how an
+integration handles credentials.
