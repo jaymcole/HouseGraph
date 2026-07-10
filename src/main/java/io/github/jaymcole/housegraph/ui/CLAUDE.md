@@ -18,7 +18,7 @@ by concern into sub-packages:
 | `command/` | undo/redo — the `Command` interface, `UndoManager`, and every `*Command` |
 | `snapshot/` | the snapshot data model — `GraphSnapshot` and its `Clipboard*` records (a captured slice of the graph, shared by copy/paste and save/load) |
 | `io/` | save/load (`GraphFileIO`) |
-| `log/` | the standalone log viewer (`LogWindow`), which renders the `logging/` buffer sink |
+| `log/` | the standalone log viewer (`LogWindow`) rendering the `logging/` buffer sink, plus `LogLevelPreferences` (persists per-output levels via `AppPreferences`) |
 
 Because these live in separate packages now, the cross-package API surface each
 one exposes (e.g. `GraphCanvas`'s canvas-mutation methods, `UndoManager`'s
