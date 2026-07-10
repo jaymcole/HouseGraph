@@ -23,6 +23,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -98,22 +99,71 @@ class GraphFileIOTest {
     }
 
     @Test
-    void unknownNodeTypeIsSkippedRatherThanFailingTheWholeLoad() {
-        JSONObject nodeJson = new JSONObject();
-        nodeJson.put("type", "com.example.NotARealNode");
-        nodeJson.put("x", 0.0);
-        nodeJson.put("y", 0.0);
-        nodeJson.put("inputs", List.of());
-        nodeJson.put("outputs", List.of());
-
+    void unknownNodeTypeLoadsAsAPlaceholderRatherThanFailingTheWholeLoad() {
         JSONObject root = new JSONObject();
-        root.put("nodes", List.of(nodeJson));
+        root.put("nodes", List.of(unknownNodeJson(7.0, 9.0)));
         root.put("dataEdges", List.of());
         root.put("flowEdges", List.of());
 
         GraphSnapshot snapshot = GraphFileIO.fromJson(root);
 
-        assertTrue(snapshot.nodes().isEmpty());
+        // The slot is preserved (with a null node and its saved position) so it can hold the
+        // index for any later node; place() is what drops it off the actual canvas.
+        assertEquals(1, snapshot.nodes().size());
+        ClipboardNode placeholder = snapshot.nodes().get(0);
+        assertNull(placeholder.node(), "an unrebuildable node loads as a null-node placeholder");
+        assertEquals(7.0, placeholder.x());
+        assertEquals(9.0, placeholder.y());
+    }
+
+    @Test
+    void unknownNodeKeepsLaterNodesAtTheirOriginalIndexSoEdgesStayAligned() {
+        // A real node, then an unknown one, then a real node an edge points at. Before the
+        // placeholder fix the unknown node was dropped, shifting index 2 to 1 and rewiring the
+        // edge onto the wrong node; now the placeholder holds index 1 and index 2 still resolves.
+        JSONObject root = new JSONObject();
+        root.put("nodes", List.of(
+                realNodeJson(ConstantFloatNode.class),
+                unknownNodeJson(0.0, 0.0),
+                realNodeJson(AddNode.class)));
+        // Edge from node 0's output into node 2's first input.
+        JSONObject edge = new JSONObject();
+        edge.put("sourceNode", 0);
+        edge.put("sourceVariable", 0);
+        edge.put("targetNode", 2);
+        edge.put("targetVariable", 0);
+        root.put("dataEdges", List.of(edge));
+        root.put("flowEdges", List.of());
+
+        GraphSnapshot snapshot = GraphFileIO.fromJson(root);
+
+        assertEquals(3, snapshot.nodes().size());
+        assertTrue(snapshot.nodes().get(0).node() instanceof ConstantFloatNode);
+        assertNull(snapshot.nodes().get(1).node(), "the unknown node holds index 1 as a placeholder");
+        assertTrue(snapshot.nodes().get(2).node() instanceof AddNode,
+                "the node after the unknown one keeps its original index");
+        // The edge's saved indices are untouched, and index 2 still lands on the AddNode.
+        assertEquals(2, snapshot.dataEdges().get(0).targetNodeIndex());
+    }
+
+    private static JSONObject unknownNodeJson(double x, double y) {
+        JSONObject nodeJson = new JSONObject();
+        nodeJson.put("type", "com.example.NotARealNode");
+        nodeJson.put("x", x);
+        nodeJson.put("y", y);
+        nodeJson.put("inputs", List.of());
+        nodeJson.put("outputs", List.of());
+        return nodeJson;
+    }
+
+    private static JSONObject realNodeJson(Class<? extends BaseNode> type) {
+        JSONObject nodeJson = new JSONObject();
+        nodeJson.put("type", type.getName());
+        nodeJson.put("x", 0.0);
+        nodeJson.put("y", 0.0);
+        nodeJson.put("inputs", List.of());
+        nodeJson.put("outputs", List.of());
+        return nodeJson;
     }
 
     @Test

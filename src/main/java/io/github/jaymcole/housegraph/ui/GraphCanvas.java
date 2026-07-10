@@ -955,26 +955,34 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      */
     public List<NodeView> place(GraphSnapshot snapshot, Function<ClipboardNode, BaseNode> nodeFactory, double offsetX, double offsetY) {
         List<NodeView> placed = new ArrayList<>();
+        // Index-aligned with snapshot.nodes() - and therefore with the node indices saved edges
+        // reference. A node the factory can't build (an unknown type, a duplicate that failed)
+        // leaves a null slot here rather than being dropped, so every later node keeps its original
+        // index and edges still resolve to the node they were wired to. `placed` (returned) holds
+        // only the real views, so callers that select/undo the result never see a null.
+        List<NodeView> byIndex = new ArrayList<>();
         for (ClipboardNode entry : snapshot.nodes()) {
             BaseNode node = nodeFactory.apply(entry);
             if (node == null) {
+                byIndex.add(null);
                 continue;
             }
             NodeView nodeView = new NodeView(node, content, this);
             addNode(nodeView, entry.x() + offsetX, entry.y() + offsetY);
             placed.add(nodeView);
+            byIndex.add(nodeView);
         }
 
         forceLayout();
 
         // Reconnect each edge independently. A save file can outlive the node contract it was
-        // written against - a node type that dropped an output, or an unknown node type that was
-        // skipped on load and shifted every later index - which leaves stale edge endpoints. Each
-        // edge is reconnected in isolation so one unresolvable endpoint drops only that edge; it
-        // must never abort the loop and cost the user every remaining edge.
+        // written against - a node type that dropped an output, or an unknown node type that
+        // loaded as a null slot above - which leaves stale edge endpoints. Each edge is
+        // reconnected in isolation so one unresolvable endpoint drops only that edge; it must
+        // never abort the loop and cost the user every remaining edge.
         for (ClipboardDataEdge dataEdge : snapshot.dataEdges()) {
             try {
-                reconnectDataEdge(placed, dataEdge, offsetX, offsetY);
+                reconnectDataEdge(byIndex, dataEdge, offsetX, offsetY);
             } catch (RuntimeException e) {
                 log.warn("Skipping data edge that failed to reconnect: {}", e.toString());
             }
@@ -982,7 +990,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
         for (ClipboardFlowEdge flowEdge : snapshot.flowEdges()) {
             try {
-                reconnectFlowEdge(placed, flowEdge, offsetX, offsetY);
+                reconnectFlowEdge(byIndex, flowEdge, offsetX, offsetY);
             } catch (RuntimeException e) {
                 log.warn("Skipping flow edge that failed to reconnect: {}", e.toString());
             }
@@ -997,12 +1005,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * Skipping rather than throwing is what keeps one stale edge from aborting the whole reconnect
      * pass - see {@link #place}.
      */
-    private void reconnectDataEdge(List<NodeView> placed, ClipboardDataEdge edge, double offsetX, double offsetY) {
-        NodeView sourceView = nodeAt(placed, edge.sourceNodeIndex());
-        NodeView targetView = nodeAt(placed, edge.targetNodeIndex());
+    private void reconnectDataEdge(List<NodeView> nodesByIndex, ClipboardDataEdge edge, double offsetX, double offsetY) {
+        NodeView sourceView = nodeAt(nodesByIndex, edge.sourceNodeIndex());
+        NodeView targetView = nodeAt(nodesByIndex, edge.targetNodeIndex());
         if (sourceView == null || targetView == null) {
-            log.warn("Skipping data edge with out-of-range node index (source={}, target={}, node count={})",
-                    edge.sourceNodeIndex(), edge.targetNodeIndex(), placed.size());
+            log.warn("Skipping data edge to unresolved node (source={}, target={}, node count={})",
+                    edge.sourceNodeIndex(), edge.targetNodeIndex(), nodesByIndex.size());
             return;
         }
         PortView sourcePort = portAt(sourceView.getOutputPorts(), edge.sourceVariableIndex());
@@ -1017,12 +1025,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** Flow-edge counterpart of {@link #reconnectDataEdge}: reconnects one saved flow edge, or skips it with a warning if an endpoint no longer resolves. */
-    private void reconnectFlowEdge(List<NodeView> placed, ClipboardFlowEdge edge, double offsetX, double offsetY) {
-        NodeView sourceView = nodeAt(placed, edge.sourceNodeIndex());
-        NodeView targetView = nodeAt(placed, edge.targetNodeIndex());
+    private void reconnectFlowEdge(List<NodeView> nodesByIndex, ClipboardFlowEdge edge, double offsetX, double offsetY) {
+        NodeView sourceView = nodeAt(nodesByIndex, edge.sourceNodeIndex());
+        NodeView targetView = nodeAt(nodesByIndex, edge.targetNodeIndex());
         if (sourceView == null || targetView == null) {
-            log.warn("Skipping flow edge with out-of-range node index (source={}, target={}, node count={})",
-                    edge.sourceNodeIndex(), edge.targetNodeIndex(), placed.size());
+            log.warn("Skipping flow edge to unresolved node (source={}, target={}, node count={})",
+                    edge.sourceNodeIndex(), edge.targetNodeIndex(), nodesByIndex.size());
             return;
         }
         FlowPortView sourcePort = flowPortAt(sourceView.getFlowOutPorts(), edge.sourcePortIndex());
@@ -1036,7 +1044,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         flowEdgeView.setWaypoints(offsetPoints(edge.waypoints(), offsetX, offsetY));
     }
 
-    /** The node at {@code index}, or null if out of range (a save file's edge referencing a node that's no longer there). */
+    /**
+     * The node at {@code index}, or null if it doesn't resolve - either the index is out of range,
+     * or the slot is a null placeholder left by a node that couldn't be built (see {@link #place}).
+     * Both mean "a save file's edge references a node that's no longer there", so both skip the edge.
+     */
     private static NodeView nodeAt(List<NodeView> nodes, int index) {
         return index >= 0 && index < nodes.size() ? nodes.get(index) : null;
     }

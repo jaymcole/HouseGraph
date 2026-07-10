@@ -41,8 +41,9 @@ import java.util.Map;
  * {@link NodeVariable#isRequired() required}), and any node-specific {@code state}. Reads are
  * forgiving of older files: a missing {@code executionPolicy} loads as the default {@code QUEUE},
  * missing {@code maxConcurrency}/{@code timeoutMillis} as 0 (unlimited / no timeout), a missing
- * {@code requiredInputs} leaves each input's author-declared default, and an unknown node type is
- * skipped rather than failing the whole load.
+ * {@code requiredInputs} leaves each input's author-declared default, and an unknown node type
+ * loads as a null-node placeholder (rather than failing the whole load) that holds its index slot
+ * so later nodes - and the edges that reference them - stay correctly aligned.
  */
 public final class GraphFileIO {
 
@@ -129,13 +130,20 @@ public final class GraphFileIO {
         for (int i = 0; i < nodesJson.length(); i++) {
             JSONObject nodeJson = nodesJson.getJSONObject(i);
             String typeName = nodeJson.getString("type");
+            double x = nodeJson.getDouble("x");
+            double y = nodeJson.getDouble("y");
             Class<? extends BaseNode> nodeClass = NodeRegistry.resolveClass(typeName);
             if (nodeClass == null) {
                 log.warn("Skipping unknown node type in save file: {}", typeName);
+                // Keep the index slot (with a null node) so this node's absence doesn't shift every
+                // later node's index and misdirect the edges that reference them - place() drops the
+                // slot and skips only the edges attached to it. Same for a failed instantiate below.
+                nodes.add(new ClipboardNode(null, x, y));
                 continue;
             }
             BaseNode node = NodeRegistry.instantiate(nodeClass);
             if (node == null) {
+                nodes.add(new ClipboardNode(null, x, y));
                 continue;
             }
             // Restore node config BEFORE touching ports. A dynamic-port node (the object
@@ -157,7 +165,7 @@ public final class GraphFileIO {
             if (nodeJson.has("requiredInputs")) {
                 applyRequired(node.getInputs(), nodeJson.getJSONArray("requiredInputs"));
             }
-            nodes.add(new ClipboardNode(node, nodeJson.getDouble("x"), nodeJson.getDouble("y")));
+            nodes.add(new ClipboardNode(node, x, y));
         }
 
         List<ClipboardDataEdge> dataEdges = new ArrayList<>();
