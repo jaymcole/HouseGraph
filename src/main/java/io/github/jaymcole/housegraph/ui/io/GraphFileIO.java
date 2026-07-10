@@ -10,6 +10,8 @@ import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import javafx.geometry.Point2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -43,6 +45,8 @@ import java.util.Map;
  * skipped rather than failing the whole load.
  */
 public final class GraphFileIO {
+
+    private static final Logger log = Log.get(GraphFileIO.class);
 
     private GraphFileIO() {
     }
@@ -127,7 +131,7 @@ public final class GraphFileIO {
             String typeName = nodeJson.getString("type");
             Class<? extends BaseNode> nodeClass = NodeRegistry.resolveClass(typeName);
             if (nodeClass == null) {
-                System.err.println("Skipping unknown node type in save file: " + typeName);
+                log.warn("Skipping unknown node type in save file: {}", typeName);
                 continue;
             }
             BaseNode node = NodeRegistry.instantiate(nodeClass);
@@ -252,7 +256,7 @@ public final class GraphFileIO {
         try {
             return ExecutionPolicy.valueOf(name);
         } catch (IllegalArgumentException e) {
-            System.err.println("Unknown execution policy in save file, defaulting to QUEUE: " + name);
+            log.warn("Unknown execution policy in save file, defaulting to QUEUE: {}", name);
             return ExecutionPolicy.QUEUE;
         }
     }

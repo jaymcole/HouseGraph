@@ -19,6 +19,7 @@ ui/
 ├── editor/            ValueEditors, SecretsEditor
 ├── command/           Command, UndoManager, and every *Command
 ├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
+├── log/               LogWindow (the standalone log viewer)
 └── io/                GraphFileIO
 ```
 
@@ -202,9 +203,25 @@ policy's glyph just left of the title (with a tooltip) and refreshes it when the
 policy changes; the same glyphs appear beside the menu items. To add or restyle a
 policy icon, edit `ExecutionPolicyIcons` — nothing else needs to change.
 
+## The log window: `log/LogWindow`
+
+The **Logs…** toolbar button opens `LogWindow`, the on-screen log viewer. Unlike the
+modal `SecretsEditor`, it is a **standalone, non-modal top-level stage** not owned by the
+main window, so it lives independently and can be closed and reopened at will. `show()` is
+a toggle-to-front singleton.
+
+It renders the shared `LogBufferSink` (from the `logging/` package): on open it replays
+`snapshot()` — the full retained history, including everything captured while it was closed
+— then follows live records through a listener that marshals each one with
+`Platform.runLater`; on close it detaches the listener. Because the buffer keeps capturing
+regardless, reopening is lossless. The window exposes a display-level filter, a per-sink
+level dropdown for every registered output, and auto-scroll/clear. The logging model itself
+(levels, sinks, bootstrap) lives in [logging.md](logging.md) — `LogWindow` is only its UI.
+
 ---
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the `NodeContentProvider`
-extension point, add a `ValueEditors` type, or alter the `GraphFileIO` JSON format
-(also update the `GraphFileIO` Javadoc and keep backward-compat notes).
+extension point, add a `ValueEditors` type, alter the `GraphFileIO` JSON format
+(also update the `GraphFileIO` Javadoc and keep backward-compat notes), or change
+the log window's behavior (also keep [logging.md](logging.md) in sync).

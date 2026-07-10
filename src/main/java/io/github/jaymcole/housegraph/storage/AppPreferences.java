@@ -1,5 +1,7 @@
 package io.github.jaymcole.housegraph.storage;
 
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
@@ -22,6 +24,8 @@ import java.util.Optional;
  * explicit via {@link #save()}.
  */
 public final class AppPreferences {
+
+    private static final Logger log = Log.get(AppPreferences.class);
 
     private static final String FILE = "preferences.json";
 
@@ -56,7 +60,7 @@ public final class AppPreferences {
                 }
             } catch (IOException | RuntimeException e) {
                 // Never let a bad preferences file block startup — just start fresh.
-                System.err.println("Ignoring unreadable preferences file " + file + ": " + e);
+                log.warn("Ignoring unreadable preferences file {}: {}", file, e);
             }
         }
         return new AppPreferences(file, values);

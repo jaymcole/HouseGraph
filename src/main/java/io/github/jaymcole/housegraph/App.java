@@ -1,11 +1,15 @@
 package io.github.jaymcole.housegraph;
 
 import io.github.jaymcole.housegraph.graph.NodeGraph;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.logging.Logging;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
 import io.github.jaymcole.housegraph.ui.editor.SecretsEditor;
+import io.github.jaymcole.housegraph.ui.log.LogWindow;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -23,6 +27,8 @@ import java.io.IOException;
  */
 public class App extends Application {
 
+    private static final Logger log = Log.get(App.class);
+
     private final AppPreferences preferences = AppPreferences.load();
     private NodeGraph graph;
 
@@ -31,6 +37,10 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) {
+        // Stand up logging first (console + file + in-memory window buffer) so everything
+        // from here on is captured. Idempotent, so a second entry point can call it too.
+        Logging.bootstrap(AppDirectories.get().logs());
+
         graph = new NodeGraph();
         GraphCanvas canvas = new GraphCanvas(graph);
 
@@ -65,7 +75,13 @@ public class App extends Application {
         Button secretsButton = new Button("Secrets…");
         secretsButton.setOnAction(e -> SecretsEditor.show(stage));
 
-        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, secretsButton);
+        // Opens the standalone log window. It lives in its own top-level stage (not owned by
+        // this one) so it survives independently and can be closed and reopened without
+        // losing history — the buffer keeps capturing while it's shut.
+        Button logsButton = new Button("Logs…");
+        logsButton.setOnAction(e -> LogWindow.show());
+
+        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, secretsButton, logsButton);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);
@@ -85,6 +101,8 @@ public class App extends Application {
         if (graph != null) {
             graph.dispose();
         }
+        // Flush and close the log file so the last lines reach disk.
+        Logging.shutdown();
     }
 
     /** Prompts for a destination file, then saves the graph there. */
@@ -124,7 +142,7 @@ public class App extends Application {
                 GraphFileIO.load(canvas, file);
                 currentFile = file;
             } catch (IOException | RuntimeException ex) {
-                System.err.println("Could not reopen last file " + file + ": " + ex);
+                log.error("Could not reopen last file " + file, ex);
             }
         });
     }

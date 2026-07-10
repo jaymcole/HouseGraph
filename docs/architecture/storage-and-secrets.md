@@ -19,7 +19,8 @@ The single source of truth for on-disk locations. One root per platform:
 
 Under it, a subdirectory per purpose, each created on demand: `secrets()`,
 `nodes()` (+ `nodeStorage(key)` for per-node private storage, with the key
-sanitized so it can't escape the folder), `saves()`, `config()`, `cache()`.
+sanitized so it can't escape the folder), `saves()`, `config()`, `cache()`,
+`logs()` (the `housegraph.log` file — see [logging.md](logging.md)).
 
 - Use the shared instance: `AppDirectories.get().secrets()`, etc.
 - The root can be overridden with the `housegraph.home` system property or the

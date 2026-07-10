@@ -17,7 +17,7 @@ import java.util.function.UnaryOperator;
  *   <li><b>Linux/other</b>: {@code $XDG_DATA_HOME/HouseGraph}, else {@code ~/.local/share/HouseGraph}</li>
  * </ul>
  * with a subdirectory per purpose — {@link #secrets()}, {@link #nodes()},
- * {@link #config()}, {@link #cache()}. Every accessor creates its directory on demand,
+ * {@link #config()}, {@link #cache()}, {@link #logs()}. Every accessor creates its directory on demand,
  * so callers can simply resolve a path and read/write it.
  * <p>
  * Use the shared machine instance via {@link #get()} (e.g. {@code AppDirectories.get().secrets()}).
@@ -129,6 +129,15 @@ public final class AppDirectories {
      */
     public Path cache() {
         return ensure(root.resolve("cache"));
+    }
+
+    /**
+     * Log files (the rolling {@code housegraph.log} written by the logging system).
+     *
+     * @return the logs directory, created if needed
+     */
+    public Path logs() {
+        return ensure(root.resolve("logs"));
     }
 
     // --- Resolution (pure, so each OS branch is unit-testable) --------------------

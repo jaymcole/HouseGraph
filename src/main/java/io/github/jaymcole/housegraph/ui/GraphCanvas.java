@@ -28,6 +28,8 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import javafx.application.Platform;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
@@ -73,6 +75,8 @@ import java.util.function.Function;
  * flow anchors at the top corners of each node.
  */
 public class GraphCanvas extends Pane implements NodeView.DragController, GraphExecutionListener, EdgeInteractionListener {
+
+    private static final Logger log = Log.get(GraphCanvas.class);
 
     private static final KeyCodeCombination COPY_COMBO = new KeyCodeCombination(KeyCode.C, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination PASTE_COMBO = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN);
@@ -304,7 +308,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 createEdge(source, target).setWaypoints(captured.waypoints());
             } catch (RuntimeException e) {
                 // e.g. the port's type changed and no longer matches - drop just this edge.
-                System.err.println("Could not reconnect edge after rebuild: " + e.getMessage());
+                log.warn("Could not reconnect edge after rebuild: {}", e.getMessage());
             }
         }
         for (CapturedRebuildFlowEdge captured : capturedFlow) {
@@ -320,7 +324,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             } catch (RuntimeException e) {
                 // The other endpoint may no longer be in the graph (e.g. removed as part of
                 // the same teardown) - drop just this edge, same as the data-edge reconnect.
-                System.err.println("Could not reconnect flow edge after rebuild: " + e.getMessage());
+                log.warn("Could not reconnect flow edge after rebuild: {}", e.getMessage());
             }
         }
     }

@@ -1,5 +1,7 @@
 package io.github.jaymcole.housegraph.discord;
 
+import io.github.jaymcole.housegraph.logging.Log;
+import io.github.jaymcole.housegraph.logging.Logger;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Guild;
@@ -42,6 +44,8 @@ import java.util.function.Consumer;
  * the bot in Discord's developer portal; slash commands need no special intent.
  */
 public final class DiscordBot {
+
+    private static final Logger log = Log.get(DiscordBot.class);
 
     private final Object lock = new Object();
     private JDA jda;
@@ -134,7 +138,7 @@ public final class DiscordBot {
             } catch (IllegalArgumentException e) {
                 // Discord requires lowercase names of letters/digits/-/_ ; skip a bad one
                 // rather than failing registration of every command.
-                System.err.println("Skipping invalid slash command '" + name + "': " + e.getMessage());
+                log.warn("Skipping invalid slash command '{}': {}", name, e.getMessage());
             }
         }
         Guild target = guild == null ? null : current.getGuildById(guild);
