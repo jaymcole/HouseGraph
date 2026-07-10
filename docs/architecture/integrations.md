@@ -103,7 +103,10 @@ package from its UI nodes: the `ml` package holds JavaFX-free inference clients;
 - **`AnimalClassifierNode`** (`graph/nodes/ml/`) — converts its JavaFX `Image`
   input to a `BufferedImage` (via `SwingFXUtils`, hence the `javafx.swing`
   module), classifies it, and emits `Category`/`Confidence` plus `Is Squirrel` /
-  `Is Bird` gates (1/0) that wire straight into an `If`.
+  `Is Bird` gates (1/0) that wire straight into an `If`. It also emits `Objects`
+  (`List<String>`) — the model's top-K raw labels with confidences (e.g.
+  `["fox squirrel (87%)", "acorn (4%)"]`) for display/logging or downstream
+  iteration — rather than rendering them inline.
 
 **Runtime download, not a bundled model.** The first classification after launch
 downloads the PyTorch native library and the model weights into DJL's on-disk

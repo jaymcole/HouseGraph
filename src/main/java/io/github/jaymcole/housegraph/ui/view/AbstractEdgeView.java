@@ -112,10 +112,16 @@ public abstract class AbstractEdgeView extends Group implements ConnectionView {
 
         getChildren().addAll(curve, hitArea, handleLayer);
 
-        source.getOwner().layoutXProperty().addListener((obs, o, n) -> updatePath());
-        source.getOwner().layoutYProperty().addListener((obs, o, n) -> updatePath());
-        target.getOwner().layoutXProperty().addListener((obs, o, n) -> updatePath());
-        target.getOwner().layoutYProperty().addListener((obs, o, n) -> updatePath());
+        // Redraw whenever either endpoint's node moves *or* resizes. Tracking
+        // boundsInParent (rather than just layoutX/Y) is what catches a resize: a node
+        // that grows - e.g. the Animal Classifier widening to fit its result label -
+        // keeps its top-left layout position but shifts its right-hand output ports, so
+        // only a bounds change reflects that the anchors moved. boundsInParent is
+        // recomputed after the node's own children are laid out, so the anchor circles
+        // are already at their new positions when this fires (unlike width/height, which
+        // change mid-layout, before the ports have been repositioned).
+        source.getOwner().boundsInParentProperty().addListener((obs, o, n) -> updatePath());
+        target.getOwner().boundsInParentProperty().addListener((obs, o, n) -> updatePath());
 
         applyStyle();
         updatePath();

@@ -7,13 +7,12 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.ml.AnimalVerdict;
 import io.github.jaymcole.housegraph.ml.ImageNetClassifier;
-import io.github.jaymcole.housegraph.ui.NodeContentProvider;
 import javafx.embed.swing.SwingFXUtils;
-import javafx.scene.Node;
-import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Answers one question about a frame: <b>is there a squirrel or a bird?</b> It runs the
@@ -31,10 +30,12 @@ import java.awt.image.BufferedImage;
  * guess cleared the threshold) and {@code none} otherwise (empty scene / too unsure).
  * <p>
  * <b>Outputs</b> are made to wire straight into the existing control-flow nodes:
- * {@code Category} (String) for display/logging, {@code Confidence} (Float), and the two
+ * {@code Category} (String) for display/logging, {@code Confidence} (Float), the two
  * convenience gates {@code Is Squirrel} / {@code Is Bird} — each {@code 1}/{@code 0} so
  * they drop directly into an {@code If} node (which fires on any non-zero condition) to
- * trigger, say, the squirrel alarm. Wire a repeating trigger (or a motion event) into the
+ * trigger, say, the squirrel alarm — and {@code Objects} (List of String), the model's
+ * top-K raw labels with confidences (e.g. {@code ["fox squirrel (87%)", "wood rabbit (4%)"]})
+ * for display/logging or downstream iteration. Wire a repeating trigger (or a motion event) into the
  * flow input so it re-evaluates each fresh frame. Best fed a reasonably tight crop of the
  * subject (e.g. a camera snapshot of a feeder); whole wide scenes dilute the classifier.
  * <p>
@@ -42,7 +43,7 @@ import java.awt.image.BufferedImage;
  * evaluation after launch pays a one-time download/load cost and later ones are fast.
  */
 @Display.Name("Animal Classifier")
-public class AnimalClassifierNode extends BaseNode implements NodeContentProvider {
+public class AnimalClassifierNode extends BaseNode {
 
     /** How many of the model's ranked predictions to consider when looking for an animal. */
     private static final int TOP_K = 5;
@@ -56,13 +57,12 @@ public class AnimalClassifierNode extends BaseNode implements NodeContentProvide
     private final NodeVariable<Float> confidence = new NodeVariable<>("Confidence", Float.class);
     private final NodeVariable<Float> isSquirrel = new NodeVariable<>("Is Squirrel", Float.class);
     private final NodeVariable<Float> isBird = new NodeVariable<>("Is Bird", Float.class);
+    @SuppressWarnings("unchecked")
+    private final NodeVariable<List<String>> objects =
+            new NodeVariable<>("Objects", (Class<List<String>>) (Class<?>) List.class);
 
     private final FlowPort in = new FlowPort("", FlowPort.Direction.IN);
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
-
-    /** Last raw top-1 ImageNet label, kept only for the inline UI readout. */
-    private volatile String lastLabel;
-    private Label display;
 
     public AnimalClassifierNode() {
         threshold.setValue(DEFAULT_THRESHOLD);
@@ -86,7 +86,19 @@ public class AnimalClassifierNode extends BaseNode implements NodeContentProvide
         confidence.setValue((float) verdict.confidence());
         isSquirrel.setValue(AnimalVerdict.SQUIRREL.equals(verdict.category()) ? 1f : 0f);
         isBird.setValue(AnimalVerdict.BIRD.equals(verdict.category()) ? 1f : 0f);
-        lastLabel = verdict.label();
+        objects.setValue(formatObjects(result));
+    }
+
+    /**
+     * The model's top-K predictions as a list of readable labels, one per entry, e.g.
+     * {@code ["fox squirrel (87%)", "acorn (4%)"]}.
+     */
+    private static List<String> formatObjects(Classifications result) {
+        List<String> labels = new ArrayList<>();
+        for (Classifications.Classification c : result.topK(TOP_K)) {
+            labels.add(String.format("%s (%.0f%%)", c.getClassName(), c.getProbability() * 100));
+        }
+        return labels;
     }
 
     private float minConfidence() {
@@ -109,6 +121,7 @@ public class AnimalClassifierNode extends BaseNode implements NodeContentProvide
         addOutput(confidence);
         addOutput(isSquirrel);
         addOutput(isBird);
+        addOutput(objects);
     }
 
     @Override
@@ -119,30 +132,5 @@ public class AnimalClassifierNode extends BaseNode implements NodeContentProvide
     @Override
     public void configureFlowOutputs() {
         addFlowOutput(out);
-    }
-
-    @Override
-    public Node createNodeContent() {
-        display = new Label(readout());
-        display.setStyle("-fx-text-fill: #dddddd; -fx-font-size: 12px; -fx-alignment: center; -fx-padding: 4;");
-        return display;
-    }
-
-    @Override
-    protected void onExecuted() {
-        if (display != null) {
-            display.setText(readout());
-        }
-    }
-
-    private String readout() {
-        String verdict = category.getValue();
-        if (verdict == null) {
-            return "—";
-        }
-        Float conf = confidence.getValue();
-        String pct = conf == null ? "" : String.format("  %.0f%%", conf * 100f);
-        String detail = lastLabel == null ? "" : "\n" + lastLabel;
-        return verdict + pct + detail;
     }
 }
