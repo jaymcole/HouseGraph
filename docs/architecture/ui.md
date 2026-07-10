@@ -173,6 +173,14 @@ Key rules to preserve when editing this format:
   default sensibly so older saves still open, and a missing/unknown
   `executionPolicy` loads as `QUEUE`. When you change the format, keep this
   forgiving-read behavior and document the new fields.
+- **Edge reconnection is per-edge and self-contained** (`GraphCanvas.place`).
+  Each saved edge is reconnected in isolation, and one whose endpoints no longer
+  resolve — a node index past the loaded node count (e.g. because an unknown node
+  was skipped and shifted the indices), or a port index a node no longer has after
+  its contract changed between saves — is dropped with a warning instead of
+  aborting the loop. That isolation is deliberate: without it a single stale edge
+  threw an `IndexOutOfBoundsException` that killed every remaining edge. Preserve
+  it when touching the reconnect pass.
 
 ## Per-node execution policy
 

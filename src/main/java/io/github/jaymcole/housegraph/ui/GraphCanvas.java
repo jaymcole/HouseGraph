@@ -967,27 +967,83 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
         forceLayout();
 
+        // Reconnect each edge independently. A save file can outlive the node contract it was
+        // written against - a node type that dropped an output, or an unknown node type that was
+        // skipped on load and shifted every later index - which leaves stale edge endpoints. Each
+        // edge is reconnected in isolation so one unresolvable endpoint drops only that edge; it
+        // must never abort the loop and cost the user every remaining edge.
         for (ClipboardDataEdge dataEdge : snapshot.dataEdges()) {
-            NodeView sourceView = placed.get(dataEdge.sourceNodeIndex());
-            NodeView targetView = placed.get(dataEdge.targetNodeIndex());
-            PortView sourcePort = sourceView.getOutputPorts().get(dataEdge.sourceVariableIndex());
-            PortView targetPort = targetView.getInputPorts().get(dataEdge.targetVariableIndex());
-            EdgeView edgeView = createEdge(sourcePort, targetPort);
-            edgeView.setWaypoints(offsetPoints(dataEdge.waypoints(), offsetX, offsetY));
+            try {
+                reconnectDataEdge(placed, dataEdge, offsetX, offsetY);
+            } catch (RuntimeException e) {
+                log.warn("Skipping data edge that failed to reconnect: {}", e.toString());
+            }
         }
 
         for (ClipboardFlowEdge flowEdge : snapshot.flowEdges()) {
-            NodeView sourceView = placed.get(flowEdge.sourceNodeIndex());
-            NodeView targetView = placed.get(flowEdge.targetNodeIndex());
-            FlowPortView sourcePort = flowPortAt(sourceView.getFlowOutPorts(), flowEdge.sourcePortIndex());
-            FlowPortView targetPort = flowPortAt(targetView.getFlowInPorts(), flowEdge.targetPortIndex());
-            if (sourcePort != null && targetPort != null) {
-                FlowEdgeView flowEdgeView = createFlowEdge(sourcePort, targetPort);
-                flowEdgeView.setWaypoints(offsetPoints(flowEdge.waypoints(), offsetX, offsetY));
+            try {
+                reconnectFlowEdge(placed, flowEdge, offsetX, offsetY);
+            } catch (RuntimeException e) {
+                log.warn("Skipping flow edge that failed to reconnect: {}", e.toString());
             }
         }
 
         return placed;
+    }
+
+    /**
+     * Reconnects one saved data edge, or skips it with a warning if either endpoint no longer
+     * resolves (a node index past the loaded node count, or a port index the node no longer has).
+     * Skipping rather than throwing is what keeps one stale edge from aborting the whole reconnect
+     * pass - see {@link #place}.
+     */
+    private void reconnectDataEdge(List<NodeView> placed, ClipboardDataEdge edge, double offsetX, double offsetY) {
+        NodeView sourceView = nodeAt(placed, edge.sourceNodeIndex());
+        NodeView targetView = nodeAt(placed, edge.targetNodeIndex());
+        if (sourceView == null || targetView == null) {
+            log.warn("Skipping data edge with out-of-range node index (source={}, target={}, node count={})",
+                    edge.sourceNodeIndex(), edge.targetNodeIndex(), placed.size());
+            return;
+        }
+        PortView sourcePort = portAt(sourceView.getOutputPorts(), edge.sourceVariableIndex());
+        PortView targetPort = portAt(targetView.getInputPorts(), edge.targetVariableIndex());
+        if (sourcePort == null || targetPort == null) {
+            log.warn("Skipping data edge with out-of-range port index (sourceVar={}, targetVar={}) between nodes {} and {}",
+                    edge.sourceVariableIndex(), edge.targetVariableIndex(), edge.sourceNodeIndex(), edge.targetNodeIndex());
+            return;
+        }
+        EdgeView edgeView = createEdge(sourcePort, targetPort);
+        edgeView.setWaypoints(offsetPoints(edge.waypoints(), offsetX, offsetY));
+    }
+
+    /** Flow-edge counterpart of {@link #reconnectDataEdge}: reconnects one saved flow edge, or skips it with a warning if an endpoint no longer resolves. */
+    private void reconnectFlowEdge(List<NodeView> placed, ClipboardFlowEdge edge, double offsetX, double offsetY) {
+        NodeView sourceView = nodeAt(placed, edge.sourceNodeIndex());
+        NodeView targetView = nodeAt(placed, edge.targetNodeIndex());
+        if (sourceView == null || targetView == null) {
+            log.warn("Skipping flow edge with out-of-range node index (source={}, target={}, node count={})",
+                    edge.sourceNodeIndex(), edge.targetNodeIndex(), placed.size());
+            return;
+        }
+        FlowPortView sourcePort = flowPortAt(sourceView.getFlowOutPorts(), edge.sourcePortIndex());
+        FlowPortView targetPort = flowPortAt(targetView.getFlowInPorts(), edge.targetPortIndex());
+        if (sourcePort == null || targetPort == null) {
+            log.warn("Skipping flow edge with out-of-range port index (sourcePort={}, targetPort={}) between nodes {} and {}",
+                    edge.sourcePortIndex(), edge.targetPortIndex(), edge.sourceNodeIndex(), edge.targetNodeIndex());
+            return;
+        }
+        FlowEdgeView flowEdgeView = createFlowEdge(sourcePort, targetPort);
+        flowEdgeView.setWaypoints(offsetPoints(edge.waypoints(), offsetX, offsetY));
+    }
+
+    /** The node at {@code index}, or null if out of range (a save file's edge referencing a node that's no longer there). */
+    private static NodeView nodeAt(List<NodeView> nodes, int index) {
+        return index >= 0 && index < nodes.size() ? nodes.get(index) : null;
+    }
+
+    /** The port at {@code index}, or null if out of range (a save file's edge referencing a port the node no longer has). */
+    private static PortView portAt(List<PortView> ports, int index) {
+        return index >= 0 && index < ports.size() ? ports.get(index) : null;
     }
 
     /** Shifts each waypoint by the paste offset, so a pasted edge's routing lands relative to its pasted nodes (offset is 0 for save/load). */
