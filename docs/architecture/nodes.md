@@ -18,7 +18,9 @@ A `BaseNode` declares four kinds of port, each via a `configure*` hook:
   port.
 - **Flow outputs** (`configureFlowOutputs` → `addFlowOutput`) — `FlowPort`(s)
   where control leaves. A plain node adds one unnamed port; a branch node adds
-  several named ports and picks with `activate()`.
+  several named ports and picks with `activate()`. A **loop** node fires one of
+  its ports *repeatedly* — once per item — with `runFlowBranchToCompletion()`
+  instead (see below); `graph/nodes/control/ForEachNode.java` is the canonical one.
 
 `configure*` hooks run lazily on first port access (not from the constructor, so
 subclass field initializers have already run). `reconfigure()` / `rebuildPorts()`
@@ -80,6 +82,19 @@ before firing (AND) — the way to reconverge parallel branches. `graph/nodes/co
 is the concrete node (numbered flow-in ports, adjustable 2–8). The engine counts arrivals per run
 (`ExecutionContext`) and fires the join once they reach its wired-edge count; an unwired port
 doesn't count, and a join whose branch is pruned by an upstream `If` just doesn't fire that run.
+
+### Loops (for-each)
+
+A node that must fire a flow output **once per item** can't do it with `activate()` — the cascade
+fires each downstream node at most once per run. Instead it calls the protected
+`BaseNode.runFlowBranchToCompletion(port, seed)` from `process()`, once per item. Each call runs
+that port's branch as a **fresh isolated sub-run** (so the per-run flow dedup resets and the body
+runs afresh), seeded with the loop's per-item outputs — the loop node is pre-marked complete in the
+sub-run so the body pulls the seeded values without re-running the loop. The call **blocks** until
+the body subtree finishes, so iterations run **sequentially**. `graph/nodes/control/ForEachNode.java`
+is the concrete node: it drives a **Body** port per element (exposing `Current Item` / `Index`),
+then `activate`s a **Completed** port once at the end. See
+[graph-engine.md](graph-engine.md#loop-bodies-seeded-sub-runs) for the mechanism.
 
 ### Execution policy (two scopes)
 

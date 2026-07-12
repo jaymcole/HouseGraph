@@ -163,6 +163,37 @@ fire-and-forget), `awaitIdle()` waits on an `outstandingPasses` count that a run
 once its last firing completes — never on draining a queue. A firing parked on a mid-cascade
 `QUEUE` gate keeps its run non-idle until it runs or is coalesced away.
 
+## Loop bodies (seeded sub-runs)
+
+A node that needs to fire one of its flow outputs **more than once** — a for-each
+loop running its body once per list item — can't express that through the
+ordinary cascade: a downstream node is fired at most once per run (`flowVisited`
+dedup), and `activate(port)` only *selects* which out-ports fire, not how many
+times. `NodeGraph.runFlowBranchToCompletion(source, sourcePort, seed)` is the
+primitive for this:
+
+- It runs the branch leaving `sourcePort` in a **fresh, isolated run** (its own
+  `ExecutionContext`). Because dedup is per-run, a new run per item resets it, so
+  the body executes afresh every iteration — this reuses the per-run isolation
+  model rather than fighting it.
+- Before scheduling the branch, the sub-run is **seeded**: `source` is marked
+  `SUCCESS` in the sub-context and `seed` sets its per-iteration output values in
+  that context's overlay. So when a body node pulls those outputs it
+  short-circuits on `source`'s complete status in `resolveInternal` and reads the
+  seeded values — it does **not** re-run `source`'s `process()` (which would
+  re-enter the loop).
+- The call **blocks** until the sub-run quiesces, so iterations run **sequentially**
+  (item *N+1* starts only after item *N*'s body subtree finishes). The caller is a
+  run-executor virtual thread inside its own `process()`, so blocking is cheap; its
+  outer run stays non-idle throughout (no separate `beginPass()` for the sub-run),
+  so `awaitIdle()` waits for the whole loop.
+
+Nodes reach this via the protected `BaseNode.runFlowBranchToCompletion(port, seed)`
+seam. `ForEachNode` (in `graph/nodes/control/`) is the canonical user: it loops
+over its `List` input, driving its **Body** port once per element with the element
+and index seeded onto its `Current Item` / `Index` outputs, then `activate`s its
+**Completed** port once at the end.
+
 ## The callback-executor seam (why the engine has no JavaFX)
 
 `NodeGraph` dispatches all outward notifications through an injectable
@@ -189,9 +220,11 @@ Hooks the engine calls (all no-ops by default; override as needed):
 | `onRemoved()` | when it leaves a live graph (delete/load/shutdown) | release timers, sockets, threads — must be idempotent |
 | `onInputEdgeAdded/Removed(edge)` | after a data edge to this node is (un)wired | grow/shrink dynamic ports (e.g. the object decomposer) |
 | `activate(port)` | called *from* `process()` | branch: fire only chosen flow-out port(s). No call = fire all |
+| `runFlowBranchToCompletion(port, seed)` | called *from* `process()` | loop: run one flow-out branch once per item as a seeded sub-run (see [Loop bodies](#loop-bodies-seeded-sub-runs)) |
 
 Cycle-free data + `activate` are how branch nodes work: see `IfNode` (fires
-`True` or `False`) as the canonical example.
+`True` or `False`) as the canonical example; `ForEachNode` uses
+`runFlowBranchToCompletion` to run its body once per list item.
 
 ## Waiting on async work (tests)
 
