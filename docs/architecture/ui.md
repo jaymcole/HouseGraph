@@ -50,11 +50,14 @@ Interaction summary (see the class Javadoc for the authoritative list):
 - Delete/Backspace removes the selection; `Ctrl/Cmd+C` / `V` copy/paste;
   `Ctrl/Cmd+Z` / `Shift+Z` undo/redo.
 - Drag between data ports' circles = data edge; drag between the triangular flow
-  anchors at a node's top corners = flow edge. A data drag is only allowed to land
-  when the types are compatible — `GraphCanvas.isValidConnection` defers to
-  `TypeConverters.isCompatible(output, input)` (assignable **or** a hidden
-  converter bridges the pair, e.g. `Integer` → `Float`), mirroring the engine's
-  `NodeGraph.attachEdge` gate. See [graph-engine.md](graph-engine.md).
+  anchors at a node's top corners = flow edge. While a data edge is dragged, every
+  other port's anchor is coloured by how faithful that connection would be —
+  `GraphCanvas.connectionSafety` calls `TypeConverters.classify(output, input)` and
+  `PortView` fills the circle green (`SAFE` — assignable or lossless), yellow
+  (`CAUTIOUS` — e.g. `Float` → `Integer` truncation), orange (`RISKY` — e.g. number
+  → `Boolean`), or red (`INCOMPATIBLE`, an unbridgeable pair). A drag may only land
+  on a non-red port, mirroring the engine's `NodeGraph.attachEdge` gate. See
+  [graph-engine.md](graph-engine.md).
 
 **Threading rule:** everything here runs on the FX Application Thread. The engine
 runs passes on background threads and dispatches callbacks to the UI through its

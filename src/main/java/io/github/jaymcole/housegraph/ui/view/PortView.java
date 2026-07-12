@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.ui.view;
 import io.github.jaymcole.housegraph.ui.editor.ValueEditors;
 
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
@@ -39,6 +40,12 @@ public class PortView extends HBox implements EdgeAnchor {
 
     private static final double RADIUS = 6;
     private static final Color FILL = Color.web("#61afef");
+    // Drag-candidate anchor colours, keyed by TypeConverters.ConversionSafety: a safe conversion
+    // reads green, a lossy-but-predictable one yellow, a drastic one orange, and an impossible pair
+    // red (INCOMPATIBLE). Neutral (not a drag candidate) stays the resting blue FILL.
+    private static final Color SAFE_FILL = Color.web("#98c379");
+    private static final Color CAUTIOUS_FILL = Color.web("#e5c07b");
+    private static final Color RISKY_FILL = Color.web("#d19a66");
     private static final Color INVALID_FILL = Color.web("#e06c75");
     private static final Color BASE_STROKE = Color.web("#282c34");
     private static final Color HOVER_STROKE = Color.web("#ffffff");
@@ -63,7 +70,7 @@ public class PortView extends HBox implements EdgeAnchor {
 
     private int connectionCount = 0;
     private boolean highlighted = false;
-    private boolean invalid = false;
+    private ConversionSafety dragCandidateSafety = null;
     private boolean missingRequired = false;
     private boolean editing = false;
 
@@ -239,15 +246,15 @@ public class PortView extends HBox implements EdgeAnchor {
     }
 
     /**
-     * Marks (or unmarks) this port as an invalid target for the edge currently being
-     * dragged (wrong type, direction, or owner) — set on every other port for the
-     * duration of a drag by {@link GraphCanvas}, so the whole set of valid/invalid
-     * targets is visible at a glance rather than only on hover. Takes priority over
-     * the hover highlight, since an invalid port can't become a valid one just by
-     * being under the cursor.
+     * Colours this port for the edge currently being dragged: {@code SAFE} green, {@code CAUTIOUS}
+     * yellow, {@code RISKY} orange, and {@code INCOMPATIBLE} (wrong type/direction/owner) red — set
+     * on every other port for the duration of a drag by {@link GraphCanvas}, so the whole set of
+     * targets and how faithful each connection would be is visible at a glance rather than only on
+     * hover. Pass {@code null} to clear the drag colour and return to the resting fill. The colour
+     * takes priority over the hover highlight, since dragging doesn't change a pair's safety.
      */
-    public void setInvalid(boolean invalid) {
-        this.invalid = invalid;
+    public void setDragCandidateSafety(ConversionSafety safety) {
+        this.dragCandidateSafety = safety;
         applyVisualState();
     }
 
@@ -255,7 +262,7 @@ public class PortView extends HBox implements EdgeAnchor {
      * Marks (or unmarks) this port as a {@link NodeVariable#required() required} input with no
      * value source — the per-port half of the misconfigured-node indicator. Draws a thin red
      * border around the whole port row (anchor + label/field) rather than recoloring the anchor,
-     * which read like the drag {@link #setInvalid(boolean) invalid-target} state. Driven by
+     * which read like the drag {@link #setDragCandidateSafety(ConversionSafety) invalid-target} state. Driven by
      * {@link NodeView#refreshValidation()} whenever the node's wiring or values change.
      */
     public void setMissingRequired(boolean missingRequired) {
@@ -277,7 +284,7 @@ public class PortView extends HBox implements EdgeAnchor {
     }
 
     private void applyVisualState() {
-        circle.setFill(invalid ? INVALID_FILL : FILL);
+        circle.setFill(dragCandidateFill());
         if (highlighted) {
             circle.setStroke(HOVER_STROKE);
             circle.setStrokeWidth(HOVER_STROKE_WIDTH);
@@ -285,6 +292,18 @@ public class PortView extends HBox implements EdgeAnchor {
             circle.setStroke(BASE_STROKE);
             circle.setStrokeWidth(BASE_STROKE_WIDTH);
         }
+    }
+
+    private Color dragCandidateFill() {
+        if (dragCandidateSafety == null) {
+            return FILL;
+        }
+        return switch (dragCandidateSafety) {
+            case SAFE -> SAFE_FILL;
+            case CAUTIOUS -> CAUTIOUS_FILL;
+            case RISKY -> RISKY_FILL;
+            case INCOMPATIBLE -> INVALID_FILL;
+        };
     }
 
     public Point2D getCenterInContent(Group content) {

@@ -29,6 +29,7 @@ import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.TypeConverters;
+import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import javafx.application.Platform;
@@ -394,7 +395,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
             for (PortView candidate : ports) {
                 if (candidate != port) {
-                    candidate.setInvalid(!isValidConnection(port, candidate));
+                    candidate.setDragCandidateSafety(connectionSafety(port, candidate));
                 }
             }
             event.consume();
@@ -445,7 +446,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 highlightedTargetPort = null;
             }
             for (PortView candidate : ports) {
-                candidate.setInvalid(false);
+                candidate.setDragCandidateSafety(null);
             }
             content.getChildren().remove(dragLine);
             dragLine = null;
@@ -468,16 +469,24 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     private boolean isValidConnection(PortView a, PortView b) {
+        return connectionSafety(a, b) != ConversionSafety.INCOMPATIBLE;
+    }
+
+    /**
+     * How faithful (or impossible) a data connection between two ports would be, used both to gate a
+     * drag and to colour candidate anchors. A same-owner / same-direction pairing can never be an
+     * edge, so it is {@link ConversionSafety#INCOMPATIBLE}. Otherwise the source's value flows into
+     * the input, so the safety is {@code TypeConverters.classify(output type, input type)} — exact
+     * matches and an {@code Object} input read {@code SAFE}, a hidden converter contributes its own
+     * level, and an unbridgeable pair is {@code INCOMPATIBLE}. Mirrors {@code NodeGraph.attachEdge}.
+     */
+    private ConversionSafety connectionSafety(PortView a, PortView b) {
         if (a.getOwner() == b.getOwner() || a.getDirection() == b.getDirection()) {
-            return false;
+            return ConversionSafety.INCOMPATIBLE;
         }
-        // A source's value flows into the input, so the input's type only has to be
-        // assignable from the source's - exact matches still pass, an Object input
-        // (e.g. the decomposer's) accepts anything, and a hidden converter can bridge
-        // otherwise-incompatible types (e.g. Integer -> Float). Mirrors NodeGraph.attachEdge.
         PortView output = a.getDirection() == PortView.Direction.OUTPUT ? a : b;
         PortView input = output == a ? b : a;
-        return TypeConverters.isCompatible(output.getVariable().type, input.getVariable().type);
+        return TypeConverters.classify(output.getVariable().type, input.getVariable().type);
     }
 
     /** The live edge currently feeding a given input port, if any - e.g. so CreateEdgeCommand can capture what it's about to replace. */

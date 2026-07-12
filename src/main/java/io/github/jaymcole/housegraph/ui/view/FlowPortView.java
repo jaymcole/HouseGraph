@@ -91,7 +91,9 @@ public class FlowPortView extends Polygon implements EdgeAnchor {
     /**
      * Marks (or unmarks) this port as an invalid target for the flow edge currently
      * being dragged (wrong direction or owner) — set on every other flow port for the
-     * duration of a drag by {@link GraphCanvas}, same as {@link PortView#setInvalid}.
+     * duration of a drag by {@link GraphCanvas}. Flow ports carry no value or type, so
+     * this stays a plain valid/invalid flag; the data-port equivalent
+     * ({@link PortView#setDragCandidateSafety}) instead colours by conversion safety.
      */
     public void setInvalid(boolean invalid) {
         this.invalid = invalid;

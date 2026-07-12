@@ -32,16 +32,25 @@ pair); the UI's `GraphCanvas.isValidConnection` mirrors it for the drag-time
 highlight. Both call `TypeConverters.isCompatible(from, to)`.
 
 `TypeConverters` (in `graph/`, so it stays headless) ships a built-in matrix that
-interconverts `Integer`, `Double`, `Float`, and `Boolean` in both directions —
-some conversions are intentionally lossy (`Double`/`Float` → `Integer` truncates;
-numeric → `Boolean` collapses to "non-zero = true"). Additional converters can be
-registered on the fly via `TypeConverters.register(from, to, fn)` — the extension
-point for plugins. When a value propagates (`NodeGraph.propagateValue`), the
-registered converter coerces it at the handoff; when no converter applies the raw
-value is passed through unchanged, preserving legacy raw-handoff paths. These
-hidden converters are distinct from the explicit converter **nodes** in
-`graph.nodes.converters` (which stay for visible, first-class conversions and for
-targets the matrix does not cover, e.g. `*` → `String`).
+interconverts `Integer`, `Double`, `Float`, and `Boolean` in both directions.
+Additional converters can be registered on the fly via
+`TypeConverters.register(from, to, safety, fn)` — the extension point for plugins.
+When a value propagates (`NodeGraph.propagateValue`), the registered converter
+coerces it at the handoff; when no converter applies the raw value is passed
+through unchanged, preserving legacy raw-handoff paths. These hidden converters are
+distinct from the explicit converter **nodes** in `graph.nodes.converters` (which
+stay for visible, first-class conversions and for targets the matrix does not
+cover, e.g. `*` → `String`).
+
+**Conversion safety.** Every converter carries a `ConversionSafety` level, and
+`TypeConverters.classify(from, to)` reports it for a pair — `SAFE` (assignable, or
+a lossless/widening converter: `Integer` → `Float`/`Double`, `Boolean` → number),
+`CAUTIOUS` (predictable loss: `Double`/`Float` → `Integer` truncation, `Double` →
+`Float` precision), `RISKY` (drastic loss: number → `Boolean` collapses non-zero to
+`true`), or `INCOMPATIBLE` (no path). The level is advisory for connecting — both
+gates allow anything that is not `INCOMPATIBLE` (`isCompatible` ≡ `classify != INCOMPATIBLE`).
+Its purpose is UX: the canvas colours a candidate anchor green / yellow / orange /
+red from `classify` while an edge is dragged (see [ui.md](ui.md)).
 
 ## resolve (pull) vs. execute (trigger)
 

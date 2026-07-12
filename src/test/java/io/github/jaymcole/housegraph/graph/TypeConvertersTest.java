@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
 import org.junit.jupiter.api.Test;
 
 class TypeConvertersTest {
@@ -93,10 +94,43 @@ class TypeConvertersTest {
     @Test
     void customConvertersCanBeRegisteredAtRuntime() {
         assertFalse(TypeConverters.hasConverter(StringBuilder.class, String.class));
-        TypeConverters.register(StringBuilder.class, String.class, StringBuilder::toString);
+        TypeConverters.register(StringBuilder.class, String.class, ConversionSafety.SAFE, StringBuilder::toString);
 
         assertTrue(TypeConverters.hasConverter(StringBuilder.class, String.class));
         assertTrue(TypeConverters.isCompatible(StringBuilder.class, String.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(StringBuilder.class, String.class));
         assertEquals("hi", TypeConverters.convert(new StringBuilder("hi"), StringBuilder.class, String.class));
+    }
+
+    // --- classify: safety tiers -----------------------------------------------------
+
+    @Test
+    void classifyReportsSafeForAssignableAndWideningPairs() {
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Float.class, Float.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Float.class, Object.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Integer.class, Float.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Integer.class, Double.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Boolean.class, Float.class));
+    }
+
+    @Test
+    void classifyReportsCautiousForNarrowingPairs() {
+        assertEquals(ConversionSafety.CAUTIOUS, TypeConverters.classify(Double.class, Float.class));
+        assertEquals(ConversionSafety.CAUTIOUS, TypeConverters.classify(Double.class, Integer.class));
+        assertEquals(ConversionSafety.CAUTIOUS, TypeConverters.classify(Float.class, Integer.class));
+    }
+
+    @Test
+    void classifyReportsRiskyForNumberToBoolean() {
+        assertEquals(ConversionSafety.RISKY, TypeConverters.classify(Integer.class, Boolean.class));
+        assertEquals(ConversionSafety.RISKY, TypeConverters.classify(Float.class, Boolean.class));
+        assertEquals(ConversionSafety.RISKY, TypeConverters.classify(Double.class, Boolean.class));
+    }
+
+    @Test
+    void classifyReportsIncompatibleWhenNoPathExists() {
+        assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(String.class, Float.class));
+        assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(Float.class, String.class));
+        assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(Object.class, Float.class));
     }
 }
