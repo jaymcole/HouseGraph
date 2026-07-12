@@ -28,6 +28,7 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.graph.TypeConverters;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import javafx.application.Platform;
@@ -471,11 +472,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             return false;
         }
         // A source's value flows into the input, so the input's type only has to be
-        // assignable from the source's - exact matches still pass, and an Object input
-        // (e.g. the decomposer's) accepts anything. Mirrors NodeGraph.attachEdge.
+        // assignable from the source's - exact matches still pass, an Object input
+        // (e.g. the decomposer's) accepts anything, and a hidden converter can bridge
+        // otherwise-incompatible types (e.g. Integer -> Float). Mirrors NodeGraph.attachEdge.
         PortView output = a.getDirection() == PortView.Direction.OUTPUT ? a : b;
         PortView input = output == a ? b : a;
-        return input.getVariable().type.isAssignableFrom(output.getVariable().type);
+        return TypeConverters.isCompatible(output.getVariable().type, input.getVariable().type);
     }
 
     /** The live edge currently feeding a given input port, if any - e.g. so CreateEdgeCommand can capture what it's about to replace. */

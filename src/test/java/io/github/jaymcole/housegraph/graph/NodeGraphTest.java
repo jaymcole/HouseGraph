@@ -6,6 +6,7 @@ import io.github.jaymcole.housegraph.graph.nodes.control.JoinNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
+import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantIntegerNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -253,10 +254,34 @@ class NodeGraphTest {
         graph.addNode(constant);
         graph.addNode(add);
 
-        NodeVariable<Integer> notAFloat = new NodeVariable<>("bogus", Integer.class);
+        // A String output into a Float input: no converter bridges the pair, so it stays rejected.
+        // (Integer/Double/Boolean -> Float would now be accepted via a hidden converter.)
+        NodeVariable<String> notAFloat = new NodeVariable<>("bogus", String.class);
         Edge edge = new Edge(constant, notAFloat, add, input(add, "V1"));
 
         assertThrows(IllegalArgumentException.class, () -> graph.registerEdge(edge));
+    }
+
+    @Test
+    void convertibleVariableTypesAreAcceptedAndCoercedOnPropagation() {
+        NodeGraph graph = new NodeGraph();
+        ConstantIntegerNode constant = new ConstantIntegerNode();
+        AddNode add = new AddNode();
+        graph.addNode(constant);
+        graph.addNode(add);
+
+        @SuppressWarnings("unchecked")
+        NodeVariable<Integer> intOut = constant.getOutputs().get(0);
+        intOut.setValue(3);
+
+        // An Integer output feeding a Float input: not assignable, but a hidden converter bridges it,
+        // so the edge attaches and the value arrives at the Float input already coerced to 3f.
+        Edge edge = new Edge(constant, intOut, add, input(add, "V1"));
+        assertDoesNotThrow(() -> graph.registerEdge(edge));
+
+        add.beginProcessing();
+
+        assertEquals(3f, output(add).getValue());
     }
 
     @Test

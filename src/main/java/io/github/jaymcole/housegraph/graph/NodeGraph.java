@@ -278,7 +278,11 @@ public class NodeGraph {
     private synchronized boolean attachEdge(Edge edge) {
         requireRegistered(edge.getSourceNode());
         requireRegistered(edge.getTargetNode());
-        if (!edge.getTargetVariable().type.isAssignableFrom(edge.getSourceVariable().type)) {
+        // The authoritative type gate. A connection is allowed when the target is assignable from
+        // the source or a hidden converter bridges the pair (see TypeConverters); propagateValue
+        // then applies that converter at handoff. GraphCanvas.isValidConnection mirrors this for the
+        // drag-time UX check.
+        if (!TypeConverters.isCompatible(edge.getSourceVariable().type, edge.getTargetVariable().type)) {
             throw new IllegalArgumentException(
                     "Cannot connect a " + edge.getSourceVariable().type.getSimpleName() + " output to a "
                             + edge.getTargetVariable().type.getSimpleName() + " input");
@@ -598,9 +602,14 @@ public class NodeGraph {
         node.setStatus(status);
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private void propagateValue(Edge edge) {
-        edge.getTargetVariable().setValue(edge.getSourceVariable().getValue());
+        NodeVariable<?> source = edge.getSourceVariable();
+        // Raw target: setValue erases to setValue(Object), so the converted value (already coerced
+        // to the target type by TypeConverters, or passed through when no converter applies) can be
+        // handed off without a compile-time cast.
+        NodeVariable target = edge.getTargetVariable();
+        target.setValue(TypeConverters.convert(source.getValue(), source.type, target.type));
     }
 
     private void notifyNodeStarted(BaseNode node) {

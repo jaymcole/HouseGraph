@@ -53,6 +53,15 @@ condition, the object decomposer's `Object`, and the Discord Send/Reply message 
 with a sensible default for a missing input (e.g. `Add`, whose operands default to 0) leave them
 optional.
 
+**Anchor type & hidden converters.** A `NodeVariable`'s `type` (a `Class<?>`) governs which
+outputs may feed it. An edge is allowed when the input type is assignable from the output type
+**or** a converter is registered for the pair in `TypeConverters` — so an `Integer`, `Double`, or
+`Boolean` output can feed a `Float` input, coerced transparently at value handoff. Register your
+own with `TypeConverters.register(from, to, fn)` (the plugin extension point). This is separate
+from the explicit converter **nodes** under `graph/nodes/converters/`, which stay for visible,
+first-class conversions and for targets the built-in numeric/boolean matrix does not cover (e.g.
+`*` → `String`). See [graph-engine.md](graph-engine.md#data-edge-type-compatibility--hidden-converters).
+
 ### Execution policy
 
 Every node carries an `ExecutionPolicy` (`getExecutionPolicy()`/`setExecutionPolicy()`,

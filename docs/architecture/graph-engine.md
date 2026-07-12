@@ -21,6 +21,28 @@ Keeping these separate (rather than folding flow into `NodeVariable`) is
 deliberate: flow ports carry no dead value/type machinery, and data ports carry
 no control-only special-casing. See the `FlowPort` Javadoc.
 
+## Data edge type compatibility & hidden converters
+
+A data anchor's type is a `Class<?>` on the `NodeVariable`. An `Edge` may join an
+output to an input when the input type is **assignable from** the output type
+(exact match, a subtype, or an `Object` input that accepts anything) **or** a
+converter is registered for the `(output, input)` type pair in `TypeConverters`.
+`NodeGraph.attachEdge` is the authoritative gate (it throws on an incompatible
+pair); the UI's `GraphCanvas.isValidConnection` mirrors it for the drag-time
+highlight. Both call `TypeConverters.isCompatible(from, to)`.
+
+`TypeConverters` (in `graph/`, so it stays headless) ships a built-in matrix that
+interconverts `Integer`, `Double`, `Float`, and `Boolean` in both directions —
+some conversions are intentionally lossy (`Double`/`Float` → `Integer` truncates;
+numeric → `Boolean` collapses to "non-zero = true"). Additional converters can be
+registered on the fly via `TypeConverters.register(from, to, fn)` — the extension
+point for plugins. When a value propagates (`NodeGraph.propagateValue`), the
+registered converter coerces it at the handoff; when no converter applies the raw
+value is passed through unchanged, preserving legacy raw-handoff paths. These
+hidden converters are distinct from the explicit converter **nodes** in
+`graph.nodes.converters` (which stay for visible, first-class conversions and for
+targets the matrix does not cover, e.g. `*` → `String`).
+
 ## resolve (pull) vs. execute (trigger)
 
 - **`resolve(node)`** — pulls a fresh value through the node's incoming data
@@ -176,5 +198,6 @@ See [testing.md](testing.md).
 
 **When you change this, update…** this file (and the `NodeGraph` /
 `BaseNode` Javadoc) whenever you change the resolve/execute model, the threading
-or locking strategy, the status lifecycle, the callback-executor contract, or the
+or locking strategy, the status lifecycle, the callback-executor contract, the
+data-edge type-compatibility / converter model (`TypeConverters`), or the
 set of `BaseNode` lifecycle hooks.
