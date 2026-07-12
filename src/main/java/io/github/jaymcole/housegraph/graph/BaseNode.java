@@ -140,6 +140,29 @@ public abstract class BaseNode {
         requireGraph().execute(this, prepare);
     }
 
+    /**
+     * Runs the flow branch hanging off one of this node's OUT {@link FlowPort}s once, to
+     * completion, in a fresh isolated run, blocking until that sub-run quiesces. {@code seed}
+     * runs first in the sub-run's context to set this node's per-iteration output values (via the
+     * usual {@code output.setValue(...)}), and this node is pre-marked complete there so the body
+     * pulls those seeded values without re-running this node's {@code process()}.
+     * <p>
+     * This is how a loop node fires a "body" flow output once per item: call it in a loop from
+     * {@code process()}, each call an isolated run so the body executes afresh for every item
+     * (the ordinary cascade fires each downstream node only once per run). Iterations run
+     * sequentially — each call returns only after its body subtree has fully finished. See
+     * {@link NodeGraph#runFlowBranchToCompletion} and {@code ForEachNode}.
+     *
+     * @param port the OUT flow port whose downstream branch to run; must belong to this node
+     * @param seed work run in the sub-context to set this node's per-iteration outputs
+     */
+    protected void runFlowBranchToCompletion(FlowPort port, Runnable seed) {
+        if (!getFlowOutputs().contains(port)) {
+            throw new IllegalArgumentException(getName() + " tried to run a flow branch on a port it doesn't own");
+        }
+        requireGraph().runFlowBranchToCompletion(this, port, seed);
+    }
+
     private NodeGraph requireGraph() {
         if (graph == null) {
             throw new IllegalStateException(getName() + " has not been added to a NodeGraph yet");

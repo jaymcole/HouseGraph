@@ -2,7 +2,7 @@
 
 A JavaFX desktop app for building **home-automation graphs**, with a focus on
 computer-vision triggers. Wire nodes together on an infinite canvas — constants,
-math, converters, control-flow branches, camera-motion sensors, Discord bots, an
+math, converters, control-flow branches and for-each loops, camera-motion sensors, Discord bots, an
 Arduino "squirrel alarm" sign — into graphs that react to events. Graphs are
 saved as JSON and reopened between sessions.
 
@@ -20,8 +20,8 @@ design idea:
   undo/redo, and manual edge routing.
 - A node library discovered automatically from the classpath — add a class, it
   shows up in the menu.
-- Concurrent, thread-safe execution engine with branch fan-out and data-cycle
-  detection.
+- Concurrent, thread-safe execution engine with branch fan-out, for-each loops
+  (a **For Each** node runs its body once per list item), and data-cycle detection.
 - Integrations: Discord bots (via JDA), ONVIF/Reolink IP-camera discovery and
   motion detection, an Arduino UNO R4 WiFi LED-matrix device, and a **Web Server**
   node that hosts a directory of static files on the LAN as `<name>.local` (via

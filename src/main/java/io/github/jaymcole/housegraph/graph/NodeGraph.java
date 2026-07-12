@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -84,6 +85,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * while a fast sibling branch keeps firing. Note the composition: the entry policy governs whether
  * concurrent runs start at all, so a mid-cascade gate only ever sees overlap when the entry is
  * {@code PARALLEL} (or when distinct entry nodes feed a shared node).
+ * <p>
+ * <b>Loop bodies run as seeded sub-runs.</b> A node that must fire one of its flow outputs
+ * <em>more than once</em> — a for-each loop firing its body once per list item — can't express
+ * that through the ordinary cascade, because a downstream node is fired at most once per run
+ * ({@code flowVisited} dedup). Instead it calls {@link #runFlowBranchToCompletion}, which runs that
+ * branch in a <em>fresh, isolated</em> run (so the dedup resets and the body executes afresh) after
+ * seeding the driving node's per-iteration output values into the sub-run's context and pre-marking
+ * it complete there — so body nodes pull the seeded values without re-running the driver's
+ * {@code process()}. The driver's {@code process()} blocks on each such call, running iterations
+ * sequentially; its own outer run stays non-idle throughout. See {@code ForEachNode}.
  * <p>
  * This class never imports anything from JavaFX: node/edge execution callbacks
  * ({@link BaseNode#onExecuted()}, {@link GraphExecutionListener}) are dispatched
@@ -421,6 +432,41 @@ public class NodeGraph {
     }
 
     /**
+     * Runs the flow branch leaving {@code sourcePort} once, to completion, in a fresh isolated
+     * {@link ExecutionContext}, blocking the caller until that sub-run quiesces. Before the branch
+     * fires, {@code seed} runs in the sub-context to populate {@code source}'s per-iteration output
+     * values, and {@code source} is pre-marked complete there so downstream nodes pull the seeded
+     * values (short-circuiting on its complete status in {@link #resolveInternal}) instead of
+     * re-running its {@code process()}.
+     * <p>
+     * This is the primitive behind loop nodes (see {@code ForEachNode}): a node drives its "body"
+     * flow output once per item by calling this in a loop, each call an isolated run so the body's
+     * per-run flow dedup ({@code flowVisited}) resets and the body executes afresh for every item.
+     * The caller is a run-executor virtual thread inside its own {@code process()}, so blocking here
+     * is cheap and keeps that outer run non-idle until the whole loop finishes — no separate
+     * {@link #beginPass()} is needed for the sub-run.
+     *
+     * @param source     the node whose flow output drives the branch (typically the loop node)
+     * @param sourcePort the OUT flow port whose downstream branch to run
+     * @param seed       work run in the sub-context to set {@code source}'s per-iteration outputs
+     */
+    public void runFlowBranchToCompletion(BaseNode source, FlowPort sourcePort, Runnable seed) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(sourcePort, "sourcePort");
+        Objects.requireNonNull(seed, "seed");
+        requireRegistered(source);
+        CountDownLatch done = new CountDownLatch(1);
+        Run run = new Run(done::countDown);
+        run.startBranch(source, sourcePort, seed);
+        try {
+            done.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while running loop body branch for " + source.getName(), e);
+        }
+    }
+
+    /**
      * Creates a run for {@code node} and submits its start to the run executor, returning its
      * cancellation token (so a RESTART trigger holding {@code state}'s monitor can stop it). The
      * run fires {@code node} and cascades fire-and-forget; when it fully quiesces {@code onComplete}
@@ -725,6 +771,49 @@ public class NodeGraph {
             }
             // Always schedule, even if prepare threw, so the run reaches onComplete and balances its beginPass().
             schedule(entry);
+        }
+
+        /**
+         * Runs the flow branch leaving {@code sourcePort} of {@code source} as this run's work, after
+         * seeding {@code source}'s per-iteration state into this run's context: it is marked
+         * {@link NodeProcessingStatus#SUCCESS} (so body nodes that pull it short-circuit on its
+         * complete status rather than re-running its {@code process()}) and {@code seed} sets its
+         * output values in this context's overlay. Only the edges leaving {@code sourcePort} are
+         * scheduled, so the source's other out-ports stay dormant. Backs
+         * {@link #runFlowBranchToCompletion}.
+         * <p>
+         * The run is held open across scheduling (a guarding {@code pending} increment) so a
+         * body task that finishes fast can't drive {@code pending} to zero — firing
+         * {@code onComplete} and releasing the waiting caller — before every branch edge is
+         * scheduled. If the port is unwired, nothing is scheduled and the run completes here so the
+         * caller is still released.
+         */
+        void startBranch(BaseNode source, FlowPort sourcePort, Runnable seed) {
+            this.entryNode = source;
+            pending.incrementAndGet();
+            try {
+                context.run(() -> {
+                    setStatus(context, source, NodeProcessingStatus.SUCCESS);
+                    // A body edge looping back to source in this sub-run won't re-fire it.
+                    context.markFlowVisited(source);
+                    try {
+                        seed.run();
+                    } catch (RuntimeException e) {
+                        log.error("Loop-body seeding for \"{}\" failed: {}", source.getName(), rootCause(e));
+                    }
+                });
+                for (FlowEdge flowEdge : getOutgoingFlowEdges(source)) {
+                    if (flowEdge.getSourcePort() != sourcePort) {
+                        continue;
+                    }
+                    callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
+                    schedule(flowEdge.getTargetNode());
+                }
+            } finally {
+                if (pending.decrementAndGet() == 0) {
+                    onComplete.run();
+                }
+            }
         }
 
         /**
