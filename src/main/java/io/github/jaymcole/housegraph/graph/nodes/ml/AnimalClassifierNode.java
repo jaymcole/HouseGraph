@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.ml;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import ai.djl.modality.Classifications;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
@@ -69,7 +70,7 @@ public class AnimalClassifierNode extends BaseNode {
     }
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         Image fxImage = imageIn.getValue();
         if (fxImage == null) {
             throw new IllegalStateException("No image on the Image input");

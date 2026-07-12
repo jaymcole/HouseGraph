@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -16,7 +17,7 @@ import javafx.scene.control.Button;
 public class TriggerNode extends BaseNode implements NodeContentProvider {
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
     }
 
     @Override

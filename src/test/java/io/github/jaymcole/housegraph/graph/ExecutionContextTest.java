@@ -40,14 +40,14 @@ class ExecutionContextTest {
             v1.setValue(2f);
             v2.setValue(3f);
             await(bothInputsSet);
-            shared.process();
+            shared.process(ProcessContext.uncancelled());
             runA.set(sum.getValue());
         }));
         Thread b = new Thread(() -> new ExecutionContext().run(() -> {
             v1.setValue(10f);
             v2.setValue(20f);
             await(bothInputsSet);
-            shared.process();
+            shared.process(ProcessContext.uncancelled());
             runB.set(sum.getValue());
         }));
 

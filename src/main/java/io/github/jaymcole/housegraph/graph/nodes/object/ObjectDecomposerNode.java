@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.object;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
@@ -43,7 +44,7 @@ public class ObjectDecomposerNode extends BaseNode {
     private boolean refreshing;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         Object value = objectInput.getValue();
         for (Map.Entry<String, NodeVariable> entry : outputsByProperty.entrySet()) {
             entry.getValue().setValue(value == null ? null : ObjectProperties.read(value, entry.getKey()));

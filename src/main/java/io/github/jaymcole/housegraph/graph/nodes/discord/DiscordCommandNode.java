@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.discord;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.CommandMatcher;
 import io.github.jaymcole.housegraph.discord.DiscordMessage;
@@ -43,7 +44,7 @@ public class DiscordCommandNode extends BaseNode implements NodeContentProvider 
     private Subscription subscription;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         // Outputs are set from the incoming message just before execute(); nothing to compute.
     }
 

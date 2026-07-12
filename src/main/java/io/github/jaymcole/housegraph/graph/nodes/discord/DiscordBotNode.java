@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.discord;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.DiscordBot;
 import io.github.jaymcole.housegraph.discord.SlashCommandRegistry;
@@ -51,7 +52,7 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
     private Label statusLabel;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
     }
 
     @Override

@@ -114,7 +114,9 @@ This is the subtle part. Read the `NodeGraph` class Javadoc alongside this.
   optional concurrency limit (a per-node fair `Semaphore` — a run blocks for a permit, so
   overlapping runs queue for an expensive node rather than hammer it) and timeout (a watchdog
   that interrupts an overrun and marks the node `FAILED`). See `BaseNode.getMaxConcurrency()` /
-  `getTimeoutMillis()`.
+  `getTimeoutMillis()`. The timeout also trips the node's `ProcessContext` cancellation signal, so a
+  `process()` that polls it stops even without an interruptible blocking call (see
+  [ProcessContext](#processcontext--the-per-invocation-handle)).
 - **Structural methods stay `synchronized` on the `NodeGraph`** for their brief
   critical section (adding/removing nodes and edges, reading topology), but that
   lock is **never** held for a whole run — so a UI-thread edit isn't forced to
@@ -129,7 +131,7 @@ gets dropped/queued/restarted. Full design: [`docs/design/per-node-execution-pol
 | Policy | Behavior |
 | --- | --- |
 | `DROP` | Ignore the new arrival while one is running or queued. |
-| `RESTART` | Cancel the in-flight work (cooperatively — a node already inside `process()` still finishes) and run fresh with the newest inputs. |
+| `RESTART` | Cancel the in-flight work and run fresh with the newest inputs. Cooperative: the run is flagged cancelled (surfaced to the node through its `ProcessContext`, and, mid-cascade, by interrupting the holder), but a node already inside `process()` that never checks stops only at the next node boundary. |
 | `QUEUE` (default) | Run after the in-flight one. **Coalesces to the latest**: at most one is kept pending, so a burst collapses to a single follow-up, not an unbounded backlog. |
 | `PARALLEL` | Start an independent concurrent run every time — no single-flight gate, no coalescing. Safe because each run has an isolated context. |
 
@@ -214,7 +216,7 @@ Hooks the engine calls (all no-ops by default; override as needed):
 
 | Hook | When | Typical use |
 | --- | --- | --- |
-| `process()` | each pass, after inputs are resolved | the node's actual work |
+| `process(ProcessContext ctx)` | each pass, after inputs are resolved | the node's actual work (see [ProcessContext](#processcontext--the-per-invocation-handle)) |
 | `onExecuted()` | right after `process()` (success or fail), via callback executor | push a computed value into a custom UI |
 | `onActivated()` | when added to a live graph (incl. on load) | subscribe / register a resource by name (not open a connection) |
 | `onRemoved()` | when it leaves a live graph (delete/load/shutdown) | release timers, sockets, threads — must be idempotent |
@@ -225,6 +227,30 @@ Hooks the engine calls (all no-ops by default; override as needed):
 Cycle-free data + `activate` are how branch nodes work: see `IfNode` (fires
 `True` or `False`) as the canonical example; `ForEachNode` uses
 `runFlowBranchToCompletion` to run its body once per list item.
+
+## `ProcessContext` — the per-invocation handle
+
+`process(ProcessContext ctx)` receives a fresh `ProcessContext` the engine builds for that one
+call (in `NodeGraph.runProcess`). It carries two things:
+
+- **Cooperative cancellation** — `ctx.isCancelled()` / `ctx.checkCancelled()` (throws
+  `CancellationException`). This is the part with no other access path. A run's cancellation
+  sources — a superseding `RESTART` (via the run's `PassToken`, wired onto the run's
+  `ExecutionContext`), an elapsed per-node **timeout**, or thread interruption — are OR-ed into the
+  signal the context reads. Before the context existed, the engine only checked cancellation
+  *between* nodes, so a CPU-bound `process()` (an image analysis, a long loop) with no interruptible
+  blocking call **could not be stopped at all**. A node that loops or does long work should poll
+  `ctx.checkCancelled()` periodically; `DebugDelayNode` is the canonical example (it waits in slices
+  and polls between them). A node that ignores `ctx` runs to completion exactly as before.
+- **Null-safe value access** — `ctx.get(input, fallback)` returns the input's value or a fallback
+  when null (replacing the per-node `getSafeValue` helpers), plus `ctx.get(var)` / `ctx.set(var,
+  value)` as thin pass-throughs to the same overlay-aware `NodeVariable` accessors.
+
+A node that cooperatively bails on cancellation (returns early, or lets `checkCancelled()` throw) is
+marked `FAILED` for that run but **not** logged as an error — it's an expected outcome, distinct from
+a `process()` that threw for a real reason. `ProcessContext.uncancelled()` is the public factory for
+invoking a node's `process()` directly outside the engine (there is nothing to cancel), used by unit
+tests.
 
 ## Waiting on async work (tests)
 

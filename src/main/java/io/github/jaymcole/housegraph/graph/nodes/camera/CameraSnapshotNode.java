@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.camera;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.camera.ReolinkClient;
 import io.github.jaymcole.housegraph.graph.BaseNode;
@@ -49,7 +50,7 @@ public class CameraSnapshotNode extends BaseNode implements NodeContentProvider 
     }
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         byte[] jpeg = camera.withHost(host ->
                 ReolinkClient.snapshot(host, username.getValue(), password.getValue(), channelValue(), 5));
         frame.setValue(new Image(new ByteArrayInputStream(jpeg)));

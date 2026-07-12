@@ -207,6 +207,7 @@ import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 
 @Display.Name("Multiply")
 public class MultiplyNode extends BaseNode {
@@ -215,19 +216,21 @@ public class MultiplyNode extends BaseNode {
     private final NodeVariable<Float> b = new NodeVariable<>("B", Float.class);
     private final NodeVariable<Float> product = new NodeVariable<>("Product", Float.class);
 
-    @Override public void process() {
-        product.setValue(safe(a) * safe(b));
+    @Override public void process(ProcessContext ctx) {
+        product.setValue(ctx.get(a, 0f) * ctx.get(b, 0f));
     }
     @Override public void configureInputs()  { addInput(a); addInput(b); }
     @Override public void configureOutputs() { addOutput(product); }
     @Override public void configureFlowInputs()  { addFlowInput(new FlowPort("", FlowPort.Direction.IN)); }
     @Override public void configureFlowOutputs() { addFlowOutput(new FlowPort("", FlowPort.Direction.OUT)); }
-
-    private static float safe(NodeVariable<Float> v) {
-        return v.getValue() == null ? 0f : v.getValue();
-    }
 }
 ```
+
+`process(ProcessContext ctx)` receives a per-invocation [`ProcessContext`](graph-engine.md#processcontext--the-per-invocation-handle):
+`ctx.get(input, fallback)` is the null-safe read (replacing the hand-rolled `safe()` helper), and
+`ctx.isCancelled()` / `ctx.checkCancelled()` let a long-running or looping `process()` bail out when
+its run is superseded or its timeout fires — poll it periodically in anything expensive. A node that
+ignores `ctx` still works exactly as before.
 
 That's the whole thing — no registration. Checklist:
 

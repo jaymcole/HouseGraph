@@ -49,8 +49,9 @@ ui/  ──────────────►  graph/ (engine + node model)
 | Object | Role |
 | --- | --- |
 | `NodeGraph` | Owns nodes + edges; drives execution. One instance per document. |
-| `BaseNode` | Abstract base every node extends. Declares inputs/outputs/flow ports and a `process()`. |
+| `BaseNode` | Abstract base every node extends. Declares inputs/outputs/flow ports and a `process(ProcessContext)`. |
 | `NodeVariable<T>` | A typed data slot (input or output) on a node. |
+| `ProcessContext` | Per-invocation handle passed to `process()`: cooperative cancellation + null-safe value access. |
 | `Edge` | A data connection: source output → target input. |
 | `FlowPort` / `FlowEdge` | A control-flow anchor / connection (no data). |
 | `NodeRegistry` | Discovers node classes on the classpath; instantiates/duplicates them. |

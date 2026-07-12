@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.camera;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.camera.CameraConfigStore;
 import io.github.jaymcole.housegraph.camera.CameraDiscovery;
@@ -57,7 +58,7 @@ public class DiscoverCamerasNode extends BaseNode implements NodeContentProvider
     }
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         List<DiscoveredCamera> cameras = CameraDiscovery.discover(timeoutSeconds());
         enrichCameras(cameras);
         CameraConfigStore.MergeResult result = CameraConfigStore.merge(cameras);

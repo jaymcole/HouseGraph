@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.debug;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -45,7 +46,7 @@ public class ChaosAnchorNode extends BaseNode {
     private final Random random = new Random();
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         // Intentionally does nothing - this node exists to reshape its anchors, not to compute.
     }
 

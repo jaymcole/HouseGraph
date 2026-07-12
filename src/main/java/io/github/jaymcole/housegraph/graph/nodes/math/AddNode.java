@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.math;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -13,8 +14,8 @@ public class AddNode extends BaseNode {
     private final NodeVariable<Float> sum = new NodeVariable<>("Sum", Float.class);
 
     @Override
-    public void process() {
-        sum.setValue(getSafeValue(v1) + getSafeValue(v2));
+    public void process(ProcessContext ctx) {
+        sum.setValue(ctx.get(v1, 0f) + ctx.get(v2, 0f));
     }
 
     @Override
@@ -36,12 +37,5 @@ public class AddNode extends BaseNode {
     @Override
     public void configureFlowOutputs() {
         addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
-    }
-
-    private float getSafeValue(NodeVariable<Float> variable) {
-        if (variable == null || variable.getValue() == null) {
-            return 0f;
-        }
-        return variable.getValue();
     }
 }

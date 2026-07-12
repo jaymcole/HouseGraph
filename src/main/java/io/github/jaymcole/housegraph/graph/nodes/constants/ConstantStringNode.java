@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.constants;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -11,7 +12,7 @@ public class ConstantStringNode extends BaseNode {
     private final NodeVariable<String> out = new NodeVariable<>("out", String.class, true);
 
     @Override
-    public void process() {}
+    public void process(ProcessContext ctx) {}
 
     @Override
     public void configureInputs() {}

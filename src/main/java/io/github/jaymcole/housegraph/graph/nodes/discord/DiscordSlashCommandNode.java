@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.discord;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.CommandOption;
 import io.github.jaymcole.housegraph.discord.DiscordOptionType;
@@ -63,7 +64,7 @@ public class DiscordSlashCommandNode extends BaseNode implements NodeContentProv
     private Subscription subscription;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         // Outputs are set from the incoming invocation just before execute(); nothing to compute.
     }
 

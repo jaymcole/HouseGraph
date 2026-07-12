@@ -21,7 +21,7 @@ public class MyNode extends BaseNode {
     private final NodeVariable<Float> in  = new NodeVariable<>("In", Float.class);
     private final NodeVariable<Float> out = new NodeVariable<>("Out", Float.class);
 
-    @Override public void process() { out.setValue(/* work */); }
+    @Override public void process(ProcessContext ctx) { out.setValue(/* work */); }
     @Override public void configureInputs()  { addInput(in); }
     @Override public void configureOutputs() { addOutput(out); }
     @Override public void configureFlowInputs()  { addFlowInput(new FlowPort("", FlowPort.Direction.IN)); }
