@@ -14,7 +14,11 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -29,12 +33,24 @@ import java.util.jar.JarFile;
  * never appears in the "Add Node" menu), but is still resolvable via
  * {@link #resolveClass} — a graph saved while the node type was enabled can still be
  * loaded even after it's since been disabled.
+ * <p>
+ * <b>Save-file identity.</b> A node is written to a save file by a stable <em>type id</em>
+ * ({@link #persistentTypeId}), not its fully-qualified class name. The id defaults to the simple
+ * class name — which already survives moving the class between packages/category folders — and a
+ * class can pin a different id (or extra {@link io.github.jaymcole.housegraph.annotations.Node.Type
+ * aliases}) with {@code @Node.Type} to stay resolvable across a rename. {@link #resolveClass} maps a
+ * saved id back to its class via an index of every node type's ids, falling back to
+ * fully-qualified-class-name resolution for saves written before this scheme (or by an
+ * un-indexed type).
  */
 public final class NodeRegistry {
 
     private static final Logger log = Log.get(NodeRegistry.class);
 
     public static final String BASE_PACKAGE = "io.github.jaymcole.housegraph.graph.nodes";
+
+    /** Lazily-built, cached index from every node type's stable id(s) to its class (see {@link #resolveClass}). */
+    private static volatile Map<String, Class<? extends BaseNode>> idIndex;
 
     /**
      * One discovered node type.
@@ -52,37 +68,133 @@ public final class NodeRegistry {
 
     public static List<Entry> discover() {
         List<Entry> entries = new ArrayList<>();
-        String basePath = BASE_PACKAGE.replace('.', '/');
-        try {
-            Enumeration<URL> roots = Thread.currentThread().getContextClassLoader().getResources(basePath);
-            while (roots.hasMoreElements()) {
-                URL root = roots.nextElement();
-                if ("file".equals(root.getProtocol())) {
-                    scanDirectory(new File(root.toURI()), BASE_PACKAGE, entries);
-                } else if ("jar".equals(root.getProtocol())) {
-                    scanJar(root, basePath, entries);
-                }
+        for (Class<? extends BaseNode> nodeClass : scanAllNodeClasses()) {
+            // Disabled types stay loadable (and so stay in the id index), but are kept out of the menu.
+            if (nodeClass.isAnnotationPresent(Node.Disabled.class)) {
+                continue;
             }
-        } catch (IOException | URISyntaxException e) {
-            log.error("Failed to scan for node classes under {}", BASE_PACKAGE, e);
+            entries.add(new Entry(nodeClass, categoryOf(nodeClass), displayNameOf(nodeClass)));
         }
         entries.sort(Comparator.comparing(Entry::categoryPath).thenComparing(entry -> entry.nodeClass().getSimpleName()));
         return entries;
     }
 
-    /** Resolves a fully-qualified class name (e.g. from a save file) back to a loadable node class, or null if it's not a valid one. */
-    public static Class<? extends BaseNode> resolveClass(String className) {
+    /**
+     * Resolves a saved node {@code type} back to a loadable node class, or null if none matches.
+     * Tries the {@link #idIndex() stable-id index} first — matching a {@code @Node.Type} id, one of
+     * its aliases, or a simple class name — then falls back to fully-qualified-class-name resolution,
+     * so a save written before type ids existed (which stored the class name) still opens.
+     *
+     * @param type the saved type id or class name
+     * @return the loadable node class, or null if it can't be resolved
+     */
+    public static Class<? extends BaseNode> resolveClass(String type) {
+        if (type == null) {
+            return null;
+        }
+        Class<? extends BaseNode> byId = idIndex().get(type);
+        if (byId != null) {
+            return byId;
+        }
+        // Fallback: a fully-qualified class name from a pre-type-id save (or an unindexed type).
         try {
-            Class<?> type = Class.forName(className, false, Thread.currentThread().getContextClassLoader());
-            if (BaseNode.class.isAssignableFrom(type) && !type.isInterface() && !Modifier.isAbstract(type.getModifiers())) {
+            Class<?> loaded = Class.forName(type, false, Thread.currentThread().getContextClassLoader());
+            if (BaseNode.class.isAssignableFrom(loaded) && !loaded.isInterface() && !Modifier.isAbstract(loaded.getModifiers())) {
                 @SuppressWarnings("unchecked")
-                Class<? extends BaseNode> nodeClass = (Class<? extends BaseNode>) type;
+                Class<? extends BaseNode> nodeClass = (Class<? extends BaseNode>) loaded;
                 return nodeClass;
             }
         } catch (ClassNotFoundException e) {
             // fall through to null
         }
         return null;
+    }
+
+    /**
+     * The stable id a node type is written under in save files: its {@code @Node.Type} value if it
+     * declares one, otherwise its simple class name. The simple name already survives moving the
+     * class between packages; {@code @Node.Type} is for surviving a class rename. See {@link Node.Type}.
+     *
+     * @param nodeClass the node type
+     * @return its persistent type id
+     */
+    public static String persistentTypeId(Class<? extends BaseNode> nodeClass) {
+        Node.Type type = nodeClass.getAnnotation(Node.Type.class);
+        if (type != null && !type.value().isBlank()) {
+            return type.value();
+        }
+        return nodeClass.getSimpleName();
+    }
+
+    /**
+     * The index from every node type's ids to its class, built once and cached. Each type contributes
+     * its simple class name plus any {@code @Node.Type} value/aliases; an id claimed by two types is
+     * dropped as ambiguous (so it falls back to class-name resolution) rather than resolving to the
+     * wrong one.
+     */
+    private static Map<String, Class<? extends BaseNode>> idIndex() {
+        Map<String, Class<? extends BaseNode>> index = idIndex;
+        if (index == null) {
+            index = buildIdIndex();
+            idIndex = index;
+        }
+        return index;
+    }
+
+    private static Map<String, Class<? extends BaseNode>> buildIdIndex() {
+        Map<String, Class<? extends BaseNode>> index = new HashMap<>();
+        Set<String> ambiguous = new HashSet<>();
+        for (Class<? extends BaseNode> nodeClass : scanAllNodeClasses()) {
+            for (String id : idsOf(nodeClass)) {
+                Class<? extends BaseNode> existing = index.putIfAbsent(id, nodeClass);
+                if (existing != null && existing != nodeClass) {
+                    ambiguous.add(id);
+                }
+            }
+        }
+        for (String id : ambiguous) {
+            index.remove(id);
+            log.warn("Node type id \"{}\" is claimed by more than one node class; it will fall back to class-name resolution", id);
+        }
+        return index;
+    }
+
+    /** The ids that should resolve to {@code nodeClass}: its simple name, plus any {@code @Node.Type} value/aliases. */
+    private static List<String> idsOf(Class<? extends BaseNode> nodeClass) {
+        List<String> ids = new ArrayList<>();
+        ids.add(nodeClass.getSimpleName());
+        Node.Type type = nodeClass.getAnnotation(Node.Type.class);
+        if (type != null) {
+            if (!type.value().isBlank()) {
+                ids.add(type.value());
+            }
+            for (String alias : type.aliases()) {
+                if (!alias.isBlank()) {
+                    ids.add(alias);
+                }
+            }
+        }
+        return ids;
+    }
+
+    /** Every concrete {@link BaseNode} subclass on the classpath under {@link #BASE_PACKAGE}, including {@code @Node.Disabled} ones. */
+    private static List<Class<? extends BaseNode>> scanAllNodeClasses() {
+        List<Class<? extends BaseNode>> classes = new ArrayList<>();
+        String basePath = BASE_PACKAGE.replace('.', '/');
+        try {
+            Enumeration<URL> roots = Thread.currentThread().getContextClassLoader().getResources(basePath);
+            while (roots.hasMoreElements()) {
+                URL root = roots.nextElement();
+                if ("file".equals(root.getProtocol())) {
+                    scanDirectory(new File(root.toURI()), BASE_PACKAGE, classes);
+                } else if ("jar".equals(root.getProtocol())) {
+                    scanJar(root, basePath, classes);
+                }
+            }
+        } catch (IOException | URISyntaxException e) {
+            log.error("Failed to scan for node classes under {}", BASE_PACKAGE, e);
+        }
+        return classes;
     }
 
     /** Creates a fresh instance of a discovered node class via its no-arg constructor, or null if that fails. */
@@ -132,7 +244,7 @@ public final class NodeRegistry {
         }
     }
 
-    private static void scanDirectory(File directory, String packageName, List<Entry> out) {
+    private static void scanDirectory(File directory, String packageName, List<Class<? extends BaseNode>> out) {
         File[] files = directory.listFiles();
         if (files == null) {
             return;
@@ -147,7 +259,7 @@ public final class NodeRegistry {
         }
     }
 
-    private static void scanJar(URL jarUrl, String basePath, List<Entry> out) throws IOException {
+    private static void scanJar(URL jarUrl, String basePath, List<Class<? extends BaseNode>> out) throws IOException {
         JarURLConnection connection = (JarURLConnection) jarUrl.openConnection();
         try (JarFile jarFile = connection.getJarFile()) {
             Enumeration<JarEntry> jarEntries = jarFile.entries();
@@ -161,14 +273,14 @@ public final class NodeRegistry {
         }
     }
 
-    private static void tryAdd(String className, List<Entry> out) {
+    /** Loads {@code className} and, if it's a concrete node type, adds it (disabled or not — the disabled filter lives in {@link #discover()}). */
+    private static void tryAdd(String className, List<Class<? extends BaseNode>> out) {
         try {
             Class<?> type = Class.forName(className, false, Thread.currentThread().getContextClassLoader());
-            if (BaseNode.class.isAssignableFrom(type) && !type.isInterface() && !Modifier.isAbstract(type.getModifiers())
-                    && !type.isAnnotationPresent(Node.Disabled.class)) {
+            if (BaseNode.class.isAssignableFrom(type) && !type.isInterface() && !Modifier.isAbstract(type.getModifiers())) {
                 @SuppressWarnings("unchecked")
                 Class<? extends BaseNode> nodeClass = (Class<? extends BaseNode>) type;
-                out.add(new Entry(nodeClass, categoryOf(nodeClass), displayNameOf(nodeClass)));
+                out.add(nodeClass);
             }
         } catch (ClassNotFoundException | NoClassDefFoundError e) {
             log.warn("Skipping unloadable class {}: {}", className, e);

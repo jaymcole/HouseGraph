@@ -461,6 +461,46 @@ class GraphFileIOTest {
         assertEquals(0, dataEdge.targetVariableIndex());
     }
 
+    // --- Stable type identity and format version -----------------------------------------------
+
+    @Test
+    void nodeTypeIsWrittenAsItsStableIdAndTheRootIsVersioned() {
+        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0, 0)), List.of(), List.of()));
+
+        assertEquals(GraphFileIO.CURRENT_VERSION, json.getInt("version"), "the root carries the current format version");
+        assertEquals("AddNode", json.getJSONArray("nodes").getJSONObject(0).getString("type"),
+                "a node is identified by its stable type id (the simple class name), not its fully-qualified name");
+    }
+
+    @Test
+    void aSaveIdentifyingANodeByStableIdLoads() {
+        JSONObject node = nodeJson(AddNode.class, new JSONArray(), new JSONArray());
+        node.put("type", "AddNode"); // the stable id a new save writes
+        JSONObject root = new JSONObject();
+        root.put("version", GraphFileIO.CURRENT_VERSION);
+        root.put("nodes", new JSONArray(List.of(node)));
+        root.put("dataEdges", new JSONArray());
+        root.put("flowEdges", new JSONArray());
+
+        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        assertTrue(loaded.nodes().get(0).node() instanceof AddNode, "a stable-id type resolves back to its class");
+    }
+
+    @Test
+    void aLegacyFileWithAFullyQualifiedTypeAndNoVersionStillLoads() {
+        // Pre-#2 saves stored the fully-qualified class name and had no "version" key.
+        JSONObject node = nodeJson(AddNode.class, new JSONArray(), new JSONArray()); // type = FQCN
+        JSONObject root = new JSONObject();
+        root.put("nodes", new JSONArray(List.of(node)));
+        root.put("dataEdges", new JSONArray());
+        root.put("flowEdges", new JSONArray());
+
+        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        assertTrue(loaded.nodes().get(0).node() instanceof AddNode,
+                "a fully-qualified class name still resolves and a missing version loads as legacy");
+    }
+
     private static JSONObject nodeJson(Class<? extends BaseNode> type, JSONArray inputs, JSONArray outputs) {
         JSONObject nodeJson = new JSONObject();
         nodeJson.put("type", type.getName());

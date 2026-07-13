@@ -34,10 +34,13 @@ import java.util.Map;
  * kept free of any JavaFX/GraphCanvas dependency so it can be unit-tested headlessly;
  * {@link #save}/{@link #load} are the thin wrappers that touch an actual canvas.
  * <p>
- * Per node the file stores its {@code type}, canvas {@code x}/{@code y}, its
- * {@code executionPolicy} (see {@link ExecutionPolicy}), its {@code maxConcurrency} and
- * {@code timeoutMillis} (both written only when non-zero), its persistable input/output values,
- * a {@code requiredInputs} entry, and any node-specific {@code state}.
+ * The root carries a {@code version} (see {@link #CURRENT_VERSION}) and a {@link #migrate} seam for
+ * future structural format changes. Per node the file stores its {@code type} — a stable type id
+ * ({@link NodeRegistry#persistentTypeId}, decoupled from the class name so moving/renaming a node
+ * class doesn't strand old saves), canvas {@code x}/{@code y}, its {@code executionPolicy} (see
+ * {@link ExecutionPolicy}), its {@code maxConcurrency} and {@code timeoutMillis} (both written only
+ * when non-zero), its persistable input/output values, a {@code requiredInputs} entry, and any
+ * node-specific {@code state}.
  * <p>
  * <b>Ports are persisted by name, not position.</b> A node's {@code inputs}/{@code outputs} are
  * written as {@code {name, value}} objects (computed and secret values are omitted — see
@@ -63,6 +66,17 @@ public final class GraphFileIO {
 
     private static final Logger log = Log.get(GraphFileIO.class);
 
+    /**
+     * The save-format version this build writes (stamped at the root as {@code "version"}). A file
+     * with no {@code version} key predates versioning and is read as {@link #LEGACY_VERSION}. Bump
+     * this when a change can't be handled by the shape-sniffing forgiving reads below, and add the
+     * corresponding step to {@link #migrate}.
+     */
+    static final int CURRENT_VERSION = 1;
+
+    /** The version assumed for a save file that has no {@code version} key (written before versioning). */
+    static final int LEGACY_VERSION = 0;
+
     private GraphFileIO() {
     }
 
@@ -87,7 +101,7 @@ public final class GraphFileIO {
         for (ClipboardNode entry : snapshotNodes) {
             BaseNode node = entry.node();
             JSONObject nodeJson = new JSONObject();
-            nodeJson.put("type", node.getClass().getName());
+            nodeJson.put("type", NodeRegistry.persistentTypeId(node.getClass()));
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
             nodeJson.put("executionPolicy", node.getExecutionPolicy().name());
@@ -137,6 +151,7 @@ public final class GraphFileIO {
         }
 
         JSONObject root = new JSONObject();
+        root.put("version", CURRENT_VERSION);
         root.put("nodes", nodesJson);
         root.put("dataEdges", dataEdgesJson);
         root.put("flowEdges", flowEdgesJson);
@@ -144,6 +159,9 @@ public final class GraphFileIO {
     }
 
     static GraphSnapshot fromJson(JSONObject root) {
+        int version = root.optInt("version", LEGACY_VERSION);
+        root = migrate(root, version);
+
         List<ClipboardNode> nodes = new ArrayList<>();
         JSONArray nodesJson = root.getJSONArray("nodes");
         for (int i = 0; i < nodesJson.length(); i++) {
@@ -224,6 +242,29 @@ public final class GraphFileIO {
         }
 
         return new GraphSnapshot(nodes, dataEdges, flowEdges);
+    }
+
+    /**
+     * Upgrades a save file's JSON from {@code version} to {@link #CURRENT_VERSION}, returning the
+     * (possibly transformed) root. The single seam for structural format migrations that the
+     * shape-sniffing forgiving reads elsewhere can't express.
+     * <p>
+     * There are no such migrations yet — every shipped format (positional values, name-keyed values,
+     * class-name and type-id node identity) is read directly by the loaders below regardless of
+     * version — so this currently passes the root through unchanged after logging anything newer than
+     * it understands. When you introduce one, add a step here (typically a {@code while (version <
+     * CURRENT_VERSION)} ladder that transforms and bumps) and bump {@link #CURRENT_VERSION}.
+     *
+     * @param root    the parsed save file
+     * @param version the file's declared version ({@link #LEGACY_VERSION} if it had none)
+     * @return the root at the current version
+     */
+    private static JSONObject migrate(JSONObject root, int version) {
+        if (version > CURRENT_VERSION) {
+            log.warn("Save file version {} is newer than this build understands ({}); loading it as-is",
+                    version, CURRENT_VERSION);
+        }
+        return root;
     }
 
     /** The node at {@code index} in a snapshot list, or null if out of range or a placeholder slot. */

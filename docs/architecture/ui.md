@@ -151,8 +151,9 @@ JSON shape:
 
 ```jsonc
 {
+  "version": 1,                    // save-format version; absent = a pre-versioning (legacy) file
   "nodes": [
-    { "type": "<fully-qualified class name>",
+    { "type": "<stable type id>",  // NodeRegistry.persistentTypeId: simple class name, or a @Node.Type id
       "x": 0.0, "y": 0.0,
       "executionPolicy": "QUEUE",  // DROP | RESTART | QUEUE | PARALLEL; absent = QUEUE
       "inputs":  [ { "name": "V1", "value": 3.0 }, ... ],  // keyed by port name, not position
@@ -171,6 +172,17 @@ JSON shape:
 
 Key rules to preserve when editing this format:
 
+- **Nodes are identified by a stable type id, not a class name.** `type` is
+  `NodeRegistry.persistentTypeId` — the node's simple class name by default (which
+  already survives moving the class between packages/category folders), or an explicit
+  `@Node.Type` id. On load `NodeRegistry.resolveClass` matches it against the id index
+  (simple names + `@Node.Type` ids/aliases) and falls back to fully-qualified-class-name
+  resolution for older saves. This is what keeps a renamed or relocated node class from
+  stranding existing graphs.
+- **The root is versioned.** `version` (`GraphFileIO.CURRENT_VERSION`) stamps the
+  format; a file without it reads as legacy. `GraphFileIO.migrate` is the single seam for
+  future structural migrations the shape-sniffing reads can't express — bump the version
+  and add a step there together.
 - **Ports are persisted by name, not position.** Values are `{name, value}` objects
   matched to inputs by name on load; a data/flow edge references its variable/port by
   **name** when that name is non-blank and unique on the node, else by positional
