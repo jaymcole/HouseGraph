@@ -31,6 +31,16 @@ converter is registered for the `(output, input)` type pair in `TypeConverters`.
 pair); the UI's `GraphCanvas.isValidConnection` mirrors it for the drag-time
 highlight. Both call `TypeConverters.isCompatible(from, to)`.
 
+**One data edge per input.** `attachEdge` also enforces cardinality: an input
+`NodeVariable` is fed by **at most one** data edge, so a node pulls each input
+through a single, unambiguous source (two edges into one input would make
+`propagateValue`'s last-writer-wins order nondeterministic). A second edge into an
+occupied input throws `IllegalStateException`; rewiring means *replace* — remove the
+existing edge, then add the new one (the UI's `GraphCanvas.createEdge` does this
+before registering, and the load path drops any extra edge per-edge rather than
+stacking). Re-registering the identical edge is idempotent. Outputs are unconstrained
+— one output may fan out to many inputs.
+
 `TypeConverters` (in `graph/`, so it stays headless) ships a built-in matrix that
 interconverts `Integer`, `Double`, `Float`, and `Boolean` in both directions.
 Additional converters can be registered on the fly via
