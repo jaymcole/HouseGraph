@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -35,7 +36,7 @@ public class JoinNode extends BaseNode implements NodeContentProvider {
     private Label countLabel;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         // Pure control-flow barrier: nothing to compute. Reaching here means every branch arrived.
     }
 

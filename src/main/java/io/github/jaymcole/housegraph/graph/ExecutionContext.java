@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 /**
  * Per-run execution state, isolated from every other concurrent run.
@@ -72,9 +73,27 @@ public final class ExecutionContext {
     /** Arrival counts at flow-join nodes this run, so a join fires only once all its branches have arrived. */
     private final Map<BaseNode, AtomicInteger> joinArrivals = new ConcurrentHashMap<>();
 
+    /**
+     * Whether this run has been cancelled — a superseding {@link ExecutionPolicy#RESTART} at its
+     * entry node. Defaults to never-cancelled (a synchronous {@code resolve} pull has no run behind
+     * it); a {@link NodeGraph.Run} points this at its own cancellation token. Read from firing
+     * threads via {@link ProcessContext}, so kept {@code volatile}.
+     */
+    private volatile BooleanSupplier cancellationSignal = () -> false;
+
     /** The context bound to the calling thread, or null if none (then {@link NodeVariable} uses authored values). */
     static ExecutionContext current() {
         return CURRENT.get();
+    }
+
+    /** Points this run's cancellation at {@code signal} (a {@link NodeGraph.Run}'s token). */
+    void setCancellationSignal(BooleanSupplier signal) {
+        this.cancellationSignal = signal;
+    }
+
+    /** Whether this run has been cancelled; consulted by {@link ProcessContext#isCancelled()}. */
+    boolean isCancelled() {
+        return cancellationSignal.getAsBoolean();
     }
 
     NodeProcessingStatus statusOf(BaseNode node) {

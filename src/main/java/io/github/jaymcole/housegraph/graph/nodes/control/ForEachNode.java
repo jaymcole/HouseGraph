@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -43,7 +44,7 @@ public class ForEachNode extends BaseNode {
     private final FlowPort completedPort = new FlowPort("Completed", FlowPort.Direction.OUT);
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         List<?> items = list.getValue();
         if (items != null) {
             for (int i = 0; i < items.size(); i++) {

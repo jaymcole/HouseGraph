@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.resource;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -34,7 +35,7 @@ public class EchoListenerNode extends BaseNode implements NodeContentProvider {
     private Subscription subscription;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         // The value is set from the incoming event just before execute() is called;
         // there's nothing to compute here.
     }

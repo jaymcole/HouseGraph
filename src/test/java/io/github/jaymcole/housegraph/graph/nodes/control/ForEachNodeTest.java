@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowEdge;
@@ -144,7 +145,7 @@ class ForEachNodeTest {
         final List<Integer> indices = Collections.synchronizedList(new ArrayList<>());
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             processCount.incrementAndGet();
             items.add(item.getValue());
             indices.add(idx.getValue());
@@ -171,7 +172,7 @@ class ForEachNodeTest {
         final AtomicInteger processCount = new AtomicInteger();
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             processCount.incrementAndGet();
         }
 

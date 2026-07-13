@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.converters;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -13,7 +14,7 @@ public class IntegerToStringNode extends BaseNode {
 
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         out.setValue(in.getValue().toString());
     }
 

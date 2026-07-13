@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.converters;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +25,7 @@ class ListToStringNodeTest {
         ListToStringNode node = new ListToStringNode();
         setInput(node, List.of("fox squirrel (87%)", "acorn (4%)", "wood (2%)"));
 
-        node.process();
+        node.process(ProcessContext.uncancelled());
 
         assertEquals("fox squirrel (87%)\nacorn (4%)\nwood (2%)", output(node));
     }
@@ -34,7 +35,7 @@ class ListToStringNodeTest {
         ListToStringNode node = new ListToStringNode();
         setInput(node, List.of("only"));
 
-        node.process();
+        node.process(ProcessContext.uncancelled());
 
         assertEquals("only", output(node));
     }
@@ -43,12 +44,12 @@ class ListToStringNodeTest {
     void emptyOrNullListYieldsEmptyString() {
         ListToStringNode empty = new ListToStringNode();
         setInput(empty, List.of());
-        empty.process();
+        empty.process(ProcessContext.uncancelled());
         assertEquals("", output(empty));
 
         ListToStringNode nul = new ListToStringNode();
         setInput(nul, null);
-        nul.process();
+        nul.process(ProcessContext.uncancelled());
         assertEquals("", output(nul));
     }
 
@@ -57,7 +58,7 @@ class ListToStringNodeTest {
         ListToStringNode node = new ListToStringNode();
         setInput(node, Arrays.asList(1, null, true));
 
-        node.process();
+        node.process(ProcessContext.uncancelled());
 
         assertEquals("1\nnull\ntrue", output(node));
     }

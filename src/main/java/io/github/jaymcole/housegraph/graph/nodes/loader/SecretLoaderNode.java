@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.loader;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -36,7 +37,7 @@ public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
     private String selectedKey;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         value.setValue(selectedKey == null ? null : resolve(selectedKey));
     }
 

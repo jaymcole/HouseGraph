@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.camera;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.camera.ReolinkClient;
 import io.github.jaymcole.housegraph.camera.ReolinkClient.DetectionState;
@@ -54,7 +55,7 @@ public class CameraMotionStatusNode extends BaseNode implements NodeContentProvi
     }
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         DetectionState state = camera.withHost(host ->
                 ReolinkClient.poll(host, username.getValue(), password.getValue(), channelValue(), 5));
         detectionState.setValue(state);

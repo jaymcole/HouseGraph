@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.ui.io;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
@@ -366,7 +367,7 @@ class GraphFileIOTest {
         final NodeVariable<String> secret = new NodeVariable<>("Secret", String.class, true).markSecret();
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
         }
 
         @Override
@@ -385,7 +386,7 @@ class GraphFileIOTest {
         final NodeVariable<Float> value = new NodeVariable<>("Value", Float.class);
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
         }
 
         @Override

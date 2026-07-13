@@ -20,7 +20,7 @@ class RequiredInputTest {
         final NodeVariable<Float> optional = new NodeVariable<>("Optional", Float.class, true);
         final NodeVariable<Float> out = new NodeVariable<>("Out", Float.class);
 
-        @Override public void process() { }
+        @Override public void process(ProcessContext ctx) { }
         @Override public void configureInputs() { addInput(required); addInput(optional); }
         @Override public void configureOutputs() { addOutput(out); }
     }
@@ -28,7 +28,7 @@ class RequiredInputTest {
     private static class SourceNode extends BaseNode {
         final NodeVariable<Float> out = new NodeVariable<>("Out", Float.class);
 
-        @Override public void process() { }
+        @Override public void process(ProcessContext ctx) { }
         @Override public void configureInputs() { }
         @Override public void configureOutputs() { addOutput(out); }
     }

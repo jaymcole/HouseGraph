@@ -101,7 +101,11 @@ mid-cascade gate never contends.
   subtree tracking and cancellation scoping and interacts with joins/reconvergence — a possible
   future extension, deliberately out of scope here.
 - **RESTART is cooperative** at both scopes — it interrupts, it doesn't forcibly kill a `process()`,
-  and mid-cascade it doesn't retract already-scheduled downstream from the superseded activation.
+  and mid-cascade it doesn't retract already-scheduled downstream from the superseded activation. A
+  node that wants to bail promptly polls its `ProcessContext` (`ctx.checkCancelled()`), which reports
+  the run's cancellation even for a CPU-bound loop with no interruptible call (entry-scope RESTART
+  cancels the run's token but does not interrupt the thread); a node that never checks stops only at
+  the next node boundary.
 
 ## Where it lives
 

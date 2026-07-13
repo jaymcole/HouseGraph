@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.discord;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.DiscordReply;
 import io.github.jaymcole.housegraph.graph.BaseNode;
@@ -22,7 +23,7 @@ public class DiscordReplyNode extends BaseNode {
     private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         DiscordReply handle = reply.getValue();
         String text = message.getValue();
         if (handle != null && text != null) {

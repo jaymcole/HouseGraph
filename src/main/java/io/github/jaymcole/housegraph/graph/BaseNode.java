@@ -170,7 +170,21 @@ public abstract class BaseNode {
         return graph;
     }
 
-    public abstract void process();
+    /**
+     * The node's actual work, run once per pass after its inputs have been resolved. Read inputs and
+     * write outputs through the node's {@link NodeVariable}s (directly, or via {@code ctx}); branch
+     * with {@link #activate(FlowPort)} and loop with {@link #runFlowBranchToCompletion}.
+     * <p>
+     * The {@link ProcessContext} adds cooperative <b>cancellation</b> — a long-running or looping
+     * {@code process()} should poll {@link ProcessContext#checkCancelled()} so a superseding
+     * {@link ExecutionPolicy#RESTART} or an elapsed {@link #getTimeoutMillis() timeout} can stop it
+     * (without it, cancellation only takes effect between nodes) — plus null-safe input reads
+     * ({@link ProcessContext#get(NodeVariable, Object)}). A node that ignores {@code ctx} entirely
+     * still runs correctly; a throwing {@code process()} is caught and marks the node FAILED.
+     *
+     * @param ctx this invocation's context: cancellation checks and null-safe value accessors
+     */
+    public abstract void process(ProcessContext ctx);
     public abstract void configureInputs();
     public abstract void configureOutputs();
 

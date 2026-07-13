@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -26,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 /**
  * Owns a set of {@link BaseNode}s and the {@link Edge}/{@link FlowEdge} connections
@@ -589,8 +591,11 @@ public class NodeGraph {
      * once — a run blocks here until one is free, so its firing stays pending and the graph isn't
      * considered idle meanwhile. The timeout (if any) schedules a watchdog that interrupts this
      * thread if {@code process()} overruns, marking the node {@code FAILED} with a
-     * {@link TimeoutException}; it's cooperative, so a {@code process()} that ignores interruption
-     * won't actually stop (same limitation as {@link ExecutionPolicy#RESTART}).
+     * {@link TimeoutException}. Cancellation (this timeout, or a superseding {@link
+     * ExecutionPolicy#RESTART}) is cooperative: the engine interrupts the thread and exposes the
+     * cancelled state through the {@link ProcessContext} handed to {@code process()}, so a node that
+     * polls {@link ProcessContext#checkCancelled()} — or a blocking call that honours interruption —
+     * stops promptly, while a {@code process()} that does neither runs to completion regardless.
      */
     private void runProcess(ExecutionContext context, BaseNode node) {
         Semaphore limiter = node.concurrencyLimiter();
@@ -609,8 +614,15 @@ public class NodeGraph {
             }, timeoutMillis, TimeUnit.MILLISECONDS);
         }
 
+        // The node's cooperative-cancellation view: its run being superseded (RESTART), its timeout
+        // firing, or its thread being interrupted. Polling this is the only way a CPU-bound process()
+        // can be stopped — the engine's own cancellation checks only fire between nodes.
+        BooleanSupplier cancelled = () ->
+                timedOut.get() || context.isCancelled() || Thread.currentThread().isInterrupted();
+        ProcessContext processContext = new ProcessContext(cancelled);
+
         try {
-            node.process();
+            node.process(processContext);
             if (timedOut.get()) {
                 // process() returned but the watchdog had already fired (it swallowed the interrupt).
                 throw new TimeoutException(node.getName() + " exceeded its " + timeoutMillis + " ms timeout");
@@ -618,12 +630,20 @@ public class NodeGraph {
             setStatus(context, node, NodeProcessingStatus.SUCCESS);
             node.setLastError(null);
         } catch (Exception e) {
+            // A plain cancellation (a superseding RESTART or node removal asked this run to stop, and
+            // the node cooperated by bailing out of process()) is expected, not a failure: record the
+            // incomplete status but log it quietly rather than as an error.
+            boolean cancelledNotTimedOut = e instanceof CancellationException && !timedOut.get();
             Throwable error = timedOut.get() && !(e instanceof TimeoutException)
                     ? new TimeoutException(node.getName() + " exceeded its " + timeoutMillis + " ms timeout")
                     : e;
             setStatus(context, node, NodeProcessingStatus.FAILED);
             node.setLastError(error);
-            log.error("Node \"{}\" failed to process: {}", node.getName(), error);
+            if (cancelledNotTimedOut) {
+                log.debug("Node \"{}\" processing was cancelled", node.getName());
+            } else {
+                log.error("Node \"{}\" failed to process: {}", node.getName(), error);
+            }
         } finally {
             if (watchdog != null) {
                 watchdog.cancel(false);
@@ -755,6 +775,9 @@ public class NodeGraph {
 
         Run(Runnable onComplete) {
             this.onComplete = onComplete;
+            // A node's process() sees this run's cancellation (a superseding RESTART) through its
+            // ProcessContext, which reads it off the context; point the context at this run's token.
+            context.setCancellationSignal(token::isCancelled);
         }
 
         PassToken token() {

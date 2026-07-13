@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.object;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
@@ -29,7 +30,7 @@ class ObjectDecomposerNodeTest {
         }
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
         }
 
         @Override

@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.control;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -22,7 +23,7 @@ public class IfNode extends BaseNode {
     private final FlowPort falsePort = new FlowPort("False", FlowPort.Direction.OUT);
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         Float value = condition.getValue();
         boolean truthy = value != null && value != 0f;
         activate(truthy ? truePort : falsePort);

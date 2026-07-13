@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.viewers;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -21,7 +22,7 @@ public class TextViewerNode extends BaseNode implements NodeContentProvider {
     private Label valueLabel;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
     }
 
     @Override

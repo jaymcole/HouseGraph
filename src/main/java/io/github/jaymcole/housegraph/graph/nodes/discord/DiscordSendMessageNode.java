@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.discord;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.discord.DiscordBot;
 import io.github.jaymcole.housegraph.graph.BaseNode;
@@ -33,7 +34,7 @@ public class DiscordSendMessageNode extends BaseNode implements NodeContentProvi
     private String resourceName;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
         String text = message.getValue();
         String channelId = channel.getValue();
         if (resourceName == null || channelId == null || channelId.isBlank() || text == null) {

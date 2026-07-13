@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -162,7 +163,7 @@ class NodeGraphTest {
         }
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             started.countDown();
             try {
                 assertTrue(release.await(2, TimeUnit.SECONDS), "test never released the blocking node");
@@ -338,7 +339,7 @@ class NodeGraphTest {
         Edge lastRemoved;
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
         }
 
         @Override
@@ -395,7 +396,7 @@ class NodeGraphTest {
         final NodeVariable<String> out = new NodeVariable<>("Out", String.class);
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
         }
 
         @Override
@@ -419,7 +420,7 @@ class NodeGraphTest {
         final List<String> received = Collections.synchronizedList(new ArrayList<>());
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             received.add(in.getValue());
         }
 
@@ -490,7 +491,7 @@ class NodeGraphTest {
         }
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
         }
 
         @Override
@@ -527,7 +528,7 @@ class NodeGraphTest {
         List<String> optionNames = List.of("a");
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
         }
 
         @Override
@@ -628,7 +629,7 @@ class NodeGraphTest {
         }
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             processCount.incrementAndGet();
             entered.countDown();
             try {
@@ -743,7 +744,7 @@ class NodeGraphTest {
         final CountDownLatch ran = new CountDownLatch(1);
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             processCount.incrementAndGet();
             ran.countDown();
         }
@@ -819,7 +820,7 @@ class NodeGraphTest {
         }
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             try {
                 Thread.sleep(millis);
             } catch (InterruptedException e) {
@@ -1065,7 +1066,7 @@ class NodeGraphTest {
         }
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             processCount.incrementAndGet();
             started.countDown();
             try {
@@ -1090,6 +1091,152 @@ class NodeGraphTest {
         }
     }
 
+    // --- Cooperative cancellation through ProcessContext ----------------------------------------
+
+    @Test
+    void cooperativeCancellationStopsACpuBoundNodeThatPollsTheContext() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        BusyLoopNode loop = new BusyLoopNode();
+        loop.setTimeoutMillis(150); // the cancellation source: the watchdog trips ctx.isCancelled()
+
+        graph.addNode(trigger);
+        graph.addNode(loop);
+        graph.registerFlowEdge(flowEdge(trigger, loop));
+
+        long startNanos = System.nanoTime();
+        trigger.execute();
+        graph.awaitIdle();
+        long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000;
+
+        // The loop never blocks, so thread interruption alone could not have stopped it - only its
+        // polling of ProcessContext.isCancelled() could. This is the capability that did not exist
+        // before process() received a context.
+        assertTrue(loop.observedCancellation.get(),
+                "the busy loop observed cancellation through the ProcessContext and stopped");
+        assertEquals(NodeProcessingStatus.FAILED, loop.getStatus(), "a timed-out node ends FAILED");
+        assertTrue(loop.getLastError() instanceof TimeoutException, "reported as a TimeoutException");
+        assertTrue(elapsedMillis < 5000,
+                "the node stopped promptly rather than spinning its full safety cap (took " + elapsedMillis + " ms)");
+    }
+
+    @Test
+    void restartCancellationIsObservableInsideProcessThroughTheContext() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        trigger.setExecutionPolicy(ExecutionPolicy.RESTART);
+        CountDownLatch release = new CountDownLatch(1);
+        ReleasableLoopNode loop = new ReleasableLoopNode(release);
+
+        graph.addNode(trigger);
+        graph.addNode(loop);
+        graph.registerFlowEdge(flowEdge(trigger, loop));
+
+        trigger.execute(); // run 1: enters the loop, not yet cancelled
+        assertTrue(loop.started.await(2, TimeUnit.SECONDS), "run 1 should reach the loop node");
+        trigger.execute(); // RESTART cancels run 1's token synchronously (an entry RESTART does not interrupt the thread)
+
+        // Run 1 can only notice it was superseded by polling the context; wait for it to do so before
+        // releasing, so run 1 exits via cancellation rather than the release meant for run 2.
+        awaitTrue(loop.observedCancellation, "run 1 should observe its cancellation through the context");
+        release.countDown(); // let the restarted run 2 (a fresh, uncancelled token) finish
+        graph.awaitIdle();
+
+        assertTrue(loop.observedCancellation.get(), "the in-flight run saw the RESTART through the context");
+        assertEquals(2, loop.processCount.get(), "the cancelled run and the restart both ran the node");
+    }
+
+    /**
+     * Burns CPU in a non-interruptible loop, exiting only when it observes {@link ProcessContext}
+     * cancellation - so it can be stopped solely through the context, never by thread interruption.
+     */
+    private static final class BusyLoopNode extends BaseNode {
+        final AtomicBoolean observedCancellation = new AtomicBoolean(false);
+
+        @Override
+        public void process(ProcessContext ctx) {
+            // A safety cap so a regression fails the test instead of hanging the suite; the expected
+            // exit is the cancellation check, reached long before this deadline.
+            long safetyDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!ctx.isCancelled() && System.nanoTime() < safetyDeadline) {
+                long spinUntil = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(5);
+                while (System.nanoTime() < spinUntil) {
+                    // burn a slice without ever blocking, so interruption alone would not stop us
+                }
+            }
+            if (ctx.isCancelled()) {
+                observedCancellation.set(true);
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+    }
+
+    /** Loops until it either observes context cancellation (recording it) or is released - for the RESTART test. */
+    private static final class ReleasableLoopNode extends BaseNode {
+        final CountDownLatch started = new CountDownLatch(1);
+        final CountDownLatch release;
+        final AtomicBoolean observedCancellation = new AtomicBoolean(false);
+        final AtomicInteger processCount = new AtomicInteger();
+
+        ReleasableLoopNode(CountDownLatch release) {
+            this.release = release;
+        }
+
+        @Override
+        public void process(ProcessContext ctx) {
+            processCount.incrementAndGet();
+            started.countDown();
+            while (true) {
+                if (ctx.isCancelled()) { // checked before the release so a cancelled run exits via cancellation
+                    observedCancellation.set(true);
+                    return;
+                }
+                try {
+                    if (release.await(20, TimeUnit.MILLISECONDS)) {
+                        return;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+    }
+
+    /** Spins until {@code flag} is true (or fails after 2s). */
+    private static void awaitTrue(AtomicBoolean flag, String message) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (!flag.get()) {
+            assertTrue(System.nanoTime() < deadline, message + " (timed out after 2s)");
+            Thread.sleep(5);
+        }
+    }
+
     /** Spins until {@code counter} reaches {@code target} (or fails after 2s) - for observing an async mid-cascade run. */
     private static void awaitAtLeast(AtomicInteger counter, int target) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
@@ -1111,7 +1258,7 @@ class NodeGraphTest {
         }
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             processCount.incrementAndGet();
             started.countDown();
             try {
@@ -1145,7 +1292,7 @@ class NodeGraphTest {
         final AtomicInteger processCount = new AtomicInteger();
 
         @Override
-        public void process() {
+        public void process(ProcessContext ctx) {
             processCount.incrementAndGet();
         }
 

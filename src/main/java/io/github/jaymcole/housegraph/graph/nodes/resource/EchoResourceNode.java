@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.resource;
 
+import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
@@ -41,7 +42,7 @@ public class EchoResourceNode extends BaseNode implements NodeContentProvider {
     private Label statusLabel;
 
     @Override
-    public void process() {
+    public void process(ProcessContext ctx) {
     }
 
     @Override
