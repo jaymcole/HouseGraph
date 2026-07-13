@@ -177,8 +177,8 @@ class GraphFileIOTest {
                 List.of(new ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
 
         JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
-        assertEquals("visible", outputs.get(0), "a manually-authored value is still written");
-        assertTrue(outputs.isNull(1), "the secret's slot is null even though it's authored");
+        assertEquals("visible", entryByName(outputs, "Plain").get("value"), "a manually-authored value is still written");
+        assertTrue(entryByName(outputs, "Secret").isNull("value"), "the secret's value is null even though it's authored");
         assertFalse(json.toString().contains("TOP_SECRET"), "the secret value must appear nowhere in the file");
     }
 
@@ -194,7 +194,7 @@ class GraphFileIOTest {
                 List.of(new ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
 
         JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
-        assertTrue(outputs.isNull(0), "a computed value is not written to disk");
+        assertTrue(entryByName(outputs, "Value").isNull("value"), "a computed value is not written to disk");
         assertFalse(json.toString().toLowerCase().contains("infinity"), "no non-finite number reaches the file");
     }
 
@@ -354,6 +354,138 @@ class GraphFileIOTest {
         GraphSnapshot loaded = GraphFileIO.fromJson(root);
         assertTrue(loaded.nodes().get(0).node().getInputs().get(0).isRequired(),
                 "a missing requiredInputs key must leave the author default (required) intact");
+    }
+
+    // --- Name-keyed port identity (resilience to reorder) and its back-compat ------------------
+
+    @Test
+    void valuesAndEdgesBindByNameRegardlessOfSavedOrder() {
+        // A save whose AddNode inputs are listed in the opposite order to the node's actual port
+        // order, with a data edge pointing at "V2" by name. Name-keying must bind each value and the
+        // edge to the right port regardless of position - the whole point of the format. (A purely
+        // positional format would put V2's value on V1 and wire the edge to the wrong input.)
+        JSONObject constant = nodeJson(ConstantFloatNode.class,
+                new JSONArray(),
+                new JSONArray(List.of(valueEntry("out", 5.0))));
+        JSONObject add = nodeJson(AddNode.class,
+                new JSONArray(List.of(valueEntry("V2", 2.0), valueEntry("V1", 1.0))), // reversed vs. configure order
+                new JSONArray(List.of(valueEntry("Sum", JSONObject.NULL))));
+
+        JSONObject edge = new JSONObject();
+        edge.put("sourceNode", 0);
+        edge.put("sourceVariable", "out");
+        edge.put("targetNode", 1);
+        edge.put("targetVariable", "V2");
+
+        JSONObject root = new JSONObject();
+        root.put("nodes", new JSONArray(List.of(constant, add)));
+        root.put("dataEdges", new JSONArray(List.of(edge)));
+        root.put("flowEdges", new JSONArray());
+
+        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+
+        BaseNode addNode = loaded.nodes().get(1).node();
+        assertEquals(1.0f, addNode.getInputs().get(0).getValue(), "V1's value binds by name, not by saved position");
+        assertEquals(2.0f, addNode.getInputs().get(1).getValue(), "V2's value binds by name, not by saved position");
+
+        ClipboardDataEdge dataEdge = loaded.dataEdges().get(0);
+        assertEquals(0, dataEdge.sourceVariableIndex(), "\"out\" resolves to the constant's output index");
+        assertEquals(1, dataEdge.targetVariableIndex(), "\"V2\" resolves to AddNode's second input regardless of order");
+    }
+
+    @Test
+    void namedEndpointsAreWrittenByNameAndUnnamedFlowPortsByIndex() {
+        AddNode source = new AddNode();
+        AddNode target = new AddNode();
+        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(source, 0, 0), new ClipboardNode(target, 0, 0)),
+                List.of(new ClipboardDataEdge(0, 0, 1, 1, List.of())),   // Sum -> V2
+                List.of(new ClipboardFlowEdge(0, 0, 1, 0, List.of()))));  // the single unnamed flow ports
+
+        JSONObject dataEdge = json.getJSONArray("dataEdges").getJSONObject(0);
+        assertEquals("Sum", dataEdge.get("sourceVariable"), "a named output is referenced by name");
+        assertEquals("V2", dataEdge.get("targetVariable"), "a named input is referenced by name");
+
+        JSONObject flowEdge = json.getJSONArray("flowEdges").getJSONObject(0);
+        assertEquals(0, flowEdge.get("sourcePort"), "an unnamed single flow port falls back to its index");
+        assertEquals(0, flowEdge.get("targetPort"));
+    }
+
+    @Test
+    void anEdgeWhoseNamedEndpointNoLongerExistsIsDroppedNotMiswired() {
+        JSONObject constant = nodeJson(ConstantFloatNode.class,
+                new JSONArray(), new JSONArray(List.of(valueEntry("out", 5.0))));
+        JSONObject add = nodeJson(AddNode.class,
+                new JSONArray(List.of(valueEntry("V1", JSONObject.NULL), valueEntry("V2", JSONObject.NULL))),
+                new JSONArray(List.of(valueEntry("Sum", JSONObject.NULL))));
+
+        JSONObject edge = new JSONObject();
+        edge.put("sourceNode", 0);
+        edge.put("sourceVariable", "out");
+        edge.put("targetNode", 1);
+        edge.put("targetVariable", "Renamed"); // a port that no longer exists on AddNode
+
+        JSONObject root = new JSONObject();
+        root.put("nodes", new JSONArray(List.of(constant, add)));
+        root.put("dataEdges", new JSONArray(List.of(edge)));
+        root.put("flowEdges", new JSONArray());
+
+        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        assertTrue(loaded.dataEdges().isEmpty(), "an edge to a vanished named port is dropped, not attached to the wrong input");
+    }
+
+    @Test
+    void legacyPositionalSaveStillLoads() {
+        // A pre-name-keying file: bare scalar value arrays and integer edge references.
+        JSONObject constant = nodeJson(ConstantFloatNode.class,
+                new JSONArray(), new JSONArray(List.of(5.0)));
+        JSONObject add = nodeJson(AddNode.class,
+                new JSONArray(List.of(JSONObject.NULL, JSONObject.NULL)),
+                new JSONArray(List.of(JSONObject.NULL)));
+
+        JSONObject edge = new JSONObject();
+        edge.put("sourceNode", 0);
+        edge.put("sourceVariable", 0);
+        edge.put("targetNode", 1);
+        edge.put("targetVariable", 0);
+
+        JSONObject root = new JSONObject();
+        root.put("nodes", new JSONArray(List.of(constant, add)));
+        root.put("dataEdges", new JSONArray(List.of(edge)));
+        root.put("flowEdges", new JSONArray());
+
+        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        assertEquals(5f, loaded.nodes().get(0).node().getOutputs().get(0).getValue(), "a legacy scalar value loads positionally");
+        ClipboardDataEdge dataEdge = loaded.dataEdges().get(0);
+        assertEquals(0, dataEdge.sourceVariableIndex());
+        assertEquals(0, dataEdge.targetVariableIndex());
+    }
+
+    private static JSONObject nodeJson(Class<? extends BaseNode> type, JSONArray inputs, JSONArray outputs) {
+        JSONObject nodeJson = new JSONObject();
+        nodeJson.put("type", type.getName());
+        nodeJson.put("x", 0.0);
+        nodeJson.put("y", 0.0);
+        nodeJson.put("inputs", inputs);
+        nodeJson.put("outputs", outputs);
+        return nodeJson;
+    }
+
+    private static JSONObject valueEntry(String name, Object value) {
+        JSONObject entry = new JSONObject();
+        entry.put("name", name);
+        entry.put("value", value);
+        return entry;
+    }
+
+    private static JSONObject entryByName(JSONArray entries, String name) {
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject entry = entries.getJSONObject(i);
+            if (name.equals(entry.optString("name", null))) {
+                return entry;
+            }
+        }
+        throw new IllegalArgumentException("No value entry named " + name);
     }
 
     private static GraphSnapshot roundTrip(GraphSnapshot snapshot) {
