@@ -286,6 +286,51 @@ class NodeGraphTest {
     }
 
     @Test
+    void anInputAcceptsAtMostOneDataEdge() {
+        NodeGraph graph = new NodeGraph();
+        ConstantFloatNode a = new ConstantFloatNode();
+        ConstantFloatNode b = new ConstantFloatNode();
+        AddNode add = new AddNode();
+        graph.addNode(a);
+        graph.addNode(b);
+        graph.addNode(add);
+
+        Edge first = new Edge(a, output(a), add, input(add, "V1"));
+        graph.registerEdge(first);
+
+        // A second edge into the same input is rejected: the engine keeps propagation unambiguous.
+        Edge second = new Edge(b, output(b), add, input(add, "V1"));
+        assertThrows(IllegalStateException.class, () -> graph.registerEdge(second));
+
+        // A different input on the same node is unaffected, and re-registering the very same edge is a no-op.
+        assertDoesNotThrow(() -> graph.registerEdge(new Edge(b, output(b), add, input(add, "V2"))));
+        assertDoesNotThrow(() -> graph.registerEdge(first));
+    }
+
+    @Test
+    void anInputCanBeRewiredAfterItsEdgeIsRemoved() {
+        NodeGraph graph = new NodeGraph();
+        ConstantFloatNode a = new ConstantFloatNode();
+        ConstantFloatNode b = new ConstantFloatNode();
+        AddNode add = new AddNode();
+        graph.addNode(a);
+        graph.addNode(b);
+        graph.addNode(add);
+        output(a).setValue(1f);
+        output(b).setValue(2f);
+
+        Edge first = new Edge(a, output(a), add, input(add, "V1"));
+        graph.registerEdge(first);
+        graph.removeEdge(first);
+        // Replacing (remove then add) is how a rewire is done; the new edge is the single source now.
+        Edge replacement = new Edge(b, output(b), add, input(add, "V1"));
+        assertDoesNotThrow(() -> graph.registerEdge(replacement));
+
+        add.beginProcessing();
+        assertEquals(2f, output(add).getValue(), "the input resolves through its one current edge");
+    }
+
+    @Test
     void assignableButNotExactTypesAreAccepted() {
         NodeGraph graph = new NodeGraph();
         ConstantFloatNode constant = new ConstantFloatNode();

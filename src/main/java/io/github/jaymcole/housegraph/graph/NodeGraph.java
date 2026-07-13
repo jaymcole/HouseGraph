@@ -300,6 +300,18 @@ public class NodeGraph {
                     "Cannot connect a " + edge.getSourceVariable().type.getSimpleName() + " output to a "
                             + edge.getTargetVariable().type.getSimpleName() + " input");
         }
+        // Cardinality gate: an input is fed by at most one data edge, so a value is pulled through a
+        // single, unambiguous source (multiple edges into one input would make propagateValue's
+        // last-writer-wins order nondeterministic). Callers that mean to rewire replace, not stack:
+        // remove the existing edge first (the UI's GraphCanvas.createEdge does exactly this). A
+        // re-register of the very same edge is idempotent and allowed.
+        for (Edge existing : incomingDataEdges.getOrDefault(edge.getTargetNode(), Collections.emptySet())) {
+            if (existing != edge && existing.getTargetVariable() == edge.getTargetVariable()) {
+                throw new IllegalStateException(
+                        "Input \"" + edge.getTargetVariable().name + "\" on " + edge.getTargetNode().getName()
+                                + " is already fed by a data edge; remove it before wiring another");
+            }
+        }
         boolean added = addToSet(outgoingDataEdges, edge.getSourceNode(), edge);
         addToSet(incomingDataEdges, edge.getTargetNode(), edge);
         return added;
