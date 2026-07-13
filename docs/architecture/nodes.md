@@ -137,8 +137,14 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
   appear. The folder name becomes its menu category.
 - `@Node.Disabled` hides a class from the menu but keeps it *loadable*, so a graph
   saved while a node type was enabled still opens after it's disabled.
-- `resolveClass(name)` maps a saved fully-qualified class name back to a loadable
-  node type; `instantiate(class)` builds one via its no-arg constructor;
+- **Save-file identity is a stable type id, not the class name.** `persistentTypeId(class)`
+  is what a save stores: the **simple class name** by default (so moving a node between
+  category folders/packages doesn't strand old graphs), or an explicit `@Node.Type("id")`.
+  Declare `@Node.Type` only to survive a class *rename* — pin the id older saves already
+  hold, or list the old id/class name in its `aliases`. `resolveClass(id)` maps a saved id
+  back to its class through an index of every type's ids (simple names + `@Node.Type`
+  ids/aliases), falling back to fully-qualified-class-name resolution for pre-id saves.
+- `instantiate(class)` builds one via its no-arg constructor;
   `duplicate(source)` clones a node for copy/paste by copying input/output values
   positionally (no per-type `clone()` needed, since `configure*` always builds the
   same list shape for a given class). It carries across **only persistent values**

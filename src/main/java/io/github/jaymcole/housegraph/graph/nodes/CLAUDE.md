@@ -49,6 +49,9 @@ Then, as needed:
   `transientValue()`.
 - Hide a work-in-progress or deprecated node from the menu with `@Node.Disabled`
   (it stays loadable for old saves).
+- A save identifies a node by its **simple class name** by default, so moving a node
+  between category folders is safe. **Renaming** the class strands old saves unless you
+  pin the old id with `@Node.Type("OldName")` (or list it in its `aliases`).
 - Add a test mirroring the existing node tests.
 
 **Adding a brand-new category folder? Note it in

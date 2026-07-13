@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.graph;
 
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
+import io.github.jaymcole.housegraph.graph.nodes.debug.DisabledNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import io.github.jaymcole.housegraph.graph.nodes.loader.SecretLoaderNode;
@@ -11,9 +12,52 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NodeRegistryTest {
+
+    // --- Stable save-file type identity ---------------------------------------------------------
+
+    @Test
+    void persistentTypeIdDefaultsToSimpleClassName() {
+        assertEquals("AddNode", NodeRegistry.persistentTypeId(AddNode.class),
+                "an unannotated node persists under its simple class name (decoupled from its package)");
+    }
+
+    @Test
+    void persistentTypeIdUsesAnExplicitNodeTypeValue() {
+        assertEquals("disabled-fixture", NodeRegistry.persistentTypeId(DisabledNode.class),
+                "a @Node.Type value overrides the simple-class-name default");
+    }
+
+    @Test
+    void resolveClassBySimpleName() {
+        assertSame(AddNode.class, NodeRegistry.resolveClass("AddNode"),
+                "the simple class name is the default persisted id and resolves back");
+    }
+
+    @Test
+    void resolveClassByFullyQualifiedNameStillWorksForOldSaves() {
+        assertSame(AddNode.class, NodeRegistry.resolveClass(AddNode.class.getName()),
+                "a pre-type-id save stored the class name; it must still resolve via the fallback");
+    }
+
+    @Test
+    void resolveClassByExplicitTypeIdAndAlias() {
+        // A @Node.Type node resolves by its id and by any alias - the path that keeps old saves
+        // loading after a class is renamed. DisabledNode is disabled yet still indexed, on purpose.
+        assertSame(DisabledNode.class, NodeRegistry.resolveClass("disabled-fixture"), "resolves by its @Node.Type id");
+        assertSame(DisabledNode.class, NodeRegistry.resolveClass("legacy.disabled.fixture.id"), "resolves by an alias");
+        assertSame(DisabledNode.class, NodeRegistry.resolveClass("DisabledNode"), "still resolves by its simple name too");
+    }
+
+    @Test
+    void resolveClassReturnsNullForAnUnknownType() {
+        assertNull(NodeRegistry.resolveClass("com.example.NotARealNode"));
+        assertNull(NodeRegistry.resolveClass("no-such-id"));
+        assertNull(NodeRegistry.resolveClass(null));
+    }
 
     @Test
     void discoversKnownNodeClasses() {
