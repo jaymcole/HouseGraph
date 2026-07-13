@@ -155,14 +155,15 @@ JSON shape:
     { "type": "<fully-qualified class name>",
       "x": 0.0, "y": 0.0,
       "executionPolicy": "QUEUE",  // DROP | RESTART | QUEUE | PARALLEL; absent = QUEUE
-      "inputs":  [ /* positional; null where not persistent */ ],
-      "outputs": [ /* positional; computed values written as null */ ],
+      "inputs":  [ { "name": "V1", "value": 3.0 }, ... ],  // keyed by port name, not position
+      "outputs": [ { "name": "Sum", "value": null }, ... ], // computed values written as null
+      "requiredInputs": [ "V1" ],  // names of required inputs; absent when none are
       "state":   { /* optional saveState() map */ } }
   ],
-  "dataEdges": [ { "sourceNode": 0, "sourceVariable": 0,
-                   "targetNode": 1, "targetVariable": 0,
+  "dataEdges": [ { "sourceNode": 0, "sourceVariable": "Sum",   // variable by name (or index, see below)
+                   "targetNode": 1, "targetVariable": "V1",
                    "waypoints": [ {"x":..,"y":..} ] } ],
-  "flowEdges": [ { "sourceNode": 0, "sourcePort": 0,
+  "flowEdges": [ { "sourceNode": 0, "sourcePort": "True",      // port by name, or 0 for an unnamed one
                    "targetNode": 1, "targetPort": 0,
                    "waypoints": [ ... ] } ]
 }
@@ -170,16 +171,26 @@ JSON shape:
 
 Key rules to preserve when editing this format:
 
+- **Ports are persisted by name, not position.** Values are `{name, value}` objects
+  matched to inputs by name on load; a data/flow edge references its variable/port by
+  **name** when that name is non-blank and unique on the node, else by positional
+  **index** (the fallback for the unnamed single flow port most nodes have). This is
+  what lets a node author reorder or insert a port without mis-binding old saves —
+  the failure mode of the earlier positional format. `requiredInputs` is likewise a
+  list of required-input *names*.
 - **Only persistent values are written** (`NodeVariable.isPersistentValue`);
   computed/secret/transient values are `null`, keeping stale data and secrets out
-  of files. Null slots are still written so positional load stays aligned.
+  of files.
 - **`state` is loaded before ports are touched**, so dynamic-port nodes rebuild
   their ports from state before values are applied.
-- **Backward compatibility:** unknown node types load as an index-preserving
-  placeholder with a warning (rather than failing the load); missing
-  `waypoints`/`sourcePort`/`targetPort` default sensibly so older saves still open,
-  and a missing/unknown `executionPolicy` loads as `QUEUE`. When you change the
-  format, keep this forgiving-read behavior and document the new fields.
+- **Backward compatibility:** the old **positional** shape still loads — bare scalar
+  `inputs`/`outputs` arrays, integer edge references, and a positional
+  `requiredInputs` boolean array are all detected by JSON shape and read positionally.
+  Unknown node types load as an index-preserving placeholder with a warning (rather
+  than failing the load); missing `waypoints`/`sourcePort`/`targetPort` default
+  sensibly, and a missing/unknown `executionPolicy` loads as `QUEUE`. An edge whose
+  named endpoint no longer resolves on its node is dropped rather than mis-wired. When
+  you change the format, keep this forgiving-read behavior and document the new fields.
 - **Skipped nodes hold their index slot.** A save-file node that can't be rebuilt
   (an unknown type) is kept in the loaded node list as a `ClipboardNode` with a
   `null` node, so it does **not** shift every later node's index. Without this, a
