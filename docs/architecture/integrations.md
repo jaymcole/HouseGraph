@@ -104,17 +104,52 @@ package (`web/`) holds the machinery and `graph.nodes.web` holds the node.
   `start(root, name, port)` binds the socket and joins the multicast group (call it
   off the UI thread); `stop()` tears both halves down and is idempotent. If mDNS
   fails, `start` unwinds the HTTP server so it's all-or-nothing.
-- **`WebServerNode`** (`graph/nodes/web/`) — the resource node. Website name,
-  directory (chosen with a Browse… button), and port are authored inline and
-  persisted via `saveState` — a **directory path, never the files** (the site is
-  served live from disk). Liveness is user-driven (Start/Stop, off the UI thread),
-  and it registers its `LocalWebServer` in `ResourceRegistry` under the site name;
-  torn down in `onRemoved()`. Follows the `DiscordBotNode` resource pattern — see
-  [resources.md](resources.md).
+- **`WebServerNode`** (`graph/nodes/web/`) — the node. Website name, directory
+  (chosen with a Browse… button), and port are authored inline and persisted via
+  `saveState` — a **directory path, never the files** (the site is served live from
+  disk). Liveness is user-driven (Start/Stop, off the UI thread), and it registers
+  its `LocalWebServer` in `ResourceRegistry` under the site name; torn down in
+  `onRemoved()`. It also has a **`Store` data input** — see below.
+
+### Server-side storage for the hosted site (`/api/data`)
+
+A static site can't persist shared state on its own. Wire a **data-store node**
+(`graph/nodes/loader/DataStoreNode`, backed by `store/JsonDocumentStore`) into the
+web-server node's **`Store` input**, and `LocalWebServer` mounts a small JSON API
+beside the files so the page can read/write server-side, shared-across-devices data:
+
+- `GET /api/data` → the current JSON document; `PUT /api/data` → replace it
+  (body bounded to 1 MiB → `413` past that, `400` for non-JSON).
+- `HttpServer` longest-prefix routing sends `/api/data` to the API handler and
+  everything else to the static-file handler. Because the API is the **same
+  origin** as the page, browser `fetch()` needs no CORS setup.
+- **The store arrives on a data edge, not by name** — a deliberate choice so the
+  dependency is visible on the canvas (see the note in [resources.md](resources.md)).
+  Data is pulled, and the server isn't flow-driven, so the node pulls the `Store`
+  input **once at Start**: `beginProcessing()` resolves the edge and `process()`
+  captures the `JsonDocumentStore` handle (the resolved value only lives in the run's
+  overlay, readable inside `process()`). Re-wiring therefore takes effect on the next
+  Start, like the other settings. `LocalWebServer` itself depends only on a narrow
+  `DocumentApi` seam; with nothing wired the site is static-only and `/api/data`
+  answers `503`.
+- **Sharing is by wiring _or_ by name.** Fan one data-store node's output out to several
+  web-server nodes and they share the store. Two data-store nodes with the **same name**
+  also share it: a store is keyed by its name to a file, and `DocumentStores` vends one
+  `JsonDocumentStore` instance per file, so same-name nodes get the *same* consistent
+  handle (not two objects racing on one file). `JsonDocumentStore` is thread-safe, so
+  concurrent writes are safe (last-write-wins on the whole document).
+- **The name is the store's recoverable identity.** The document lives at
+  `AppDirectories.dataStore(<name>)/document.json`. Because the key is the user's name and
+  not an opaque id, the data survives the node: delete and recreate with the same name and
+  the document is still there. Renaming just points the node at a different store; the old
+  one stays on disk under its name (reachable via the node's **Open folder** button) and
+  returns if you type its name again. The default name is `store`, so even a never-renamed
+  node recovers its data on recreate. See [storage-and-secrets.md](storage-and-secrets.md).
 
 **No secrets** — the server hosts public static files and touches nothing in
-`SecretsStore`. Note the served directory is exposed on the LAN while running; the
-traversal guard keeps requests inside that directory.
+`SecretsStore`. Note the served directory (and the data store, if wired) is exposed
+on the LAN while running; the traversal guard keeps file requests inside the served
+directory.
 
 ## Local ML inference (`ml/`, nodes in `graph/nodes/ml/`)
 

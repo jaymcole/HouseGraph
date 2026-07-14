@@ -54,6 +54,14 @@ Action and trigger nodes on the other side use `find(name, …)` to call the
 resource, or `subscribe(name, …)` to react to its events — see the
 `graph/nodes/discord/` and `graph/nodes/resource/` nodes.
 
+> **Not everything long-lived is a registry resource.** Where a connection is genuinely
+> point-to-point, a plain **data edge** is clearer than a name lookup — the wire shows the
+> dependency on the canvas. The data-store node is the example: it hands its
+> `JsonDocumentStore` to a web-server node over its `Store` output edge rather than
+> registering by name (see [integrations.md](integrations.md)). Reach for the registry when a
+> resource is *broadcast* — referenced from many places, or by trigger nodes that may not
+> exist yet — not merely because it's long-lived.
+
 ## Related: `SlashCommandRegistry` (declaration before connection)
 
 `SlashCommandRegistry` is a separate name-keyed registry showing the same

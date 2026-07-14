@@ -16,3 +16,17 @@ Gradle doesn't compile it, exactly like the `squirrel_status/` firmware next doo
 The page shows the URL it was served from and the load time, and it loads a
 stylesheet and a script — so a correct render confirms HTML, CSS, and JS all serve
 with the right content types. Edit any file and refresh to see live changes.
+
+## Trying the shared data store
+
+The page also has a **Shared notes** box backed by the web server's
+`/api/data` endpoint. To enable it:
+
+1. Add a **Data Store** node (it's under the loader category).
+2. **Wire its `Store` output into the Web Server node's `Store` input**, then Start.
+3. Reload the page — type something, Save, and open the page on another device: the
+   same text is there. It's persisted on the host (under HouseGraph's app data),
+   so it also survives restarts.
+
+If nothing is wired into the `Store` input, the API returns `503` and the notes box
+shows a hint instead — the rest of the page still works.

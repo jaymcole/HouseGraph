@@ -19,8 +19,18 @@ The single source of truth for on-disk locations. One root per platform:
 
 Under it, a subdirectory per purpose, each created on demand: `secrets()`,
 `nodes()` (+ `nodeStorage(key)` for per-node private storage, with the key
-sanitized so it can't escape the folder), `saves()`, `config()`, `cache()`,
-`logs()` (the `housegraph.log` file — see [logging.md](logging.md)).
+sanitized so it can't escape the folder), `saves()`, `dataStores()` (+
+`dataStore(name)` for a named store's folder), `config()`, `cache()`, `logs()`
+(the `housegraph.log` file — see [logging.md](logging.md)).
+
+An example: a **data-store** node (`graph/nodes/loader/`) persists its JSON document
+to `dataStore(<name>)/document.json` — i.e. `data-stores/<name>/document.json`.
+Keyed by a **user-chosen name, not an opaque id**, deliberately: the data is then
+recoverable (deleting the node and recreating one with the same name reopens the
+existing document, rather than stranding it under an id you can never retype). This
+is **runtime user data written outside the graph save** — the same discipline as
+computed values: the `.json` save holds authored config, not the store's contents.
+See [integrations.md](integrations.md).
 
 - Use the shared instance: `AppDirectories.get().secrets()`, etc.
 - The root can be overridden with the `housegraph.home` system property or the

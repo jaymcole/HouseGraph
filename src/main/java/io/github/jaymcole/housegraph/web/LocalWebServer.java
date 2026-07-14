@@ -8,7 +8,9 @@ import io.github.jaymcole.housegraph.logging.Logger;
 
 import javax.jmdns.JmDNS;
 import javax.jmdns.ServiceInfo;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.DatagramSocket;
 import java.net.Inet4Address;
@@ -16,6 +18,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Enumeration;
@@ -58,10 +61,12 @@ public final class LocalWebServer {
      * @param root the directory of static files to serve (must be an existing directory)
      * @param name the mDNS host/service name; the site becomes reachable at {@code http://name.local:port/}
      * @param port the TCP port to listen on
+     * @param api  an optional JSON-document API to mount at {@code /api/data}; {@code null}
+     *             serves static files only
      * @throws IOException              if the port can't be bound or mDNS can't start
      * @throws IllegalArgumentException if {@code root} is not an existing directory or {@code name} is blank
      */
-    public void start(Path root, String name, int port) throws IOException {
+    public void start(Path root, String name, int port, DocumentApi api) throws IOException {
         if (root == null || !Files.isDirectory(root)) {
             throw new IllegalArgumentException("Website directory does not exist: " + root);
         }
@@ -71,7 +76,7 @@ public final class LocalWebServer {
         Path base = root.toAbsolutePath().normalize();
 
         synchronized (lock) {
-            bindHttpLocked(base, port);
+            bindHttpLocked(base, port, api);
 
             // Advertise <name>.local (A record) and an _http._tcp service on the same name.
             // JmDNS bound with the host name answers A queries for "<name>.local".
@@ -93,30 +98,36 @@ public final class LocalWebServer {
 
     /**
      * Package-visible seam for tests: starts only the static-file HTTP server (no mDNS,
-     * which needs multicast and is environment-dependent) on an ephemeral port, and
-     * returns the actual bound port.
+     * which needs multicast and is environment-dependent) on an ephemeral port, mounting
+     * {@code api} at {@code /api/data} if non-null, and returns the actual bound port.
      */
-    int startHttpForTest(Path root, int port) throws IOException {
+    int startHttpForTest(Path root, int port, DocumentApi api) throws IOException {
         if (root == null || !Files.isDirectory(root)) {
             throw new IllegalArgumentException("Website directory does not exist: " + root);
         }
         Path base = root.toAbsolutePath().normalize();
         synchronized (lock) {
-            bindHttpLocked(base, port);
+            bindHttpLocked(base, port, api);
             return httpServer.getAddress().getPort();
         }
     }
 
     /**
      * Binds and starts the HTTP server on the wildcard address (so both localhost and the
-     * LAN can reach it), serving {@code base}. Caller holds {@link #lock}.
+     * LAN can reach it), serving {@code base}. If {@code api} is non-null it's mounted at
+     * {@code /api/data}; because that's a longer path prefix than {@code /}, the server
+     * routes API requests there and everything else to the static files. Caller holds
+     * {@link #lock}.
      */
-    private void bindHttpLocked(Path base, int port) throws IOException {
+    private void bindHttpLocked(Path base, int port, DocumentApi api) throws IOException {
         if (httpServer != null) {
             throw new IllegalStateException("Server already running");
         }
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/", new StaticFileHandler(base));
+        if (api != null) {
+            server.createContext("/api/data", new DocumentApiHandler(api));
+        }
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         server.setExecutor(executor);
         server.start();
@@ -284,5 +295,86 @@ public final class LocalWebServer {
                 Map.entry("txt", "text/plain; charset=utf-8"),
                 Map.entry("woff", "font/woff"),
                 Map.entry("woff2", "font/woff2"));
+    }
+
+    /**
+     * Bridges HTTP to a {@link DocumentApi} at {@code /api/data}: {@code GET} returns the
+     * JSON document, {@code PUT}/{@code POST} replaces it (body bounded by
+     * {@link #MAX_BODY_BYTES}). Store errors map to status codes — 503 if the store isn't
+     * available, 400 for invalid JSON, 413 for an oversized body.
+     */
+    private static final class DocumentApiHandler implements HttpHandler {
+
+        /** Reject request bodies larger than this, so "won't be much" stays honest. */
+        private static final int MAX_BODY_BYTES = 1024 * 1024;
+
+        private final DocumentApi api;
+
+        DocumentApiHandler(DocumentApi api) {
+            this.api = api;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            // Note: no try-with-resources here — it would close the exchange before the catch
+            // blocks run, so an error response sent from a catch would reach a closed exchange.
+            // Close in finally, after any handler has written its response.
+            try {
+                switch (exchange.getRequestMethod()) {
+                    case "GET" -> respond(exchange, 200, "application/json; charset=utf-8",
+                            api.read().getBytes(StandardCharsets.UTF_8));
+                    case "PUT", "POST" -> handleWrite(exchange);
+                    default -> {
+                        exchange.getResponseHeaders().set("Allow", "GET, PUT");
+                        respondText(exchange, 405, "Method Not Allowed");
+                    }
+                }
+            } catch (IllegalStateException storeUnavailable) {
+                respondText(exchange, 503, "Data store not available");
+            } catch (IllegalArgumentException badJson) {
+                respondText(exchange, 400, badJson.getMessage());
+            } catch (RuntimeException unexpected) {
+                log.error("Data API error: {}", unexpected);
+                respondText(exchange, 500, "Internal Server Error");
+            } finally {
+                exchange.close();
+            }
+        }
+
+        private void handleWrite(HttpExchange exchange) throws IOException {
+            byte[] body = readLimited(exchange.getRequestBody());
+            if (body == null) {
+                respondText(exchange, 413, "Payload Too Large");
+                return;
+            }
+            api.write(new String(body, StandardCharsets.UTF_8));
+            exchange.sendResponseHeaders(204, -1); // No Content
+        }
+
+        /** Reads the body up to the cap; returns {@code null} if it would exceed it. */
+        private static byte[] readLimited(InputStream in) throws IOException {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = in.read(chunk)) != -1) {
+                if (buffer.size() + read > MAX_BODY_BYTES) {
+                    return null;
+                }
+                buffer.write(chunk, 0, read);
+            }
+            return buffer.toByteArray();
+        }
+
+        private static void respondText(HttpExchange exchange, int status, String message) throws IOException {
+            respond(exchange, status, "text/plain; charset=utf-8", message.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private static void respond(HttpExchange exchange, int status, String contentType, byte[] body) throws IOException {
+            exchange.getResponseHeaders().set("Content-Type", contentType);
+            exchange.sendResponseHeaders(status, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        }
     }
 }

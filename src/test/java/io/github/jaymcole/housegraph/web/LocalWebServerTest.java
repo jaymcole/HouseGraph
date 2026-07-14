@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.web;
 
+import io.github.jaymcole.housegraph.store.JsonDocumentStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -8,6 +9,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -35,7 +37,11 @@ class LocalWebServerTest {
     }
 
     private void serve(Path root) throws IOException {
-        port = server.startHttpForTest(root, 0);
+        port = server.startHttpForTest(root, 0, null);
+    }
+
+    private void serve(Path root, DocumentApi api) throws IOException {
+        port = server.startHttpForTest(root, 0, api);
     }
 
     @Test
@@ -84,9 +90,102 @@ class LocalWebServerTest {
         Files.deleteIfExists(secret);
     }
 
+    @Test
+    void apiGetReturnsEmptyDocumentAsJson(@TempDir Path site, @TempDir Path data) throws IOException {
+        Files.writeString(site.resolve("index.html"), "hi");
+        serve(site, storeApi(data.resolve("document.json")));
+
+        HttpURLConnection conn = get("/api/data");
+        assertEquals(200, conn.getResponseCode());
+        assertTrue(conn.getContentType().startsWith("application/json"), conn.getContentType());
+        assertEquals("{}", body(conn));
+    }
+
+    @Test
+    void apiPutStoresDocumentThenGetReturnsIt(@TempDir Path site, @TempDir Path data) throws IOException {
+        Files.writeString(site.resolve("index.html"), "hi");
+        serve(site, storeApi(data.resolve("document.json")));
+
+        HttpURLConnection put = send("PUT", "/api/data", "{\"note\":\"hello\"}");
+        assertEquals(204, put.getResponseCode());
+
+        assertEquals("{\"note\":\"hello\"}", body(get("/api/data")));
+    }
+
+    @Test
+    void apiPutRejectsInvalidJsonWith400(@TempDir Path site, @TempDir Path data) throws IOException {
+        Files.writeString(site.resolve("index.html"), "hi");
+        serve(site, storeApi(data.resolve("document.json")));
+
+        assertEquals(400, send("PUT", "/api/data", "not json").getResponseCode());
+    }
+
+    @Test
+    void apiUnsupportedMethodIs405(@TempDir Path site, @TempDir Path data) throws IOException {
+        Files.writeString(site.resolve("index.html"), "hi");
+        serve(site, storeApi(data.resolve("document.json")));
+
+        assertEquals(405, send("DELETE", "/api/data", null).getResponseCode());
+    }
+
+    @Test
+    void apiReturns503WhenStoreUnavailable(@TempDir Path site) throws IOException {
+        Files.writeString(site.resolve("index.html"), "hi");
+        serve(site, new DocumentApi() {
+            @Override
+            public String read() {
+                throw new IllegalStateException("no store");
+            }
+
+            @Override
+            public void write(String json) {
+                throw new IllegalStateException("no store");
+            }
+        });
+
+        assertEquals(503, get("/api/data").getResponseCode());
+    }
+
+    @Test
+    void staticFilesStillServeAlongsideApi(@TempDir Path site, @TempDir Path data) throws IOException {
+        Files.writeString(site.resolve("index.html"), "<h1>hi</h1>");
+        serve(site, storeApi(data.resolve("document.json")));
+
+        assertEquals("<h1>hi</h1>", body(get("/")));
+    }
+
+    /** A real store-backed API, so these double as integration coverage of {@link JsonDocumentStore}. */
+    private static DocumentApi storeApi(Path file) {
+        JsonDocumentStore store = new JsonDocumentStore(file);
+        return new DocumentApi() {
+            @Override
+            public String read() {
+                return store.get();
+            }
+
+            @Override
+            public void write(String json) {
+                store.set(json);
+            }
+        };
+    }
+
     private HttpURLConnection get(String path) throws IOException {
         URI uri = URI.create("http://localhost:" + port + path);
         return (HttpURLConnection) uri.toURL().openConnection();
+    }
+
+    private HttpURLConnection send(String method, String path, String requestBody) throws IOException {
+        URI uri = URI.create("http://localhost:" + port + path);
+        HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
+        conn.setRequestMethod(method);
+        if (requestBody != null) {
+            conn.setDoOutput(true);
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(requestBody.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        return conn;
     }
 
     private static String body(HttpURLConnection conn) throws IOException {

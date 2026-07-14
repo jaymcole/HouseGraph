@@ -30,6 +30,20 @@
             <code>app.js</code>) are served live — edit one, refresh, and the change
             shows up. Try visiting <code>/style.css</code> directly to confirm assets load.
         </p>
+
+        <section class="notes">
+            <h2>Shared notes</h2>
+            <p class="hint">
+                Backed by a <strong>Data Store</strong> node via <code>/api/data</code>.
+                Type something, Save, then open this page on another device — the same text
+                is there. It's persisted on the host, so it survives restarts too.
+            </p>
+            <textarea id="notes" placeholder="Loading…" disabled></textarea>
+            <div class="row">
+                <button id="save" disabled>Save</button>
+                <span id="notes-status" class="muted">—</span>
+            </div>
+        </section>
     </main>
 
     <script src="app.js"></script>

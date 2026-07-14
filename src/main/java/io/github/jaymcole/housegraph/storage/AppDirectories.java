@@ -114,6 +114,28 @@ public final class AppDirectories {
     }
 
     /**
+     * Root of the persistent per-store documents; see {@link #dataStore(String)}.
+     *
+     * @return the data-stores root, created if needed
+     */
+    public Path dataStores() {
+        return ensure(root.resolve("data-stores"));
+    }
+
+    /**
+     * A persistent storage directory for one named data store, under {@link #dataStores()}.
+     * A store is addressed by a <em>human-chosen name</em> (sanitised to a single safe path
+     * segment) rather than an opaque id, so its data is recoverable: recreating a store with
+     * the same name reopens the existing document instead of stranding it.
+     *
+     * @param name the user-chosen store name (sanitised to a single safe path segment)
+     * @return the private directory for the named store, created if needed
+     */
+    public Path dataStore(String name) {
+        return ensure(dataStores().resolve(sanitize(name)));
+    }
+
+    /**
      * Preferences / UX state (recent files, window layout, …).
      *
      * @return the config directory, created if needed

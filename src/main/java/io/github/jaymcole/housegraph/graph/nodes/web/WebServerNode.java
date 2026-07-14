@@ -3,10 +3,13 @@ package io.github.jaymcole.housegraph.graph.nodes.web;
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
+import io.github.jaymcole.housegraph.store.JsonDocumentStore;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
+import io.github.jaymcole.housegraph.web.DocumentApi;
 import io.github.jaymcole.housegraph.web.LocalWebServer;
 import javafx.application.Platform;
 import javafx.scene.Node;
@@ -36,6 +39,13 @@ import java.util.Map;
  * files themselves; the site is served live from wherever it lives on disk). The actual
  * bind + mDNS advertisement runs off the UI thread so the app stays responsive, and is
  * torn down on {@link #onRemoved()} (node deleted or app shutdown).
+ * <p>
+ * To give the hosted site shared, persisted storage, wire a {@code DataStoreNode}'s output
+ * into this node's <b>Store</b> data input; the server then exposes it at {@code /api/data}.
+ * The handle is pulled from that edge once, at Start ({@link #beginProcessing()} resolves the
+ * input and {@link #process(io.github.jaymcole.housegraph.graph.ProcessContext)} captures it)
+ * — so changing the wiring takes effect on the next Start, like the other settings. With
+ * nothing wired, the site is served static-only and {@code /api/data} returns 503.
  *
  *
  *
@@ -49,9 +59,14 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
     private static final int DEFAULT_PORT = 8080;
 
     private final LocalWebServer server = new LocalWebServer();
+    private final NodeVariable<JsonDocumentStore> storeInput =
+            new NodeVariable<>("Store", JsonDocumentStore.class);
     private String resourceName = "housegraph";
     private String directory;
     private int port = DEFAULT_PORT;
+
+    /** The store handle captured from the {@code Store} input at Start; null when nothing is wired. */
+    private volatile JsonDocumentStore resolvedStore;
 
     private TextField nameField;
     private TextField directoryField;
@@ -64,10 +79,14 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
 
     @Override
     public void process(ProcessContext ctx) {
+        // Runs during beginProcessing() at Start, with the run's value overlay bound, so this
+        // is the one place the edge-resolved store handle is readable. Capture it for the server.
+        resolvedStore = storeInput.getValue();
     }
 
     @Override
     public void configureInputs() {
+        addInput(storeInput);
     }
 
     @Override
@@ -179,7 +198,9 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
 
         Thread thread = new Thread(() -> {
             try {
-                server.start(root, resourceName, port);
+                // Pull the Store input (if wired) and capture its handle before serving.
+                beginProcessing();
+                server.start(root, resourceName, port, documentApi());
                 Platform.runLater(() -> {
                     statusLabel.setText("Serving at " + server.url());
                     stopButton.setDisable(false);
@@ -200,11 +221,44 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
 
     private void stop() {
         server.stop();
+        resolvedStore = null;
         statusLabel.setText("Stopped");
         setEditingLocked(false);
         startButton.setDisable(false);
         stopButton.setDisable(true);
         copyUrlButton.setDisable(true);
+    }
+
+    /**
+     * The {@code /api/data} bridge to the store captured from the {@code Store} input. Reads the
+     * captured handle live per request; if nothing was wired ({@code resolvedStore == null}) the
+     * endpoint answers 503 (via {@link IllegalStateException}) while static files keep serving.
+     */
+    private DocumentApi documentApi() {
+        return new DocumentApi() {
+            @Override
+            public String read() {
+                return requireStore().get();
+            }
+
+            @Override
+            public void write(String json) {
+                requireStore().set(json);
+            }
+        };
+    }
+
+    private JsonDocumentStore requireStore() {
+        JsonDocumentStore store = resolvedStore;
+        if (store == null) {
+            throw new IllegalStateException("No data store wired into this web server");
+        }
+        return store;
+    }
+
+    /** Test seam: the store handle captured from the {@code Store} input at the last {@link #beginProcessing()}. */
+    JsonDocumentStore resolvedStore() {
+        return resolvedStore;
     }
 
     private void copyUrl() {

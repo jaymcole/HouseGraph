@@ -25,7 +25,8 @@ design idea:
 - Integrations: Discord bots (via JDA), ONVIF/Reolink IP-camera discovery and
   motion detection, an Arduino UNO R4 WiFi LED-matrix device, and a **Web Server**
   node that hosts a directory of static files on the LAN as `<name>.local` (via
-  jmdns multicast DNS).
+  jmdns multicast DNS), optionally with a **Data Store** node giving the hosted site
+  shared, server-side persistence over a `/api/data` endpoint.
 - Local, JVM-native ML inference (via Deep Java Library — no Python): an **Animal
   Classifier** node tells a squirrel from a bird from a frame. Weights download on
   first use and run locally thereafter.
