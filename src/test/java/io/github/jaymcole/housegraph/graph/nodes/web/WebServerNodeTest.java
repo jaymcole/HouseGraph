@@ -10,9 +10,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies the web-server node captures the data-store handle off its {@code Store} data edge
@@ -70,5 +73,21 @@ class WebServerNodeTest {
         web.beginProcessing();
 
         assertNull(web.resolvedStore(), "with nothing wired the server serves static-only");
+    }
+
+    @Test
+    void aStoppedServerWritesNoRunningFlag() {
+        assertFalse(new WebServerNode().saveState().containsKey("running"),
+                "a server that isn't serving must not persist a running flag");
+    }
+
+    @Test
+    void aRunningFlagInSavedStateSchedulesAutoStart() {
+        WebServerNode web = new WebServerNode();
+        assertFalse(web.wasRunning(), "a fresh node has no pending auto-start");
+
+        web.loadState(Map.of("name", "site", "port", "8080", "running", "true"));
+
+        assertTrue(web.wasRunning(), "a graph saved while serving reloads with auto-start pending");
     }
 }

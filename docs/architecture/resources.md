@@ -44,6 +44,13 @@ A resource node is a `BaseNode` that owns a long-lived object. The contract:
   the resource down (close sockets, stop timers). Must be idempotent and safe even
   if the node's UI was never built.
 - **Renaming** re-keys the registry: `unregister(old)` then `register(new)`.
+- **Resuming on load.** Liveness being user-driven doesn't mean it's lost across a
+  restart: a resource node that also implements `AutoStartable` persists whether it
+  was live (a `"running"` flag in its `saveState()`) and reopens the connection
+  automatically when the saved graph is reloaded — the earlier user "Connect" is
+  what's being honored, not the mere presence on the canvas. The resume runs after
+  the whole graph loads (so `onActivated()` and any input edges are already in
+  place). See [ui.md](ui.md#resuming-running-nodes-on-load-autostartable).
 
 `DiscordBotNode` is the canonical implementation — read it alongside this doc. It
 registers a `DiscordBot` under a chosen name, forwards incoming messages/slash

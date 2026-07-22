@@ -186,6 +186,14 @@ the reference, not the value). Dynamic-port nodes persist enough state here to
 rebuild their ports on load *before* values are applied (see `GraphFileIO`, which
 calls `loadState` before touching ports).
 
+A node with a running/stopped lifecycle (a Start/Stop or Connect/Disconnect
+resource) can also persist *whether it was running* here — conventionally a
+`"running"` flag — and implement the UI-layer `AutoStartable` interface to resume
+that state automatically when the graph is reloaded. The persistence is a plain
+`saveState` entry (this section); the resume is a UI concern (it re-runs the
+node's Start path once the whole graph has loaded) and lives in
+[ui.md](ui.md#resuming-running-nodes-on-load-autostartable).
+
 ## Dynamic-port nodes
 
 Some nodes' ports depend on runtime wiring or settings:
