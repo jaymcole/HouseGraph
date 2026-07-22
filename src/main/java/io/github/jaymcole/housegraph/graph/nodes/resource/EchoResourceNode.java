@@ -4,6 +4,7 @@ import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
+import io.github.jaymcole.housegraph.ui.view.AutoStartable;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -15,6 +16,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -27,14 +29,20 @@ import java.util.Map;
  * graph flow (Start/Stop, not a flow trigger), a name others reference, and events that
  * drive execution. Its liveness is user-driven, so it has no ports and does nothing on
  * {@code process()} — it just sits on the canvas being a resource.
+ * <p>
+ * If it was running when the graph was saved, it resumes automatically on load: the running
+ * flag rides along in {@link #saveState()} and {@link #autoStartIfWasRunning()} presses Start
+ * for the user (see {@link AutoStartable}).
  */
 @Display.Name("Echo Resource")
-public class EchoResourceNode extends BaseNode implements NodeContentProvider {
+public class EchoResourceNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     private String resourceName = "echo";
     private Timeline timeline;
     private int counter;
     private boolean running;
+    /** True when this node was running at the moment the loaded graph was saved; drives {@link #autoStartIfWasRunning()}. */
+    private boolean wasRunning;
 
     private TextField nameField;
     private Button startButton;
@@ -55,7 +63,12 @@ public class EchoResourceNode extends BaseNode implements NodeContentProvider {
 
     @Override
     public Map<String, String> saveState() {
-        return Map.of("name", resourceName);
+        Map<String, String> state = new HashMap<>();
+        state.put("name", resourceName);
+        if (running) {
+            state.put("running", "true");
+        }
+        return state;
     }
 
     @Override
@@ -64,6 +77,19 @@ public class EchoResourceNode extends BaseNode implements NodeContentProvider {
         if (name != null && !name.isBlank()) {
             resourceName = name;
         }
+        wasRunning = Boolean.parseBoolean(state.get("running"));
+    }
+
+    @Override
+    public void autoStartIfWasRunning() {
+        if (wasRunning) {
+            start();
+        }
+    }
+
+    /** Test seam: whether the loaded graph had this resource running, i.e. auto-start is pending. */
+    boolean wasRunning() {
+        return wasRunning;
     }
 
     @Override

@@ -8,6 +8,7 @@ import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.store.JsonDocumentStore;
+import io.github.jaymcole.housegraph.ui.view.AutoStartable;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import io.github.jaymcole.housegraph.web.DocumentApi;
 import io.github.jaymcole.housegraph.web.LocalWebServer;
@@ -46,6 +47,10 @@ import java.util.Map;
  * input and {@link #process(io.github.jaymcole.housegraph.graph.ProcessContext)} captures it)
  * — so changing the wiring takes effect on the next Start, like the other settings. With
  * nothing wired, the site is served static-only and {@code /api/data} returns 503.
+ * <p>
+ * If it was serving when the graph was saved, it resumes automatically on load: the running flag
+ * rides along in {@link #saveState()} and {@link #autoStartIfWasRunning()} presses Start for the
+ * user once the graph (including the {@code Store} edge) is fully loaded (see {@link AutoStartable}).
  *
  *
  *
@@ -53,7 +58,7 @@ import java.util.Map;
  *
  */
 @Display.Name("Web Server")
-public class WebServerNode extends BaseNode implements NodeContentProvider {
+public class WebServerNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     private static final Logger log = Log.get(WebServerNode.class);
     private static final int DEFAULT_PORT = 8080;
@@ -67,6 +72,8 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
 
     /** The store handle captured from the {@code Store} input at Start; null when nothing is wired. */
     private volatile JsonDocumentStore resolvedStore;
+    /** True when the server was running at the moment the loaded graph was saved; drives {@link #autoStartIfWasRunning()}. */
+    private boolean wasRunning;
 
     private TextField nameField;
     private TextField directoryField;
@@ -101,6 +108,9 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
             state.put("directory", directory);
         }
         state.put("port", Integer.toString(port));
+        if (server.isRunning()) {
+            state.put("running", "true");
+        }
         return state;
     }
 
@@ -112,6 +122,14 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
         }
         directory = emptyToNull(state.get("directory"));
         port = parsePort(state.get("port"));
+        wasRunning = Boolean.parseBoolean(state.get("running"));
+    }
+
+    @Override
+    public void autoStartIfWasRunning() {
+        if (wasRunning) {
+            start();
+        }
     }
 
     @Override
@@ -259,6 +277,11 @@ public class WebServerNode extends BaseNode implements NodeContentProvider {
     /** Test seam: the store handle captured from the {@code Store} input at the last {@link #beginProcessing()}. */
     JsonDocumentStore resolvedStore() {
         return resolvedStore;
+    }
+
+    /** Test seam: whether the loaded graph had this server running, i.e. auto-start is pending. */
+    boolean wasRunning() {
+        return wasRunning;
     }
 
     private void copyUrl() {

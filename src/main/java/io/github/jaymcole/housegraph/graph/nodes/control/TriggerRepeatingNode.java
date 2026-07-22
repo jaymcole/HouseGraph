@@ -5,6 +5,7 @@ import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.ui.view.AutoStartable;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -15,13 +16,20 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Entry-point node like {@link TriggerNode}, but fires repeatedly on a timer instead
  * of once per click: Start begins calling execute() every Interval seconds, Stop
  * cancels it. Purely a flow source - no data outputs of its own.
+ * <p>
+ * If the timer was running when the graph was saved, it resumes automatically on load: the
+ * running flag rides along in {@link #saveState()} and {@link #autoStartIfWasRunning()} presses
+ * Start for the user (see {@link AutoStartable}).
  */
 @Display.Name("Repeating Trigger")
-public class TriggerRepeatingNode extends BaseNode implements NodeContentProvider {
+public class TriggerRepeatingNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true).required();
 
@@ -31,9 +39,37 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
     private Label statusLabel;
     private int intervalValue;
     private int remainingSeconds;
+    /** True when the timer was running at the moment the loaded graph was saved; drives {@link #autoStartIfWasRunning()}. */
+    private boolean wasRunning;
 
     @Override
     public void process(ProcessContext ctx) {
+    }
+
+    @Override
+    public Map<String, String> saveState() {
+        Map<String, String> state = new HashMap<>();
+        if (timeline != null) {
+            state.put("running", "true");
+        }
+        return state;
+    }
+
+    @Override
+    public void loadState(Map<String, String> state) {
+        wasRunning = Boolean.parseBoolean(state.get("running"));
+    }
+
+    @Override
+    public void autoStartIfWasRunning() {
+        if (wasRunning) {
+            start();
+        }
+    }
+
+    /** Test seam: whether the loaded graph had this timer running, i.e. auto-start is pending. */
+    boolean wasRunning() {
+        return wasRunning;
     }
 
     @Override

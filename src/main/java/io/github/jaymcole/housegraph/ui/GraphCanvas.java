@@ -9,6 +9,7 @@ import io.github.jaymcole.housegraph.ui.command.RemoveNodesCommand;
 import io.github.jaymcole.housegraph.ui.command.SetWaypointsCommand;
 import io.github.jaymcole.housegraph.ui.command.UndoManager;
 import io.github.jaymcole.housegraph.ui.view.AbstractEdgeView;
+import io.github.jaymcole.housegraph.ui.view.AutoStartable;
 import io.github.jaymcole.housegraph.ui.view.ConnectionView;
 import io.github.jaymcole.housegraph.ui.view.EdgeInteractionListener;
 import io.github.jaymcole.housegraph.ui.view.EdgeView;
@@ -1129,11 +1130,31 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * Replaces the canvas's entire contents with a snapshot (e.g. loaded from file).
      * Not itself undoable, and wipes prior undo history - loading a different graph is
      * a new-document boundary, not an edit you'd undo back through.
+     * <p>
+     * After the whole graph is in place — every node built and activated, every edge wired —
+     * any {@link AutoStartable} node that was running when the graph was saved is resumed (its
+     * Start/Connect path re-run). This happens here, not on plain node placement, so it fires
+     * only on a load: paste and undo/redo never auto-start a copied resource.
      */
     public void loadSnapshot(GraphSnapshot snapshot) {
         clearAll();
-        place(snapshot, ClipboardNode::node, 0, 0);
+        List<NodeView> placed = place(snapshot, ClipboardNode::node, 0, 0);
         undoManager.clear();
+        resumeRunningNodes(placed);
+    }
+
+    /**
+     * Resumes any just-loaded node that was running when its graph was saved. Runs after
+     * {@link #place} so the node's {@code onActivated()} and all its incoming edges are already
+     * in place — a node that pulls an input at Start (the web server's {@code Store}) sees its
+     * wiring. Each node decides whether to actually start via {@link AutoStartable#autoStartIfWasRunning()}.
+     */
+    private void resumeRunningNodes(List<NodeView> placed) {
+        for (NodeView nodeView : placed) {
+            if (nodeView.getNode() instanceof AutoStartable autoStartable) {
+                autoStartable.autoStartIfWasRunning();
+            }
+        }
     }
 
     // --- Canvas panning (middle-click) / rubber-band selection (left-click) --------

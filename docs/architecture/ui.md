@@ -15,7 +15,8 @@ ui/
 ├── GraphCanvas.java   the hub (canvas host, drag controller, execution listener)
 ├── view/              NodeView, PortView, FlowPortView, EdgeView, FlowEdgeView,
 │                      AbstractEdgeView, ConnectionView, EdgeAnchor,
-│                      EdgeInteractionListener, ExecutionPolicyIcons, NodeContentProvider
+│                      EdgeInteractionListener, ExecutionPolicyIcons, NodeContentProvider,
+│                      AutoStartable
 ├── editor/            ValueEditors, SecretsEditor
 ├── command/           Command, UndoManager, and every *Command
 ├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
@@ -105,6 +106,30 @@ override `BaseNode.onExecuted()` to push fresh values into whatever you built.
 `DiscordBotNode` is a full example (Connect/Disconnect buttons, status label);
 the interface Javadoc has a minimal one.
 
+## Resuming running nodes on load: `AutoStartable`
+
+A `NodeContentProvider` node with a running/stopped lifecycle — a Start/Stop or
+Connect/Disconnect resource (the repeating trigger, the echo resource, the web
+server, the Discord bot) — can also implement `AutoStartable` so that **a node
+running when the graph was saved resumes automatically when the graph is
+reloaded.** Two halves:
+
+- **Persist the running flag.** The node writes `"running": "true"` into its
+  `saveState()` map while it is live and reads it back in `loadState()`, exactly
+  like any other node config — so it rides the same `state` object in the save
+  format below. Because only save/load carries `state` (copy/paste duplication
+  does not — see `NodeRegistry.duplicate`), a pasted copy of a running node never
+  auto-starts.
+- **Resume on load.** `GraphCanvas.loadSnapshot` calls
+  `AutoStartable.autoStartIfWasRunning()` on each just-loaded node **after** the
+  whole graph — every node placed and activated, every edge wired — is in place.
+  That ordering matters: the node's `onActivated()` has already registered its
+  resource, and its incoming data edges exist, so a node that pulls an input at
+  Start (the web server's `Store`) sees its wiring. The method re-runs the node's
+  normal Start/Connect path (off the FX thread where that path already is), and is
+  a no-op unless the node was running at save time. This fires **only on load** —
+  paste and undo/redo never auto-start a copied resource.
+
 ## Inline value editing: `ValueEditors`
 
 `ValueEditors` maps a type to a parse/format pair. A `NodeVariable` gets an inline
@@ -145,7 +170,9 @@ dialog; until one exists (fresh session that has never saved), it falls back to
 the **Save As…** flow, which always prompts for a destination. **Load** opens a
 file chooser. Saving or loading records the file as the current file and persists
 its path (`AppPreferences.LAST_FILE`) so it reopens on the next launch — which
-also seeds Quick Save's target for a reopened graph.
+also seeds Quick Save's target for a reopened graph. A reopened graph also
+**resumes any node that was running when it was saved** (see
+[`AutoStartable`](#resuming-running-nodes-on-load-autostartable)).
 
 JSON shape:
 
@@ -159,7 +186,7 @@ JSON shape:
       "inputs":  [ { "name": "V1", "value": 3.0 }, ... ],  // keyed by port name, not position
       "outputs": [ { "name": "Sum", "value": null }, ... ], // computed values written as null
       "requiredInputs": [ "V1" ],  // names of required inputs; absent when none are
-      "state":   { /* optional saveState() map */ } }
+      "state":   { /* optional saveState() map, e.g. {"running":"true"} for a live AutoStartable node */ } }
   ],
   "dataEdges": [ { "sourceNode": 0, "sourceVariable": "Sum",   // variable by name (or index, see below)
                    "targetNode": 1, "targetVariable": "V1",
@@ -266,7 +293,7 @@ bootstrap) lives in [logging.md](logging.md) — `LogWindow` is only its UI.
 ---
 
 **When you change this, update…** this file whenever you change canvas
-interactions, add a view type or a `Command`, change the `NodeContentProvider`
-extension point, add a `ValueEditors` type, alter the `GraphFileIO` JSON format
-(also update the `GraphFileIO` Javadoc and keep backward-compat notes), or change
-the log window's behavior (also keep [logging.md](logging.md) in sync).
+interactions, add a view type or a `Command`, change the `NodeContentProvider` or
+`AutoStartable` extension point, add a `ValueEditors` type, alter the `GraphFileIO`
+JSON format (also update the `GraphFileIO` Javadoc and keep backward-compat notes),
+or change the log window's behavior (also keep [logging.md](logging.md) in sync).

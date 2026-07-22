@@ -9,6 +9,7 @@ import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.storage.SecretsStore;
+import io.github.jaymcole.housegraph.ui.view.AutoStartable;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import javafx.application.Platform;
 import javafx.scene.Node;
@@ -33,9 +34,13 @@ import java.util.Map;
  * Liveness is user-driven (Connect/Disconnect), independent of graph flow; the actual
  * gateway login runs off the UI thread so the app stays responsive. The connection is
  * torn down on {@link #onRemoved()} (node deleted or app shutdown).
+ * <p>
+ * If it was connected when the graph was saved, it reconnects automatically on load: the
+ * connected flag rides along in {@link #saveState()} and {@link #autoStartIfWasRunning()} presses
+ * Connect for the user, resolving the token from the secret store as usual (see {@link AutoStartable}).
  */
 @Display.Name("Discord Bot")
-public class DiscordBotNode extends BaseNode implements NodeContentProvider {
+public class DiscordBotNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     private static final Logger log = Log.get(DiscordBotNode.class);
 
@@ -43,6 +48,8 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
     private String resourceName = "discord";
     private String tokenSecret;
     private String guildId;
+    /** True when the bot was connected at the moment the loaded graph was saved; drives {@link #autoStartIfWasRunning()}. */
+    private boolean wasConnected;
 
     private TextField nameField;
     private ComboBox<String> tokenChooser;
@@ -73,6 +80,9 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         if (guildId != null) {
             state.put("guild", guildId);
         }
+        if (bot.isConnected()) {
+            state.put("running", "true");
+        }
         return state;
     }
 
@@ -84,6 +94,19 @@ public class DiscordBotNode extends BaseNode implements NodeContentProvider {
         }
         tokenSecret = emptyToNull(state.get("token"));
         guildId = emptyToNull(state.get("guild"));
+        wasConnected = Boolean.parseBoolean(state.get("running"));
+    }
+
+    @Override
+    public void autoStartIfWasRunning() {
+        if (wasConnected) {
+            connect();
+        }
+    }
+
+    /** Test seam: whether the loaded graph had this bot connected, i.e. auto-connect is pending. */
+    boolean wasConnected() {
+        return wasConnected;
     }
 
     @Override
