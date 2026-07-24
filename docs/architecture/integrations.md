@@ -86,9 +86,11 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
 
 ## Local web hosting (`web/`, nodes in `graph/nodes/web/`)
 
-Serves a directory of static files as a website reachable on the LAN at
-`http://<name>.local:<port>/`. Like the other integrations, a JavaFX-free client
-package (`web/`) holds the machinery and `graph.nodes.web` holds the node.
+Hosts a website reachable on the LAN at `http://<name>.local:<port>/`, either by
+serving a directory of static files from the JVM (`WebServerNode`) or by launching an
+external Node.js server as a child process (`NodeServerNode`). Like the other
+integrations, a JavaFX-free client package (`web/`) holds the machinery and
+`graph.nodes.web` holds the nodes.
 
 - **`LocalWebServer`** (`web/`) — the long-lived resource behind the web-server
   node, pairing two pieces:
@@ -110,6 +112,38 @@ package (`web/`) holds the machinery and `graph.nodes.web` holds the node.
   disk). Liveness is user-driven (Start/Stop, off the UI thread), and it registers
   its `LocalWebServer` in `ResourceRegistry` under the site name; torn down in
   `onRemoved()`. It also has a **`Store` data input** — see below.
+
+Both server classes share **`LanAddress`** (`web/`) for picking the non-loopback
+site-local IPv4 to advertise over mDNS, so the choice is made one way.
+
+### Hosting a Node.js server instead (`NodeProcessServer` / `NodeServerNode`)
+
+For apps that aren't just static files — an Express server, a Vite dev server,
+anything `npm start` runs — the **Node-server node** hosts by launching an external
+Node.js process rather than serving from the JVM.
+
+- **`NodeProcessServer`** (`web/`) — the JavaFX-free resource. `start(dir, command,
+  name, port)` spawns the command through the platform shell (`cmd /c` on Windows,
+  `sh -c` elsewhere, so PATH-resolved launchers like `npm`/`npx` work as typed) in
+  the chosen project directory, pumps the child's merged stdout/stderr into the log
+  (`[node] …`), and advertises `<name>.local:<port>` over the same jmdns mDNS as
+  `LocalWebServer`. `stop()` kills the whole descendant process tree (so `npm start`'s
+  forked node doesn't orphan and keep the port) and tears down mDNS; it's idempotent.
+  If mDNS fails, `start` kills the process so it's all-or-nothing.
+- **It does not bind the port** — the Node process does. HouseGraph exports the
+  declared port as `PORT` into the child's environment and advertises it, but the
+  Node app must actually listen on it (e.g. `app.listen(process.env.PORT)`); if they
+  disagree, the advertisement points nowhere.
+- **`NodeServerNode`** (`graph/nodes/web/`) — the node. Server name, project directory
+  (Browse…), **start command** (default `npm start`), and port are authored inline and
+  persisted via `saveState` — a directory path and command string, **never the project
+  files**. Same user-driven Start/Stop-off-the-UI-thread lifecycle as `WebServerNode`,
+  registered in `ResourceRegistry` under its name and torn down in `onRemoved()`. It has
+  **no `Store` input** — a Node app owns its own routes and persistence.
+
+**Trust boundary:** the start command is user-authored config run as a local child
+process — the same trust as any local command the user types. Nothing here touches
+`SecretsStore`.
 
 ### Server-side storage for the hosted site (`/api/data`)
 

@@ -12,16 +12,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.DatagramSocket;
-import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -81,7 +76,7 @@ public final class LocalWebServer {
             // Advertise <name>.local (A record) and an _http._tcp service on the same name.
             // JmDNS bound with the host name answers A queries for "<name>.local".
             try {
-                InetAddress advertiseAddr = siteLocalAddress();
+                InetAddress advertiseAddr = LanAddress.siteLocal();
                 JmDNS dns = JmDNS.create(advertiseAddr, name);
                 ServiceInfo info = ServiceInfo.create("_http._tcp.local.", name, port, "path=/");
                 dns.registerService(info);
@@ -172,53 +167,6 @@ public final class LocalWebServer {
             httpExecutor.shutdownNow();
             httpExecutor = null;
         }
-    }
-
-    /**
-     * Picks the local IPv4 address to advertise over mDNS (jmdns needs a concrete interface
-     * address, not the wildcard). This must be the address the LAN can actually reach —
-     * getting it wrong means {@code <name>.local} resolves to an unroutable address even
-     * though the site is up.
-     * <p>
-     * The reliable way is to ask the OS which source address it would use to reach the
-     * network: a UDP socket "connected" to a remote address does a route lookup (without
-     * sending anything) and binds to the chosen source. That picks the real Wi-Fi/Ethernet
-     * interface and sidesteps virtual adapters (WSL, Hyper-V) and link-local
-     * ({@code 169.254.x}) addresses that {@link NetworkInterface} enumeration can't reliably
-     * tell apart ({@code isVirtual()} only flags sub-interfaces, not virtual NICs). Falls
-     * back to interface enumeration, then the default local host, if there's no route.
-     */
-    private static InetAddress siteLocalAddress() throws IOException {
-        try (DatagramSocket probe = new DatagramSocket()) {
-            // Any routable address works as the probe target; nothing is actually sent.
-            probe.connect(InetAddress.getByName("8.8.8.8"), 53);
-            InetAddress local = probe.getLocalAddress();
-            if (local instanceof Inet4Address && !local.isAnyLocalAddress()
-                    && !local.isLoopbackAddress() && !local.isLinkLocalAddress()) {
-                return local;
-            }
-        } catch (IOException e) {
-            log.warn("Could not determine preferred local address, falling back: {}", e.getMessage());
-        }
-        try {
-            Enumeration<NetworkInterface> ifaces = NetworkInterface.getNetworkInterfaces();
-            while (ifaces != null && ifaces.hasMoreElements()) {
-                NetworkInterface iface = ifaces.nextElement();
-                if (!iface.isUp() || iface.isLoopback() || iface.isVirtual()) {
-                    continue;
-                }
-                Enumeration<InetAddress> addrs = iface.getInetAddresses();
-                while (addrs.hasMoreElements()) {
-                    InetAddress addr = addrs.nextElement();
-                    if (addr instanceof Inet4Address && addr.isSiteLocalAddress()) {
-                        return addr;
-                    }
-                }
-            }
-        } catch (SocketException e) {
-            log.warn("Could not enumerate network interfaces: {}", e.getMessage());
-        }
-        return InetAddress.getLocalHost();
     }
 
     /**
