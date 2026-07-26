@@ -12,6 +12,7 @@ import io.github.jaymcole.housegraph.ui.view.AutoStartable;
 import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
 import io.github.jaymcole.housegraph.web.DocumentApi;
 import io.github.jaymcole.housegraph.web.LocalWebServer;
+import io.github.jaymcole.housegraph.web.LocalWebServer.ProxyRoute;
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -24,6 +25,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
 import java.io.File;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -62,6 +64,8 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
 
     private static final Logger log = Log.get(WebServerNode.class);
     private static final int DEFAULT_PORT = 8080;
+    /** Path prefix under which requests are reverse-proxied to {@link #proxyTarget}. */
+    private static final String PROXY_PREFIX = "/bridge";
 
     private final LocalWebServer server = new LocalWebServer();
     private final NodeVariable<JsonDocumentStore> storeInput =
@@ -69,6 +73,8 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
     private String resourceName = "housegraph";
     private String directory;
     private int port = DEFAULT_PORT;
+    /** Optional backend to reverse-proxy at {@code /bridge/*} (e.g. {@code http://localhost:3000}); null = none. */
+    private String proxyTarget;
 
     /** The store handle captured from the {@code Store} input at Start; null when nothing is wired. */
     private volatile JsonDocumentStore resolvedStore;
@@ -78,6 +84,7 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
     private TextField nameField;
     private TextField directoryField;
     private TextField portField;
+    private TextField proxyField;
     private Button browseButton;
     private Button startButton;
     private Button stopButton;
@@ -108,6 +115,9 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
             state.put("directory", directory);
         }
         state.put("port", Integer.toString(port));
+        if (proxyTarget != null) {
+            state.put("proxyTarget", proxyTarget);
+        }
         if (server.isRunning()) {
             state.put("running", "true");
         }
@@ -122,6 +132,7 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
         }
         directory = emptyToNull(state.get("directory"));
         port = parsePort(state.get("port"));
+        proxyTarget = emptyToNull(state.get("proxyTarget"));
         wasRunning = Boolean.parseBoolean(state.get("running"));
     }
 
@@ -161,6 +172,10 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
         portField.setPrefColumnCount(5);
         portField.textProperty().addListener((obs, old, value) -> port = parsePort(value));
 
+        proxyField = new TextField(proxyTarget == null ? "" : proxyTarget);
+        proxyField.setPromptText("API proxy target → /bridge (e.g. http://localhost:3000)");
+        proxyField.textProperty().addListener((obs, old, value) -> proxyTarget = emptyToNull(value));
+
         startButton = new Button("Start");
         startButton.setMaxWidth(Double.MAX_VALUE);
         startButton.setOnAction(e -> start());
@@ -180,7 +195,7 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
 
         HBox dirRow = new HBox(6, directoryField, browseButton);
         HBox buttons = new HBox(6, startButton, stopButton);
-        return new VBox(4, nameField, dirRow, portField, buttons, copyUrlButton, statusLabel);
+        return new VBox(4, nameField, dirRow, portField, proxyField, buttons, copyUrlButton, statusLabel);
     }
 
     private void chooseDirectory() {
@@ -218,7 +233,7 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
             try {
                 // Pull the Store input (if wired) and capture its handle before serving.
                 beginProcessing();
-                server.start(root, resourceName, port, documentApi());
+                server.start(root, resourceName, port, documentApi(), proxyRoute());
                 Platform.runLater(() -> {
                     statusLabel.setText("Serving at " + server.url());
                     stopButton.setDisable(false);
@@ -266,6 +281,32 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
         };
     }
 
+    /**
+     * Builds the reverse-proxy route from {@link #proxyTarget}, mounting it at {@code /bridge/*}.
+     * Returns {@code null} (no proxy) when unset or blank; logs and skips an unparseable target
+     * rather than failing the whole server start.
+     */
+    private ProxyRoute proxyRoute() {
+        if (proxyTarget == null || proxyTarget.isBlank()) {
+            log.info("Web server '{}' starting with NO API proxy (proxy target field is empty)", resourceName);
+            return null;
+        }
+        // Be lenient: a bare "host:port" parses as scheme=host with a null URI host, which we'd
+        // reject. Default to http:// when no scheme is present so "127.0.0.1:3000" just works.
+        String raw = proxyTarget.trim();
+        if (!raw.matches("(?i)^[a-z][a-z0-9+.-]*://.*")) {
+            raw = "http://" + raw;
+        }
+        try {
+            ProxyRoute route = new ProxyRoute(PROXY_PREFIX, URI.create(raw));
+            log.info("Web server '{}' reverse-proxying {}/* -> {}", resourceName, PROXY_PREFIX, route.target());
+            return route;
+        } catch (IllegalArgumentException e) {
+            log.warn("Web server '{}' ignoring invalid proxy target '{}': {}", resourceName, proxyTarget, e.getMessage());
+            return null;
+        }
+    }
+
     private JsonDocumentStore requireStore() {
         JsonDocumentStore store = resolvedStore;
         if (store == null) {
@@ -300,6 +341,7 @@ public class WebServerNode extends BaseNode implements NodeContentProvider, Auto
         directoryField.setDisable(locked);
         browseButton.setDisable(locked);
         portField.setDisable(locked);
+        proxyField.setDisable(locked);
     }
 
     private static int parsePort(String value) {

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.sun.net.httpserver.HttpServer;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -152,6 +154,57 @@ class LocalWebServerTest {
         serve(site, storeApi(data.resolve("document.json")));
 
         assertEquals("<h1>hi</h1>", body(get("/")));
+    }
+
+    @Test
+    void proxyForwardsToBackendStrippingPrefixAndRelaysResponse(@TempDir Path site) throws IOException {
+        Files.writeString(site.resolve("index.html"), "<h1>hi</h1>");
+        HttpServer backend = startBackend("/devices", "application/json", "{\"count\":1}");
+        int backendPort = backend.getAddress().getPort();
+        try {
+            port = server.startHttpForTest(site, 0, null,
+                    new LocalWebServer.ProxyRoute("/bridge", URI.create("http://localhost:" + backendPort)));
+
+            HttpURLConnection conn = get("/bridge/devices");
+            assertEquals(200, conn.getResponseCode());
+            assertTrue(conn.getContentType().startsWith("application/json"), conn.getContentType());
+            assertEquals("{\"count\":1}", body(conn));
+            // The prefix is stripped: the backend must have seen "/devices", not "/bridge/devices".
+            assertEquals("/devices", lastPath[0]);
+            // Static files still serve alongside the proxy.
+            assertEquals("<h1>hi</h1>", body(get("/")));
+        } finally {
+            backend.stop(0);
+        }
+    }
+
+    @Test
+    void proxyReturns502WhenBackendUnreachable(@TempDir Path site) throws IOException {
+        Files.writeString(site.resolve("index.html"), "hi");
+        // Port 1 has nothing listening: the forward fails fast → 502, not a hang.
+        port = server.startHttpForTest(site, 0, null,
+                new LocalWebServer.ProxyRoute("/bridge", URI.create("http://localhost:1")));
+
+        assertEquals(502, get("/bridge/devices").getResponseCode());
+    }
+
+    /** Records the path the backend last saw, so the prefix-stripping assertion can read it. */
+    private final String[] lastPath = new String[1];
+
+    private HttpServer startBackend(String path, String contentType, String responseBody) throws IOException {
+        HttpServer backend = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        backend.createContext(path, exchange -> {
+            lastPath[0] = exchange.getRequestURI().getPath();
+            byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", contentType);
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+            exchange.close();
+        });
+        backend.start();
+        return backend;
     }
 
     /** A real store-backed API, so these double as integration coverage of {@link JsonDocumentStore}. */

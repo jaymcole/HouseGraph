@@ -6,6 +6,8 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 
+import com.sun.net.httpserver.Headers;
+
 import javax.jmdns.JmDNS;
 import javax.jmdns.ServiceInfo;
 import java.io.ByteArrayOutputStream;
@@ -14,11 +16,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -56,12 +65,14 @@ public final class LocalWebServer {
      * @param root the directory of static files to serve (must be an existing directory)
      * @param name the mDNS host/service name; the site becomes reachable at {@code http://name.local:port/}
      * @param port the TCP port to listen on
-     * @param api  an optional JSON-document API to mount at {@code /api/data}; {@code null}
-     *             serves static files only
+     * @param api   an optional JSON-document API to mount at {@code /api/data}; {@code null}
+     *              serves static files only
+     * @param proxy an optional reverse-proxy route (forward {@code pathPrefix/*} to a backend);
+     *              {@code null} mounts no proxy
      * @throws IOException              if the port can't be bound or mDNS can't start
      * @throws IllegalArgumentException if {@code root} is not an existing directory or {@code name} is blank
      */
-    public void start(Path root, String name, int port, DocumentApi api) throws IOException {
+    public void start(Path root, String name, int port, DocumentApi api, ProxyRoute proxy) throws IOException {
         if (root == null || !Files.isDirectory(root)) {
             throw new IllegalArgumentException("Website directory does not exist: " + root);
         }
@@ -71,7 +82,7 @@ public final class LocalWebServer {
         Path base = root.toAbsolutePath().normalize();
 
         synchronized (lock) {
-            bindHttpLocked(base, port, api);
+            bindHttpLocked(base, port, api, proxy);
 
             // Advertise <name>.local (A record) and an _http._tcp service on the same name.
             // JmDNS bound with the host name answers A queries for "<name>.local".
@@ -97,12 +108,17 @@ public final class LocalWebServer {
      * {@code api} at {@code /api/data} if non-null, and returns the actual bound port.
      */
     int startHttpForTest(Path root, int port, DocumentApi api) throws IOException {
+        return startHttpForTest(root, port, api, null);
+    }
+
+    /** Test seam overload that also mounts a reverse-proxy route (no mDNS). */
+    int startHttpForTest(Path root, int port, DocumentApi api, ProxyRoute proxy) throws IOException {
         if (root == null || !Files.isDirectory(root)) {
             throw new IllegalArgumentException("Website directory does not exist: " + root);
         }
         Path base = root.toAbsolutePath().normalize();
         synchronized (lock) {
-            bindHttpLocked(base, port, api);
+            bindHttpLocked(base, port, api, proxy);
             return httpServer.getAddress().getPort();
         }
     }
@@ -114,7 +130,7 @@ public final class LocalWebServer {
      * routes API requests there and everything else to the static files. Caller holds
      * {@link #lock}.
      */
-    private void bindHttpLocked(Path base, int port, DocumentApi api) throws IOException {
+    private void bindHttpLocked(Path base, int port, DocumentApi api, ProxyRoute proxy) throws IOException {
         if (httpServer != null) {
             throw new IllegalStateException("Server already running");
         }
@@ -122,6 +138,11 @@ public final class LocalWebServer {
         server.createContext("/", new StaticFileHandler(base));
         if (api != null) {
             server.createContext("/api/data", new DocumentApiHandler(api));
+        }
+        if (proxy != null) {
+            // A longer prefix than "/" wins routing, so proxied requests go to the backend
+            // and everything else falls through to the static files.
+            server.createContext(proxy.pathPrefix(), new ProxyHandler(proxy.pathPrefix(), proxy.target()));
         }
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         server.setExecutor(executor);
@@ -322,6 +343,141 @@ public final class LocalWebServer {
             exchange.sendResponseHeaders(status, body.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(body);
+            }
+        }
+    }
+
+    /**
+     * A reverse-proxy route: forward every request under {@code pathPrefix} to {@code target},
+     * stripping the prefix. For example {@code new ProxyRoute("/bridge", URI.create("http://localhost:3000"))}
+     * makes {@code GET /bridge/devices} on this server fetch {@code http://localhost:3000/devices}.
+     * <p>
+     * This lets a device on the LAN reach a backend it can't (or shouldn't) address directly —
+     * the browser only ever talks to this server's origin, so there's no CORS and no second
+     * {@code .local} name to resolve; the backend is reached from the host over loopback.
+     */
+    public record ProxyRoute(String pathPrefix, URI target) {
+        public ProxyRoute {
+            if (pathPrefix == null || !pathPrefix.startsWith("/") || pathPrefix.equals("/")) {
+                throw new IllegalArgumentException("pathPrefix must be a non-root path like \"/bridge\"");
+            }
+            if (target == null || target.getHost() == null) {
+                throw new IllegalArgumentException("target must be an absolute URL, got: " + target);
+            }
+        }
+    }
+
+    /**
+     * Forwards requests under a path prefix to a backend base URL over loopback. Copies method,
+     * body, and most headers; relays the backend's status, headers, and body back. Hop-by-hop and
+     * framing headers are dropped so the JDK {@link HttpServer}/{@link HttpClient} manage them.
+     */
+    private static final class ProxyHandler implements HttpHandler {
+
+        private static final HttpClient CLIENT = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        /** Headers the JDK client forbids setting, plus framing headers it manages itself. */
+        private static final Set<String> SKIP_REQUEST_HEADERS =
+                Set.of("connection", "content-length", "expect", "host", "upgrade");
+        /** Response headers whose framing the JDK server owns; relaying them corrupts the response. */
+        private static final Set<String> SKIP_RESPONSE_HEADERS =
+                Set.of("connection", "content-length", "transfer-encoding");
+
+        private final String prefix;
+        private final URI target;
+
+        ProxyHandler(String prefix, URI target) {
+            this.prefix = prefix;
+            this.target = target;
+        }
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try (exchange) {
+                URI dest = rewrite(exchange.getRequestURI());
+                byte[] requestBody = exchange.getRequestBody().readAllBytes();
+
+                HttpRequest.Builder builder = HttpRequest.newBuilder(dest)
+                        .timeout(Duration.ofSeconds(15))
+                        .method(exchange.getRequestMethod(), requestBody.length == 0
+                                ? HttpRequest.BodyPublishers.noBody()
+                                : HttpRequest.BodyPublishers.ofByteArray(requestBody));
+                copyRequestHeaders(exchange.getRequestHeaders(), builder);
+
+                HttpResponse<byte[]> response;
+                try {
+                    response = CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+                } catch (IOException ex) {
+                    // Backend unreachable (e.g. bridge not running): 502 rather than a hang.
+                    sendPlain(exchange, 502, "Bad Gateway: " + ex.getMessage());
+                    return;
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    sendPlain(exchange, 502, "Bad Gateway: interrupted");
+                    return;
+                }
+
+                relayResponse(exchange, response);
+            }
+        }
+
+        /** Maps {@code /prefix/rest?query} on this server to {@code target + /rest?query}. */
+        private URI rewrite(URI requestUri) {
+            String path = requestUri.getRawPath();
+            String rest = path.length() > prefix.length() ? path.substring(prefix.length()) : "/";
+            if (!rest.startsWith("/")) {
+                rest = "/" + rest;
+            }
+            String query = requestUri.getRawQuery();
+            String base = target.getScheme() + "://" + target.getRawAuthority();
+            return URI.create(base + rest + (query != null ? "?" + query : ""));
+        }
+
+        private static void copyRequestHeaders(Headers in, HttpRequest.Builder out) {
+            for (Map.Entry<String, List<String>> entry : in.entrySet()) {
+                if (SKIP_REQUEST_HEADERS.contains(entry.getKey().toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                for (String value : entry.getValue()) {
+                    try {
+                        out.header(entry.getKey(), value);
+                    } catch (IllegalArgumentException ignored) {
+                        // Some header names are still restricted by the JDK; drop them quietly.
+                    }
+                }
+            }
+        }
+
+        private static void relayResponse(HttpExchange exchange, HttpResponse<byte[]> response) throws IOException {
+            Headers out = exchange.getResponseHeaders();
+            response.headers().map().forEach((name, values) -> {
+                if (SKIP_RESPONSE_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+                    return;
+                }
+                for (String value : values) {
+                    out.add(name, value);
+                }
+            });
+            byte[] body = response.body();
+            int status = response.statusCode();
+            boolean bodyless = status == 204 || status == 304 || body.length == 0;
+            exchange.sendResponseHeaders(status, bodyless ? -1 : body.length);
+            if (!bodyless) {
+                try (OutputStream stream = exchange.getResponseBody()) {
+                    stream.write(body);
+                }
+            }
+        }
+
+        private static void sendPlain(HttpExchange exchange, int status, String message) throws IOException {
+            byte[] body = message.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
+            exchange.sendResponseHeaders(status, body.length);
+            try (OutputStream stream = exchange.getResponseBody()) {
+                stream.write(body);
             }
         }
     }
