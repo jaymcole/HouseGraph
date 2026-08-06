@@ -18,17 +18,27 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
+import javafx.scene.control.TablePosition;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.ToolBar;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.stage.Stage;
 
+import java.util.List;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * The standalone log viewer: a top-level window, independent of the graph window, that
@@ -45,6 +55,10 @@ import java.util.function.Consumer;
  *       can, say, make the file quieter while keeping the window verbose; and</li>
  *   <li><b>auto-scroll</b> and <b>clear</b>.</li>
  * </ul>
+ *
+ * <p>Rows are copy-able: individual cells can be selected, and a right-click menu (or the
+ * platform copy shortcut) copies either the focused cell or the selected rows — a row is
+ * emitted as tab-separated columns so it stays aligned when pasted.</p>
  *
  * <p>A single instance is reused ({@link #show()} is a toggle-to-front). All mutation of the
  * table happens on the FX thread; the buffer listener marshals each incoming record with
@@ -168,6 +182,11 @@ public final class LogWindow {
                 column("Thread", 130, r -> r.thread()),
                 messageColumn());
 
+        // Let the user select an individual cell (not just whole rows) so a single field can be
+        // copied on its own; multi-select supports copying a span of rows at once.
+        table.getSelectionModel().setCellSelectionEnabled(true);
+        table.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
+
         // Colour each row by severity so warnings and errors stand out at a glance.
         table.setRowFactory(t -> new TableRow<>() {
             @Override
@@ -176,7 +195,79 @@ public final class LogWindow {
                 setStyle(empty || record == null ? "" : rowStyle(record.level()));
             }
         });
+
+        installCopySupport();
         return table;
+    }
+
+    /**
+     * Makes the table's contents copy-able: a right-click menu with "Copy Cell" / "Copy Row(s)"
+     * and the platform copy shortcut (Ctrl/Cmd+C). A cell copies its own text; a row copies all
+     * columns joined by tabs, so pasted rows stay column-aligned in a spreadsheet or editor.
+     */
+    private void installCopySupport() {
+        MenuItem copyCell = new MenuItem("Copy Cell");
+        copyCell.setOnAction(e -> copyToClipboard(selectedCellText()));
+
+        MenuItem copyRow = new MenuItem("Copy Row(s)");
+        copyRow.setOnAction(e -> copyToClipboard(selectedRowsText()));
+
+        table.setContextMenu(new ContextMenu(copyCell, copyRow));
+
+        // Ctrl+C (Cmd+C on macOS) copies the focused cell, or the selected rows when whole rows
+        // are highlighted. TableView has no built-in copy handler, so wire it explicitly.
+        KeyCombination copy = new KeyCodeCombination(KeyCode.C, KeyCombination.SHORTCUT_DOWN);
+        table.setOnKeyPressed(e -> {
+            if (copy.match(e)) {
+                String cell = selectedCellText();
+                copyToClipboard(cell.isEmpty() ? selectedRowsText() : cell);
+                e.consume();
+            }
+        });
+    }
+
+    /** The text of the single focused/selected cell, or empty if no specific cell is selected. */
+    private String selectedCellText() {
+        TablePosition<LogRecord, ?> pos = table.getSelectionModel().getSelectedCells().stream()
+                .findFirst().orElse(null);
+        if (pos == null || pos.getTableColumn() == null || pos.getRow() < 0) {
+            return "";
+        }
+        LogRecord record = table.getItems().get(pos.getRow());
+        Object value = pos.getTableColumn().getCellObservableValue(record).getValue();
+        return value == null ? "" : value.toString();
+    }
+
+    /** Every selected row rendered as tab-separated columns, rows joined by newlines. */
+    private String selectedRowsText() {
+        List<Integer> rowIndices = table.getSelectionModel().getSelectedCells().stream()
+                .map(TablePosition::getRow)
+                .filter(i -> i >= 0)
+                .distinct()
+                .sorted()
+                .toList();
+        return rowIndices.stream()
+                .map(i -> rowText(table.getItems().get(i)))
+                .collect(Collectors.joining(System.lineSeparator()));
+    }
+
+    /** One record's columns joined by tabs, in on-screen column order. */
+    private String rowText(LogRecord record) {
+        return table.getColumns().stream()
+                .map(col -> {
+                    Object value = col.getCellObservableValue(record).getValue();
+                    return value == null ? "" : value.toString();
+                })
+                .collect(Collectors.joining("\t"));
+    }
+
+    private static void copyToClipboard(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        Clipboard.getSystemClipboard().setContent(content);
     }
 
     private TableColumn<LogRecord, String> messageColumn() {

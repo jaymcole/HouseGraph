@@ -285,7 +285,10 @@ It renders the shared `LogBufferSink` (from the `logging/` package): on open it 
 — then follows live records through a listener that marshals each one with
 `Platform.runLater`; on close it detaches the listener. Because the buffer keeps capturing
 regardless, reopening is lossless. The window exposes a display-level filter, a per-sink
-level dropdown for every registered output, and auto-scroll/clear. Per-output level choices
+level dropdown for every registered output, and auto-scroll/clear. Rows are copy-able:
+cell selection is enabled, and a right-click menu (or the platform copy shortcut) copies
+either the focused cell or the selected rows — a row is emitted as tab-separated columns so
+it stays aligned when pasted. Per-output level choices
 are persisted across launches by `LogLevelPreferences` (saved to `AppPreferences` by sink
 name, reapplied by `App` after bootstrap). The logging model itself (levels, sinks,
 bootstrap) lives in [logging.md](logging.md) — `LogWindow` is only its UI.
