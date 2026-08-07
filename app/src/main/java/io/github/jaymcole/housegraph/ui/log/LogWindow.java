@@ -60,7 +60,8 @@ import java.util.stream.Collectors;
  * platform copy shortcut) copies either the focused cell or the selected rows — a row is
  * emitted as tab-separated columns so it stays aligned when pasted.</p>
  *
- * <p>A single instance is reused ({@link #show()} is a toggle-to-front). All mutation of the
+ * <p>A single instance is reused ({@link #show(io.github.jaymcole.housegraph.storage.AppPreferences)
+ * show(...)} is a toggle-to-front). All mutation of the
  * table happens on the FX thread; the buffer listener marshals each incoming record with
  * {@link Platform#runLater}. The listener is attached on show and removed on hide, so a
  * closed window costs nothing.

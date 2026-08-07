@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * How an {@link AbstractEdgeView} reports user interactions back to the canvas, which
  * owns selection and the undo history — so the edge view itself needs no direct
- * dependency on {@link GraphCanvas}.
+ * dependency on {@link io.github.jaymcole.housegraph.ui.GraphCanvas GraphCanvas}.
  */
 public interface EdgeInteractionListener {
 

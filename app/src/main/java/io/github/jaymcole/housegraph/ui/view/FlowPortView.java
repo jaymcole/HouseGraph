@@ -80,7 +80,7 @@ public class FlowPortView extends Polygon implements EdgeAnchor {
     /**
      * Highlights (or un-highlights) this port's border. Driven both by normal mouse
      * hover and, since JavaFX doesn't fire hover events on nodes other than the one
-     * that captured a mouse press, by {@link GraphCanvas} manually hit-testing the
+     * that captured a mouse press, by {@link io.github.jaymcole.housegraph.ui.GraphCanvas GraphCanvas} manually hit-testing the
      * cursor position while a flow edge drag is in progress.
      */
     public void setHighlighted(boolean highlighted) {
@@ -91,7 +91,7 @@ public class FlowPortView extends Polygon implements EdgeAnchor {
     /**
      * Marks (or unmarks) this port as an invalid target for the flow edge currently
      * being dragged (wrong direction or owner) — set on every other flow port for the
-     * duration of a drag by {@link GraphCanvas}. Flow ports carry no value or type, so
+     * duration of a drag by {@link io.github.jaymcole.housegraph.ui.GraphCanvas GraphCanvas}. Flow ports carry no value or type, so
      * this stays a plain valid/invalid flag; the data-port equivalent
      * ({@link PortView#setDragCandidateSafety}) instead colours by conversion safety.
      */

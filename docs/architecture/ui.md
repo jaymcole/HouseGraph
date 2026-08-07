@@ -15,9 +15,8 @@ ui/
 ├── GraphCanvas.java   the hub (canvas host, drag controller, execution listener)
 ├── view/              NodeView, PortView, FlowPortView, EdgeView, FlowEdgeView,
 │                      AbstractEdgeView, ConnectionView, EdgeAnchor,
-│                      EdgeInteractionListener, ExecutionPolicyIcons, NodeContentProvider,
-│                      AutoStartable
-├── editor/            ValueEditors, SecretsEditor
+│                      EdgeInteractionListener, ExecutionPolicyIcons
+├── editor/            SecretsEditor
 ├── command/           Command, UndoManager, and every *Command
 ├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
 ├── log/               LogWindow (the standalone log viewer)
@@ -35,6 +34,16 @@ build on, so they live on their own rather than nested inside the canvas widget.
 The test tree mirrors this layout (`GraphFileIOTest` lives under `ui/io/`, in the
 same package as `GraphFileIO`, so it can drive its package-private
 `toJson`/`fromJson` headlessly).
+
+> **The three node-facing extension points are no longer in `ui/`.**
+> `NodeContentProvider`, `AutoStartable` and `ValueEditors` moved to
+> `sdk/` in the **`housegraph-api` module**. They are implemented by nodes, and
+> nodes now live outside this repository, where `app` is not on the classpath —
+> so an extension point that lived in `ui/` was unimplementable by the very
+> code it exists for. The consuming sites are unchanged and still in this layer:
+> `NodeView` dispatches `NodeContentProvider`, `GraphCanvas.loadSnapshot`
+> dispatches `AutoStartable`, and `PortView` reads `ValueEditors`.
+> See [plugins.md](plugins.md).
 
 ## `GraphCanvas` — the hub
 
@@ -97,16 +106,23 @@ A `NodeView` layers a few unmanaged, mouse-transparent overlay rectangles over t
   toggling it never reflows the node. The selection/pulse border paints on top of the red node
   border, but the red port borders keep a misconfigured node's problem visible even while selected.
 
-## Node inline UI: `NodeContentProvider`
+## Node inline UI: `sdk.NodeContentProvider`
 
 A `BaseNode` subclass can implement `NodeContentProvider` to embed its own JavaFX
 `Node` at the bottom of its `NodeView` — without knowing anything about `NodeView`
 or `GraphCanvas`. `createNodeContent()` is called once when the view is built;
 override `BaseNode.onExecuted()` to push fresh values into whatever you built.
+Both arrive on the FX thread — `onExecuted` is dispatched through `NodeGraph`'s
+callback executor, which the app sets to `Platform::runLater` — so a node's own
+UI code needs no `Platform.runLater`; only work it starts itself does.
 `DiscordBotNode` is a full example (Connect/Disconnect buttons, status label);
 the interface Javadoc has a minimal one.
 
-## Resuming running nodes on load: `AutoStartable`
+This interface is the sole reason the `housegraph-api` module depends on JavaFX
+at all, and it is declared on the `api` configuration so node authors get
+`javafx.scene.Node` on their compile classpath.
+
+## Resuming running nodes on load: `sdk.AutoStartable`
 
 A `NodeContentProvider` node with a running/stopped lifecycle — a Start/Stop or
 Connect/Disconnect resource (the repeating trigger, the echo resource, the web
@@ -130,14 +146,25 @@ reloaded.** Two halves:
   a no-op unless the node was running at save time. This fires **only on load** —
   paste and undo/redo never auto-start a copied resource.
 
-## Inline value editing: `ValueEditors`
+## Inline value editing: `sdk.ValueEditors`
 
 `ValueEditors` maps a type to a parse/format pair. A `NodeVariable` gets an inline
 text field on its `PortView` only if it's `manuallyEditable` **and** its type is
 registered here. Registered today: `Float`, `String`, `Integer`.
 
-**To make a new type editable, add one line to the `ValueEditors` static block** —
-nothing in `PortView` or elsewhere changes.
+**In this repository, add one line to the `ValueEditors` static block** — nothing in
+`PortView` or elsewhere changes. **An out-of-tree node library calls
+`ValueEditors.register(...)` directly**, which is why the backing map is a
+`ConcurrentHashMap` and why the class sits in the published API rather than in
+`ui/editor`. It is the direct counterpart of `TypeConverters` (see
+[graph-engine.md](graph-engine.md)), which plays the same role for implicit edge
+conversions.
+
+One subtlety worth knowing: node discovery loads classes with `initialize = false`,
+so a node's static initializer runs at first *instantiation*, not at scan time. A
+type registered from a node's static block therefore becomes editable only once one
+of those nodes exists — soon enough in practice, since there is nothing to edit
+before then.
 
 ## Undo/redo: the `Command` pattern
 
@@ -172,7 +199,7 @@ file chooser. Saving or loading records the file as the current file and persist
 its path (`AppPreferences.LAST_FILE`) so it reopens on the next launch — which
 also seeds Quick Save's target for a reopened graph. A reopened graph also
 **resumes any node that was running when it was saved** (see
-[`AutoStartable`](#resuming-running-nodes-on-load-autostartable)).
+[`AutoStartable`](#resuming-running-nodes-on-load-sdkautostartable)).
 
 JSON shape:
 

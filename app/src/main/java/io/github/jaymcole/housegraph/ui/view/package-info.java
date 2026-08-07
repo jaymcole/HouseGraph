@@ -9,7 +9,7 @@
  * {@link io.github.jaymcole.housegraph.ui.view.FlowEdgeView} render the connecting curves
  * (both extend {@link io.github.jaymcole.housegraph.ui.view.AbstractEdgeView}, a
  * {@link io.github.jaymcole.housegraph.ui.view.ConnectionView}).
- * {@link io.github.jaymcole.housegraph.ui.view.NodeContentProvider} is the extension point a
+ * {@link io.github.jaymcole.housegraph.sdk.NodeContentProvider} is the extension point a
  * node implements to embed its own inline UI; {@link io.github.jaymcole.housegraph.ui.view.ExecutionPolicyIcons}
  * draws the per-node policy glyphs. All view code runs on the JavaFX Application Thread.
  * See {@code docs/architecture/ui.md}.

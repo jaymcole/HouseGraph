@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui.view;
+package io.github.jaymcole.housegraph.sdk;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
 

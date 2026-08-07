@@ -13,8 +13,8 @@ by concern into sub-packages:
 
 | Sub-package | Holds |
 | --- | --- |
-| `view/` | node/edge/port views (`NodeView`, `PortView`, `FlowPortView`, `EdgeView`, `FlowEdgeView`, `AbstractEdgeView`, `ConnectionView`, `EdgeAnchor`, `EdgeInteractionListener`), the `ExecutionPolicyIcons` glyphs, and the `NodeContentProvider` inline-UI extension point |
-| `editor/` | inline value + secret editing (`ValueEditors`, `SecretsEditor`) |
+| `view/` | node/edge/port views (`NodeView`, `PortView`, `FlowPortView`, `EdgeView`, `FlowEdgeView`, `AbstractEdgeView`, `ConnectionView`, `EdgeAnchor`, `EdgeInteractionListener`) and the `ExecutionPolicyIcons` glyphs |
+| `editor/` | the secrets dialog (`SecretsEditor`) |
 | `command/` | undo/redo — the `Command` interface, `UndoManager`, and every `*Command` |
 | `snapshot/` | the snapshot data model — `GraphSnapshot` and its `Clipboard*` records (a captured slice of the graph, shared by copy/paste and save/load) |
 | `io/` | save/load (`GraphFileIO`) |
@@ -46,7 +46,9 @@ Hold these when editing here:
   free of JavaFX so they can be unit-tested; only `save`/`load` touch a canvas.
   When you change the JSON format, keep the forgiving-read/back-compat behavior and
   update the `GraphFileIO` Javadoc **and** the ui doc.
-- **New manually-editable type?** Add one line to the `ValueEditors` static block —
+- **New manually-editable type?** Add one line to the `sdk.ValueEditors` static block
+  (it lives in `housegraph-api` now, not `ui/editor` — an out-of-tree node library
+  registers its own types by calling `ValueEditors.register(...)`) —
   nothing else changes — and note it in the ui doc.
 
 **When you change canvas interaction, views, commands, editors, or the save

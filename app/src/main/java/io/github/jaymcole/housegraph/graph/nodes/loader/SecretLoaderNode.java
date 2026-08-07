@@ -7,7 +7,7 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.storage.SecretsStore;
-import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
+import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
 import javafx.scene.Node;
 import javafx.scene.control.ComboBox;
 

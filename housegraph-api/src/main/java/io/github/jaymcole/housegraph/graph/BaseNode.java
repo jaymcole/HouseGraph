@@ -30,7 +30,7 @@ public abstract class BaseNode {
     private volatile ExecutionPolicy executionPolicy = ExecutionPolicy.QUEUE;
 
     /**
-     * Caps how many runs may execute this node's {@link #process()} at once, across all concurrent
+     * Caps how many runs may execute this node's {@link #process(ProcessContext) process()} at once, across all concurrent
      * runs (0 = unlimited). For an expensive node — an LLM call, a rate-limited API, a flaky camera
      * — a limit of 1 serializes it so overlapping runs queue for it rather than hammering it at
      * once. Distinct from {@link ExecutionPolicy} (which is about re-triggering an entry node): this
@@ -41,7 +41,7 @@ public abstract class BaseNode {
     private volatile Semaphore concurrencyLimiter;
 
     /**
-     * How long this node's {@link #process()} may run before the engine interrupts it and marks the
+     * How long this node's {@link #process(ProcessContext) process()} may run before the engine interrupts it and marks the
      * node {@code FAILED} with a {@link java.util.concurrent.TimeoutException} (0 = no timeout, in
      * milliseconds). Meant for nodes that call out to something that can hang — a camera, an LLM,
      * an HTTP API. Cooperative: it interrupts the thread, so it only aborts a {@code process()} that
@@ -208,8 +208,12 @@ public abstract class BaseNode {
      * Called by {@link NodeGraph} right after this node finishes a process() attempt
      * (success or failure — check {@link #getLastError()} if it matters). No-op by
      * default; a node can override it to react to its own values changing, e.g. a
-     * node with a custom UI (see {@code io.github.jaymcole.housegraph.ui.NodeContentProvider})
+     * node with a custom UI (see {@link io.github.jaymcole.housegraph.sdk.NodeContentProvider})
      * pushing a freshly-computed value into a Label it built.
+     * <p>
+     * Dispatched through {@code NodeGraph}'s callback executor, not called directly on the
+     * execution thread — so in the app it arrives on the FX thread, and headless it runs on
+     * the calling thread.
      */
     protected void onExecuted() {
     }
@@ -345,7 +349,7 @@ public abstract class BaseNode {
     }
 
     /**
-     * From within {@link #process()}, marks one of this node's flow-out ports to fire
+     * From within {@link #process(ProcessContext) process()}, marks one of this node's flow-out ports to fire
      * when control cascades out of the node. A node that activates <em>no</em> port
      * fires <em>all</em> its flow-out ports (so ordinary nodes need no activation call
      * and keep triggering everything downstream, exactly as before flow ports could
@@ -430,7 +434,7 @@ public abstract class BaseNode {
     }
 
     /**
-     * The most runs allowed to execute this node's {@link #process()} at once, across all runs;
+     * The most runs allowed to execute this node's {@link #process(ProcessContext) process()} at once, across all runs;
      * 0 means unlimited. See the field.
      *
      * @return this node's concurrency limit, or 0 for unlimited
@@ -440,7 +444,7 @@ public abstract class BaseNode {
     }
 
     /**
-     * Sets the most runs allowed to execute this node's {@link #process()} at once (clamped to
+     * Sets the most runs allowed to execute this node's {@link #process(ProcessContext) process()} at once (clamped to
      * &ge; 0; 0 = unlimited). Rebuilds the underlying permit semaphore.
      *
      * @param max the concurrency cap, or 0 for unlimited
@@ -457,7 +461,7 @@ public abstract class BaseNode {
     }
 
     /**
-     * How long this node's {@link #process()} may run before the engine aborts it (0 = no timeout),
+     * How long this node's {@link #process(ProcessContext) process()} may run before the engine aborts it (0 = no timeout),
      * in milliseconds. See the field.
      *
      * @return this node's process timeout in milliseconds, or 0 for none
@@ -467,7 +471,7 @@ public abstract class BaseNode {
     }
 
     /**
-     * Sets how long this node's {@link #process()} may run before the engine interrupts it and marks
+     * Sets how long this node's {@link #process(ProcessContext) process()} may run before the engine interrupts it and marks
      * it FAILED (clamped to &ge; 0; 0 = no timeout).
      *
      * @param millis the timeout in milliseconds, or 0 for none

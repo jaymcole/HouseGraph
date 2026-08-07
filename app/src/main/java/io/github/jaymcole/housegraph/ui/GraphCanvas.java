@@ -9,7 +9,7 @@ import io.github.jaymcole.housegraph.ui.command.RemoveNodesCommand;
 import io.github.jaymcole.housegraph.ui.command.SetWaypointsCommand;
 import io.github.jaymcole.housegraph.ui.command.UndoManager;
 import io.github.jaymcole.housegraph.ui.view.AbstractEdgeView;
-import io.github.jaymcole.housegraph.ui.view.AutoStartable;
+import io.github.jaymcole.housegraph.sdk.AutoStartable;
 import io.github.jaymcole.housegraph.ui.view.ConnectionView;
 import io.github.jaymcole.housegraph.ui.view.EdgeInteractionListener;
 import io.github.jaymcole.housegraph.ui.view.EdgeView;

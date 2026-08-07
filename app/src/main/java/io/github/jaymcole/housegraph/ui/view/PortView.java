@@ -1,6 +1,6 @@
 package io.github.jaymcole.housegraph.ui.view;
 
-import io.github.jaymcole.housegraph.ui.editor.ValueEditors;
+import io.github.jaymcole.housegraph.sdk.ValueEditors;
 
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
@@ -237,7 +237,7 @@ public class PortView extends HBox implements EdgeAnchor {
     /**
      * Highlights (or un-highlights) this port's border. Driven both by normal mouse
      * hover and, since JavaFX doesn't fire hover events on nodes other than the one
-     * that captured a mouse press, by {@link GraphCanvas} manually hit-testing the
+     * that captured a mouse press, by {@link io.github.jaymcole.housegraph.ui.GraphCanvas GraphCanvas} manually hit-testing the
      * cursor position while an edge drag is in progress.
      */
     public void setHighlighted(boolean highlighted) {
@@ -248,7 +248,7 @@ public class PortView extends HBox implements EdgeAnchor {
     /**
      * Colours this port for the edge currently being dragged: {@code SAFE} green, {@code CAUTIOUS}
      * yellow, {@code RISKY} orange, and {@code INCOMPATIBLE} (wrong type/direction/owner) red — set
-     * on every other port for the duration of a drag by {@link GraphCanvas}, so the whole set of
+     * on every other port for the duration of a drag by {@link io.github.jaymcole.housegraph.ui.GraphCanvas GraphCanvas}, so the whole set of
      * targets and how faithful each connection would be is visible at a glance rather than only on
      * hover. Pass {@code null} to clear the drag colour and return to the resting fill. The colour
      * takes priority over the hover highlight, since dragging doesn't change a pair's safety.

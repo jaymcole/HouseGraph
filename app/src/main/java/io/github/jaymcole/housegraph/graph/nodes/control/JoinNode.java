@@ -4,7 +4,7 @@ import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
-import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
+import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;

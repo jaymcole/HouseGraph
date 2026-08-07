@@ -9,7 +9,7 @@ import io.github.jaymcole.housegraph.camera.OnvifEnrichment;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
-import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
+import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;

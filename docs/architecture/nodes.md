@@ -188,11 +188,11 @@ calls `loadState` before touching ports).
 
 A node with a running/stopped lifecycle (a Start/Stop or Connect/Disconnect
 resource) can also persist *whether it was running* here — conventionally a
-`"running"` flag — and implement the UI-layer `AutoStartable` interface to resume
+`"running"` flag — and implement the `sdk.AutoStartable` interface to resume
 that state automatically when the graph is reloaded. The persistence is a plain
 `saveState` entry (this section); the resume is a UI concern (it re-runs the
 node's Start path once the whole graph has loaded) and lives in
-[ui.md](ui.md#resuming-running-nodes-on-load-autostartable).
+[ui.md](ui.md#resuming-running-nodes-on-load-sdkautostartable).
 
 ## Dynamic-port nodes
 

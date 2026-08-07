@@ -9,7 +9,7 @@ import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 import io.github.jaymcole.housegraph.store.DocumentStores;
 import io.github.jaymcole.housegraph.store.JsonDocumentStore;
-import io.github.jaymcole.housegraph.ui.view.NodeContentProvider;
+import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.control.Button;

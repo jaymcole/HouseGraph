@@ -28,7 +28,8 @@ Use this map of change → what to update:
 | Graph execution / threading / locking model | `NodeGraph` Javadoc **and** [`docs/architecture/graph-engine.md`](docs/architecture/graph-engine.md) |
 | `BaseNode` lifecycle hooks or contract | `BaseNode` Javadoc **and** [`docs/architecture/nodes.md`](docs/architecture/nodes.md) |
 | Add a node type | Nothing to register (discovery is automatic). If it introduces a **new category folder**, note the category in [`docs/architecture/nodes.md`](docs/architecture/nodes.md) |
-| Make a new value type manually editable | `ValueEditors` static block **and** [`docs/architecture/ui.md`](docs/architecture/ui.md) |
+| Make a new value type manually editable | `sdk.ValueEditors` static block **and** [`docs/architecture/ui.md`](docs/architecture/ui.md) |
+| Anything in `housegraph-api` (`graph/`, `annotations/`, `sdk/`, `logging/`, `resource/`, `storage/`, `store/`) | Remember it is **published API** — a breaking change breaks every out-of-tree node library. `BaseNode`'s abstract method set is frozen; new hooks must be concrete with a default |
 | Save-file JSON format | `GraphFileIO` Javadoc **and** [`docs/architecture/ui.md`](docs/architecture/ui.md) (keep backward-compat notes) |
 | Resource registry / pub-sub semantics | `ResourceRegistry` Javadoc **and** [`docs/architecture/resources.md`](docs/architecture/resources.md) |
 | Secret storage / crypto / on-disk locations | `SecretsStore` / `AppDirectories` Javadoc **and** [`docs/architecture/storage-and-secrets.md`](docs/architecture/storage-and-secrets.md) |
@@ -196,9 +197,10 @@ them.
   `graph/nodes/<category>/`, annotate `@Display.Name("…")`. It appears in the
   Add-Node menu automatically (classpath discovery — no registration).
   Full recipe: [nodes.md](docs/architecture/nodes.md).
-- **Give a node its own inline UI** → implement `NodeContentProvider`; push fresh
+- **Give a node its own inline UI** → implement `sdk.NodeContentProvider`; push fresh
   values from `onExecuted()`. See [ui.md](docs/architecture/ui.md).
-- **Make a new type manually editable** → add one line to the `ValueEditors`
-  static block. See [ui.md](docs/architecture/ui.md).
+- **Make a new type manually editable** → add one line to the `sdk.ValueEditors`
+  static block (out-of-tree node libraries call `ValueEditors.register(...)`
+  instead). See [ui.md](docs/architecture/ui.md).
 - **Add a named-resource integration** → follow the Discord-bot pattern in
   [resources.md](docs/architecture/resources.md).

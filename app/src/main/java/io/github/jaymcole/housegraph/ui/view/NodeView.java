@@ -4,6 +4,7 @@ import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
 import javafx.animation.PauseTransition;
@@ -529,7 +530,7 @@ public class NodeView extends BorderPane {
     /**
      * Recomputes this node's misconfigured state and updates its indicators: the red node border, a
      * hover tooltip naming the unsatisfied required inputs, and a thin red border around each
-     * unsatisfied input port. Called by {@link GraphCanvas} whenever the node's wiring changes (an edge added
+     * unsatisfied input port. Called by {@link io.github.jaymcole.housegraph.ui.GraphCanvas GraphCanvas} whenever the node's wiring changes (an edge added
      * or removed, the node added/rebuilt) and by {@link PortView} when a manual value is committed.
      * Pure view refresh — the truth lives in {@link BaseNode#getUnsatisfiedRequiredInputs()}.
      */

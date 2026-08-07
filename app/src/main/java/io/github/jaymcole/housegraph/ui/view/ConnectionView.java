@@ -4,7 +4,7 @@ import javafx.geometry.Bounds;
 
 /**
  * Common contract for the visual curves that connect two ports ({@link EdgeView} for
- * data, {@link FlowEdgeView} for control flow), so {@link GraphCanvas} can select,
+ * data, {@link FlowEdgeView} for control flow), so {@link io.github.jaymcole.housegraph.ui.GraphCanvas GraphCanvas} can select,
  * delete, and rubber-band both kinds uniformly.
  */
 public interface ConnectionView {
