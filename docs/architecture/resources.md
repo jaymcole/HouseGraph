@@ -50,7 +50,7 @@ A resource node is a `BaseNode` that owns a long-lived object. The contract:
   automatically when the saved graph is reloaded — the earlier user "Connect" is
   what's being honored, not the mere presence on the canvas. The resume runs after
   the whole graph loads (so `onActivated()` and any input edges are already in
-  place). See [ui.md](ui.md#resuming-running-nodes-on-load-autostartable).
+  place). See [ui.md](ui.md#resuming-running-nodes-on-load-sdkautostartable).
 
 `DiscordBotNode` is the canonical implementation — read it alongside this doc. It
 registers a `DiscordBot` under a chosen name, forwards incoming messages/slash

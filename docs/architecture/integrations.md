@@ -74,15 +74,15 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   Control flows straight through (an OUT flow port) so more work can be chained
   after it. Both `Host` and `Status` inputs can be typed or wired.
 - **The device** is an Arduino UNO R4 WiFi driving an LED matrix. Its firmware is
-  the Arduino sketch under `src/main/java/io/github/jaymcole/housegraph/extras/
-  squirrel_status/` (`.ino` + per-animation `.h` files). It advertises itself over
+  the Arduino sketch under `extras/squirrel_status/` at the repository root (`.ino`
+  + per-animation `.h` files). It advertises itself over
   mDNS as `squirrel-alarm.local`; if that doesn't resolve, use its IP in the
   node's `Host` field. WiFi credentials go in a gitignored `wifi_secrets.h`
   (see `wifi_secrets.h.example`). To add an animation: export it from the Arduino
   LED-matrix editor, save `<name>.h`, and include it in the sketch.
 
-  > Note: `extras/` is not Java — it's device firmware colocated with the node
-  > that drives it. It is not compiled by Gradle.
+  > Note: `extras/` is not Java — it's device firmware and test assets, so it lives
+  > at the repository root rather than inside a source set. Gradle never sees it.
 
 ## Local web hosting (`web/`, nodes in `graph/nodes/web/`)
 

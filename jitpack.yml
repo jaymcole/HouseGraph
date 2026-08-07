@@ -1,0 +1,11 @@
+# JitPack's default JDK predates this project's Java 21 toolchain, and its sandbox cannot
+# always auto-provision one. Pinning 21 makes both Gradle itself and the toolchain resolve
+# locally instead of failing part-way through.
+jdk:
+  - openjdk21
+
+install:
+  # Only the api module. :app needs the DJL BOM, JDA, and platform-specific JavaFX natives,
+  # has no publication, and is not something anyone compiles against -- building it here
+  # would just be a slow way to fail.
+  - ./gradlew :housegraph-api:publishToMavenLocal -Pversion=$VERSION

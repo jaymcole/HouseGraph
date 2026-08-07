@@ -1,0 +1,81 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+}
+
+description = 'HouseGraph plugin API: graph engine, node model, and the node-authoring SDK.'
+
+javafx {
+    version = '21.0.4'
+    // javafx.controls pulls javafx.base and javafx.graphics with it.
+    modules = ['javafx.controls']
+    // `api`, not the plugin's default `implementation`: a node supplies its inline UI by
+    // returning a javafx.scene.Node, so JavaFX is part of this module's compile-time contract
+    // and must reach consumers (:app, and any out-of-tree node library) transitively.
+    configuration = 'api'
+}
+
+dependencies {
+    // `api`, not `implementation`: both are part of the contract an out-of-tree node library
+    // codes against, so they must reach that author's *compile* classpath transitively.
+    //   - org.json: this project's universal serialization format; pinning one copy beats
+    //     every plugin shading its own.
+    //   - slf4j-api: the bundled provider in logging/slf4j implements SLF4JServiceProvider,
+    //     and it must be the single binding in the process (see docs/architecture/plugins.md).
+    api 'org.json:json:20231013'
+    api 'org.slf4j:slf4j-api:2.0.13'
+}
+
+java {
+    // Sources so node authors get real Javadoc and step-through in the IDE. No javadoc jar:
+    // it roughly doubles the JitPack build for little gain, and a single doc nit under the
+    // strict doclint config would fail the whole publish.
+    withSourcesJar()
+}
+
+publishing {
+    publications {
+        api(MavenPublication) {
+            // JitPack serves a multi-module build's sub-projects as
+            // com.github.<user>.<repo>:<module>:<tag>.
+            groupId = 'com.github.jaymcole.HouseGraph'
+            artifactId = 'housegraph-api'
+            from components.java
+
+            pom {
+                name = 'HouseGraph API'
+                description = project.description
+                url = 'https://github.com/jaymcole/HouseGraph'
+
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://github.com/jaymcole/HouseGraph/blob/main/LICENSE'
+                    }
+                }
+
+                // The published POM must be platform-neutral. org.openjfx.javafxplugin resolves
+                // JavaFX as platform-classified artifacts (:win / :linux / :mac) chosen from the
+                // machine doing the build -- so a POM published by JitPack's Linux builder would
+                // otherwise pin :linux into every consumer's dependency graph and hand a Windows
+                // node author the wrong native jars. Strip the classifier on the way out: the
+                // coordinate stays correct, and the consumer's own JavaFX plugin picks the right
+                // variant for their machine.
+                //
+                // A consumer who does NOT apply the JavaFX plugin resolves the unclassified
+                // artifacts, which OpenJFX publishes as ~300-byte stubs -- they will see
+                // "package javafx.scene does not exist". That is why applying the plugin is a
+                // documented requirement of the node-library template, not a suggestion.
+                withXml {
+                    def deps = asNode().dependencies
+                    if (!deps.isEmpty()) {
+                        deps[0].dependency.findAll { it.groupId.text() == 'org.openjfx' }.each { dep ->
+                            dep.classifier.each { dep.remove(it) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
