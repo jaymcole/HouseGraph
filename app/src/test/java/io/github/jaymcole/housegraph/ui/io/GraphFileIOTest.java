@@ -7,6 +7,7 @@ import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
 import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
+import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
@@ -33,6 +34,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * toString()/re-parse round trip — the same text path save()/load() actually take.
  */
 class GraphFileIOTest {
+
+    /**
+     * The app's own node library, which is what these fixtures are built from. Save/load takes a
+     * registry rather than reaching for a static one, so a test could equally point this at a
+     * fixture package — see {@code NodeRegistryTest}.
+     */
+    private static final NodeRegistry REGISTRY =
+            new NodeRegistry(List.of(NodeRegistry.ScanRoot.core(GraphFileIOTest.class.getClassLoader())));
+
+    private static JSONObject toJson(GraphSnapshot snapshot) {
+        return GraphFileIO.toJson(snapshot, REGISTRY);
+    }
+
+    private static GraphSnapshot fromJson(JSONObject root) {
+        return GraphFileIO.fromJson(root, REGISTRY);
+    }
 
     @SuppressWarnings("unchecked")
     @Test
@@ -106,7 +123,7 @@ class GraphFileIOTest {
         root.put("dataEdges", List.of());
         root.put("flowEdges", List.of());
 
-        GraphSnapshot snapshot = GraphFileIO.fromJson(root);
+        GraphSnapshot snapshot = fromJson(root);
 
         // The slot is preserved (with a null node and its saved position) so it can hold the
         // index for any later node; place() is what drops it off the actual canvas.
@@ -136,7 +153,7 @@ class GraphFileIOTest {
         root.put("dataEdges", List.of(edge));
         root.put("flowEdges", List.of());
 
-        GraphSnapshot snapshot = GraphFileIO.fromJson(root);
+        GraphSnapshot snapshot = fromJson(root);
 
         assertEquals(3, snapshot.nodes().size());
         assertTrue(snapshot.nodes().get(0).node() instanceof ConstantFloatNode);
@@ -173,7 +190,7 @@ class GraphFileIOTest {
         node.plain.setValue("visible");
         node.secret.setValue("TOP_SECRET");
 
-        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+        JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
 
         JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
@@ -190,7 +207,7 @@ class GraphFileIOTest {
         ComputedHolder node = new ComputedHolder();
         node.value.setValue(Float.POSITIVE_INFINITY);
 
-        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+        JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(node, 0.0, 0.0)), List.of(), List.of()));
 
         JSONArray outputs = json.getJSONArray("nodes").getJSONObject(0).getJSONArray("outputs");
@@ -217,7 +234,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot snapshot = GraphFileIO.fromJson(root);
+        GraphSnapshot snapshot = fromJson(root);
 
         BaseNode loaded = snapshot.nodes().get(0).node();
         List<String> outputNames = loaded.getOutputs().stream().map(variable -> variable.name).toList();
@@ -258,7 +275,7 @@ class GraphFileIOTest {
         legacyRoot.put("dataEdges", new JSONArray());
         legacyRoot.put("flowEdges", new JSONArray());
 
-        GraphSnapshot legacy = GraphFileIO.fromJson(legacyRoot);
+        GraphSnapshot legacy = fromJson(legacyRoot);
         assertEquals(ExecutionPolicy.QUEUE, legacy.nodes().get(0).node().getExecutionPolicy(),
                 "a save with no execution policy must default to QUEUE");
     }
@@ -277,7 +294,7 @@ class GraphFileIOTest {
 
         // A node with defaults writes neither key; a save lacking them loads as unlimited / no timeout.
         AddNode plain = new AddNode();
-        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+        JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
         JSONObject plainNode = json.getJSONArray("nodes").getJSONObject(0);
         assertFalse(plainNode.has("maxConcurrency"), "the default (unlimited) is not written");
@@ -303,7 +320,7 @@ class GraphFileIOTest {
 
         // A node with no required inputs writes no requiredInputs key at all.
         AddNode plain = new AddNode();
-        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+        JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of()));
         assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("requiredInputs"),
                 "no requiredInputs key is written when nothing is required");
@@ -331,7 +348,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = fromJson(root);
         assertFalse(loaded.nodes().get(0).node().getInputs().get(0).isRequired(),
                 "an explicit false in requiredInputs overrides the author default");
     }
@@ -351,7 +368,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = fromJson(root);
         assertTrue(loaded.nodes().get(0).node().getInputs().get(0).isRequired(),
                 "a missing requiredInputs key must leave the author default (required) intact");
     }
@@ -382,7 +399,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray(List.of(edge)));
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = fromJson(root);
 
         BaseNode addNode = loaded.nodes().get(1).node();
         assertEquals(1.0f, addNode.getInputs().get(0).getValue(), "V1's value binds by name, not by saved position");
@@ -397,7 +414,7 @@ class GraphFileIOTest {
     void namedEndpointsAreWrittenByNameAndUnnamedFlowPortsByIndex() {
         AddNode source = new AddNode();
         AddNode target = new AddNode();
-        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+        JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(source, 0, 0), new ClipboardNode(target, 0, 0)),
                 List.of(new ClipboardDataEdge(0, 0, 1, 1, List.of())),   // Sum -> V2
                 List.of(new ClipboardFlowEdge(0, 0, 1, 0, List.of()))));  // the single unnamed flow ports
@@ -430,7 +447,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray(List.of(edge)));
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = fromJson(root);
         assertTrue(loaded.dataEdges().isEmpty(), "an edge to a vanished named port is dropped, not attached to the wrong input");
     }
 
@@ -454,7 +471,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray(List.of(edge)));
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = fromJson(root);
         assertEquals(5f, loaded.nodes().get(0).node().getOutputs().get(0).getValue(), "a legacy scalar value loads positionally");
         ClipboardDataEdge dataEdge = loaded.dataEdges().get(0);
         assertEquals(0, dataEdge.sourceVariableIndex());
@@ -465,7 +482,7 @@ class GraphFileIOTest {
 
     @Test
     void nodeTypeIsWrittenAsItsStableIdAndTheRootIsVersioned() {
-        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(
+        JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(new AddNode(), 0, 0)), List.of(), List.of()));
 
         assertEquals(GraphFileIO.CURRENT_VERSION, json.getInt("version"), "the root carries the current format version");
@@ -483,7 +500,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = fromJson(root);
         assertTrue(loaded.nodes().get(0).node() instanceof AddNode, "a stable-id type resolves back to its class");
     }
 
@@ -496,7 +513,7 @@ class GraphFileIOTest {
         root.put("dataEdges", new JSONArray());
         root.put("flowEdges", new JSONArray());
 
-        GraphSnapshot loaded = GraphFileIO.fromJson(root);
+        GraphSnapshot loaded = fromJson(root);
         assertTrue(loaded.nodes().get(0).node() instanceof AddNode,
                 "a fully-qualified class name still resolves and a missing version loads as legacy");
     }
@@ -529,8 +546,8 @@ class GraphFileIOTest {
     }
 
     private static GraphSnapshot roundTrip(GraphSnapshot snapshot) {
-        String text = GraphFileIO.toJson(snapshot).toString();
-        return GraphFileIO.fromJson(new JSONObject(new JSONTokener(text)));
+        String text = toJson(snapshot).toString();
+        return fromJson(new JSONObject(new JSONTokener(text)));
     }
 
     /** A node with one authored and one authored-secret output, for checking secrets don't get serialised. */

@@ -81,7 +81,7 @@ public final class GraphFileIO {
     }
 
     public static void save(GraphCanvas canvas, File file) throws IOException {
-        JSONObject root = toJson(canvas.snapshotAll());
+        JSONObject root = toJson(canvas.snapshotAll(), canvas.getNodeRegistry());
         try (FileWriter writer = new FileWriter(file)) {
             writer.write(root.toString(2));
         }
@@ -92,10 +92,13 @@ public final class GraphFileIO {
         try (FileReader reader = new FileReader(file)) {
             root = new JSONObject(new JSONTokener(reader));
         }
-        canvas.loadSnapshot(fromJson(root));
+        canvas.loadSnapshot(fromJson(root, canvas.getNodeRegistry()));
     }
 
-    static JSONObject toJson(GraphSnapshot snapshot) {
+    // The registry is a parameter rather than a static lookup so these two stay headless AND
+    // injectable: a test can now hand in a registry scanning a fixture package instead of asserting
+    // against whatever node types happen to ship in the app.
+    static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry) {
         List<ClipboardNode> snapshotNodes = snapshot.nodes();
         JSONArray nodesJson = new JSONArray();
         for (ClipboardNode entry : snapshotNodes) {
@@ -158,7 +161,7 @@ public final class GraphFileIO {
         return root;
     }
 
-    static GraphSnapshot fromJson(JSONObject root) {
+    static GraphSnapshot fromJson(JSONObject root, NodeRegistry registry) {
         int version = root.optInt("version", LEGACY_VERSION);
         root = migrate(root, version);
 
@@ -169,7 +172,7 @@ public final class GraphFileIO {
             String typeName = nodeJson.getString("type");
             double x = nodeJson.getDouble("x");
             double y = nodeJson.getDouble("y");
-            Class<? extends BaseNode> nodeClass = NodeRegistry.resolveClass(typeName);
+            Class<? extends BaseNode> nodeClass = registry.resolveClass(typeName);
             if (nodeClass == null) {
                 log.warn("Skipping unknown node type in save file: {}", typeName);
                 // Keep the index slot (with a null node) so this node's absence doesn't shift every

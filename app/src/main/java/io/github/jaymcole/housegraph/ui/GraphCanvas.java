@@ -118,6 +118,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private Point2D selectionStartContent;
 
     private final ContextMenu contextMenu;
+    private final NodeRegistry nodeRegistry;
     private Point2D pendingDropPoint = Point2D.ZERO;
 
     private List<ClipboardNode> clipboardNodes = List.of();
@@ -127,8 +128,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     private final UndoManager undoManager = new UndoManager();
 
-    public GraphCanvas(NodeGraph graph) {
+    public GraphCanvas(NodeGraph graph, NodeRegistry nodeRegistry) {
         this.graph = graph;
+        this.nodeRegistry = nodeRegistry;
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
         setFocusTraversable(true);
@@ -139,8 +141,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         // the UI; this is what makes its callbacks (onExecuted(), the listener above)
         // actually land back on the FX Application Thread instead of that background one.
         graph.setCallbackExecutor(Platform::runLater);
-        // Built once and reused: the set of node types on the classpath doesn't change
-        // during a run.
+        // The menu object is built once and kept, but its contents are not fixed for the life of
+        // the session: installing or removing a node library changes the set of node types, and
+        // reloadNodeTypes() refills it in place.
         contextMenu = buildContextMenu();
         // ContextMenu's built-in autoHide is focus-based and doesn't reliably fire for
         // clicks elsewhere in the same window, and NodeView/PortView consume their own
@@ -1226,11 +1229,25 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return menu;
     }
 
+    /** The registry backing this canvas's Add-Node menu; also what save/load resolves node types through. */
+    public NodeRegistry getNodeRegistry() {
+        return nodeRegistry;
+    }
+
+    /**
+     * Rebuilds the Add-Node menu from the node registry. Call after a node library is installed,
+     * updated, removed, enabled or disabled — the set of node types is no longer fixed for the life
+     * of the session, which is the only reason this method exists.
+     */
+    public void reloadNodeTypes() {
+        contextMenu.getItems().setAll(buildAddNodeMenu());
+    }
+
     private Menu buildAddNodeMenu() {
         Menu addNodeMenu = new Menu("Add Node");
         Map<String, Menu> categoryMenus = new TreeMap<>();
 
-        for (NodeRegistry.Entry entry : NodeRegistry.discover()) {
+        for (NodeRegistry.Entry entry : nodeRegistry.discover()) {
             MenuItem item = new MenuItem(entry.displayName());
             item.setOnAction(event -> {
                 BaseNode instance = NodeRegistry.instantiate(entry.nodeClass());

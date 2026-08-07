@@ -48,6 +48,13 @@ publishing {
                 description = project.description
                 url = 'https://github.com/jaymcole/HouseGraph'
 
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://github.com/jaymcole/HouseGraph/blob/main/LICENSE'
+                    }
+                }
+
                 // The published POM must be platform-neutral. org.openjfx.javafxplugin resolves
                 // JavaFX as platform-classified artifacts (:win / :linux / :mac) chosen from the
                 // machine doing the build -- so a POM published by JitPack's Linux builder would

@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph;
 
 import io.github.jaymcole.housegraph.graph.NodeGraph;
+import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.logging.Logging;
@@ -22,6 +23,7 @@ import javafx.stage.Stage;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * JavaFX application entry point for HouseGraph.
@@ -32,6 +34,7 @@ public class App extends Application {
 
     private final AppPreferences preferences = AppPreferences.load();
     private NodeGraph graph;
+    private NodeRegistry nodeRegistry;
 
     /** The file most recently saved to or loaded from; the target for Quick Save. Null until chosen. */
     private File currentFile;
@@ -45,7 +48,10 @@ public class App extends Application {
         LogLevelPreferences.restore(preferences);
 
         graph = new NodeGraph();
-        GraphCanvas canvas = new GraphCanvas(graph);
+        // One root for now — the app's own node library. Installed node libraries add a root each
+        // once the plugin runtime lands; nothing else here has to change when they do.
+        nodeRegistry = new NodeRegistry(List.of(NodeRegistry.ScanRoot.core(App.class.getClassLoader())));
+        GraphCanvas canvas = new GraphCanvas(graph, nodeRegistry);
 
         // Quick Save writes straight to the current file with no dialog. Until one has been
         // chosen (fresh session, never saved), it falls back to the Save-As flow.
