@@ -19,9 +19,20 @@ The single source of truth for on-disk locations. One root per platform:
 
 Under it, a subdirectory per purpose, each created on demand: `secrets()`,
 `nodes()` (+ `nodeStorage(key)` for per-node private storage, with the key
-sanitized so it can't escape the folder), `saves()`, `dataStores()` (+
-`dataStore(name)` for a named store's folder), `config()`, `cache()`, `logs()`
-(the `housegraph.log` file — see [logging.md](logging.md)).
+sanitized so it can't escape the folder), `plugins()` (+ `pluginJar(id, version)`),
+`saves()`, `dataStores()` (+ `dataStore(name)` for a named store's folder),
+`config()`, `cache()`, `logs()` (the `housegraph.log` file — see
+[logging.md](logging.md)).
+
+`nodes()` and `plugins()` are easy to confuse and mean opposite things: `nodes()` is
+a node's **private runtime storage**, while `plugins()` holds **installed node-library
+code** — the jars downloaded from external repositories. `pluginJar(id, version)`
+resolves `plugins/<id>/<version>/<id>.jar`; the version segment is not cosmetic.
+The class loader serving a plugin's classes holds an open handle on its jar, and on
+Windows an open jar can be neither deleted nor overwritten, so an update installs to
+a **new** path rather than replacing one in use. Superseded versions are pruned at the
+next startup, before any loader exists. Both segments are sanitized, so a hostile
+manifest cannot write outside `plugins/`.
 
 An example: a **data-store** node (`graph/nodes/loader/`) persists its JSON document
 to `dataStore(<name>)/document.json` — i.e. `data-stores/<name>/document.json`.

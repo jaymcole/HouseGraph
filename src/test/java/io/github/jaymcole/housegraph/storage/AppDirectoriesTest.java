@@ -69,6 +69,7 @@ class AppDirectoriesTest {
         assertEquals(temp.resolve("HouseGraph").resolve("secrets"), dirs.secrets());
         assertTrue(Files.isDirectory(dirs.secrets()));
         assertTrue(Files.isDirectory(dirs.nodes()));
+        assertTrue(Files.isDirectory(dirs.plugins()));
         assertTrue(Files.isDirectory(dirs.saves()));
         assertTrue(Files.isDirectory(dirs.config()));
         assertTrue(Files.isDirectory(dirs.cache()));
@@ -82,6 +83,32 @@ class AppDirectoriesTest {
         Path escapeAttempt = dirs.nodeStorage("../../etc");
         assertTrue(escapeAttempt.startsWith(dirs.nodes()), "a key with separators must not climb out of nodes/");
         assertEquals(dirs.nodes().resolve("_"), dirs.nodeStorage(".."), "a pure traversal key collapses to a safe segment");
+    }
+
+    @Test
+    void pluginJarIsVersionStampedSoAnInstalledJarIsNeverOverwrittenInPlace(@TempDir Path temp) {
+        AppDirectories dirs = new AppDirectories(temp.resolve("HouseGraph"));
+
+        Path first = dirs.pluginJar("housegraph-discord", "0.1.0");
+        Path second = dirs.pluginJar("housegraph-discord", "0.2.0");
+
+        assertEquals(dirs.plugins().resolve("housegraph-discord").resolve("0.1.0").resolve("housegraph-discord.jar"), first);
+        assertTrue(Files.isDirectory(first.getParent()), "the version directory is created, ready for the download");
+        assertEquals(first.getFileName(), second.getFileName(), "both versions use the same jar name");
+        assertTrue(Files.isDirectory(second.getParent()), "a second version installs alongside, not over, the first");
+    }
+
+    @Test
+    void pluginJarSanitisesBothSegmentsSoAManifestCannotEscapeThePluginsDir(@TempDir Path temp) {
+        AppDirectories dirs = new AppDirectories(temp.resolve("HouseGraph"));
+
+        Path idEscape = dirs.pluginJar("../../evil", "1.0.0");
+        Path versionEscape = dirs.pluginJar("plugin", "../../etc");
+
+        assertTrue(idEscape.startsWith(dirs.plugins()), "a plugin id with separators must not climb out of plugins/");
+        assertTrue(versionEscape.startsWith(dirs.plugins()), "a version with separators must not climb out of plugins/");
+        assertEquals(dirs.plugins().resolve("plugin").resolve("_"), dirs.pluginJar("plugin", "..").getParent(),
+                "a pure traversal version collapses to a safe segment");
     }
 
     private static UnaryOperator<String> env(Map<String, String> values) {

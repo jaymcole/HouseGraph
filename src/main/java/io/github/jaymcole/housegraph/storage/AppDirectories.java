@@ -16,7 +16,7 @@ import java.util.function.UnaryOperator;
  *   <li><b>macOS</b>: {@code ~/Library/Application Support/HouseGraph}</li>
  *   <li><b>Linux/other</b>: {@code $XDG_DATA_HOME/HouseGraph}, else {@code ~/.local/share/HouseGraph}</li>
  * </ul>
- * with a subdirectory per purpose — {@link #secrets()}, {@link #nodes()},
+ * with a subdirectory per purpose — {@link #secrets()}, {@link #nodes()}, {@link #plugins()},
  * {@link #config()}, {@link #cache()}, {@link #logs()}. Every accessor creates its directory on demand,
  * so callers can simply resolve a path and read/write it.
  * <p>
@@ -102,6 +102,35 @@ public final class AppDirectories {
      */
     public Path nodeStorage(String key) {
         return ensure(nodes().resolve(sanitize(key)));
+    }
+
+    /**
+     * Root of the installed node-library plugin jars; see {@link #pluginJar(String, String)}.
+     * Distinct from {@link #nodes()}, which is a node's <em>private runtime storage</em> — this
+     * one holds the downloaded code itself.
+     *
+     * @return the plugins root, created if needed
+     */
+    public Path plugins() {
+        return ensure(root.resolve("plugins"));
+    }
+
+    /**
+     * The install location for one version of one plugin, under {@link #plugins()}.
+     * <p>
+     * The path is <b>version-stamped on purpose</b>: the class loader that serves a plugin's
+     * classes holds an open handle on its jar, and on Windows an open jar can be neither
+     * deleted nor overwritten. Installing an update therefore writes a <em>new</em> path rather
+     * than replacing one in use; superseded versions are pruned at the next startup, before any
+     * loader exists. Both segments are sanitised so neither can escape the plugins directory.
+     *
+     * @param id      the plugin id from its manifest (sanitised to a single safe path segment)
+     * @param version the plugin version (sanitised to a single safe path segment)
+     * @return the jar path for that plugin version; its parent directory is created if needed
+     */
+    public Path pluginJar(String id, String version) {
+        return ensure(plugins().resolve(sanitize(id)).resolve(sanitize(version)))
+                .resolve(sanitize(id) + ".jar");
     }
 
     /**
@@ -200,7 +229,7 @@ public final class AppDirectories {
     }
 
     /**
-     * Reduces a node-storage key to a single safe path segment: anything outside
+     * Reduces a caller-supplied key to a single safe path segment: anything outside
      * {@code [A-Za-z0-9._-]} becomes {@code _} (so separators, drive letters, etc. can't
      * be used to climb out), and the traversal names {@code .}/{@code ..} (and a blank
      * result) collapse to {@code _}.

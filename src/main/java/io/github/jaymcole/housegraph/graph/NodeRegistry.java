@@ -261,6 +261,12 @@ public final class NodeRegistry {
 
     private static void scanJar(URL jarUrl, String basePath, List<Class<? extends BaseNode>> out) throws IOException {
         JarURLConnection connection = (JarURLConnection) jarUrl.openConnection();
+        // Opt out of the JAR cache before asking for the file. With caching on (the default),
+        // getJarFile() hands back the very JarFile the class loader is serving classes from, and
+        // closing it below would break every subsequent load from that jar — and on Windows leave
+        // handle state that stops the file being deleted or replaced. An uncached open gives us a
+        // private JarFile that is ours to close.
+        connection.setUseCaches(false);
         try (JarFile jarFile = connection.getJarFile()) {
             Enumeration<JarEntry> jarEntries = jarFile.entries();
             while (jarEntries.hasMoreElements()) {
