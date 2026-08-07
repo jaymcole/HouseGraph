@@ -2,8 +2,10 @@
 
 > **Status: in progress.** The refactor that makes this real is landing in phases.
 > Sections marked *(not yet built)* describe the agreed design, not shipped code.
-> Phases 0–2 are done: the build is split, and the node-facing extension points are
-> in the published API.
+> Phases 0–3 are done: the build is split, the node-facing extension points are in
+> the published API, and that API is configured for publication. **No tag has been
+> pushed yet**, so no JitPack coordinate resolves in the real world — the publish was
+> verified end-to-end against `mavenLocal` by compiling a node in a scratch project.
 
 Node implementations live in **their own GitHub repositories**. HouseGraph fetches
 them at runtime from a repo URL the user supplies and loads them into the running
@@ -54,6 +56,44 @@ untidy and became impossible: an out-of-tree node cannot see `app`, so an extens
 point in `ui/` was unimplementable by the very code it exists for. All three are
 dispatched by the host with `instanceof`, so implementing one is the entire opt-in —
 there is nothing to register.
+
+## Consuming `housegraph-api`
+
+Published through **JitPack**, which builds a git tag and serves a multi-module
+project's subprojects as `com.github.<user>.<repo>:<module>:<tag>`:
+
+```groovy
+repositories {
+    mavenCentral()
+    maven { url = 'https://jitpack.io' }
+}
+
+dependencies {
+    // compileOnly is required, not stylistic -- see below.
+    compileOnly 'com.github.jaymcole.HouseGraph:housegraph-api:v0.2.0'
+}
+```
+
+Two requirements on the consumer, both with sharp failure modes:
+
+- **`compileOnly`, never `implementation`.** The host supplies the api and its
+  transitive `org.json` / `slf4j-api` from the parent class loader. Bundling them
+  gives the library its own `BaseNode` — so every node in it fails the host's
+  `BaseNode.isAssignableFrom` check during discovery, with no explanation — and its
+  own SLF4J binding, so every log line silently vanishes. The installer rejects a
+  jar containing either, to turn those into one clear message.
+- **Apply `org.openjfx.javafxplugin` yourself.** The published POM and Gradle
+  module metadata name JavaFX *without* a platform classifier, deliberately: the
+  classifier is stripped on publish (`pom.withXml` in `housegraph-api/build.gradle`)
+  so a POM built on JitPack's Linux runner cannot pin `:linux` into a Windows
+  author's dependency graph. The consequence is that the unclassified artifacts
+  OpenJFX publishes are ~300-byte stubs — without the plugin you get
+  `package javafx.scene does not exist`.
+
+`jitpack.yml` pins JDK 21 and scopes the build to
+`:housegraph-api:publishToMavenLocal`; `:app` needs the DJL BOM, JDA and platform
+natives, has no publication, and would just be a slow way to fail. The root build
+honours `-Pversion=<tag>` so the published version always matches the tag.
 
 ## Security — the honest threat model
 

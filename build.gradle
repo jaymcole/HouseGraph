@@ -3,11 +3,21 @@
 // (`subprojects {}` is cross-project configuration, which Gradle intends to replace with
 // convention plugins in buildSrc. That's the upgrade path when this grows — two modules
 // don't justify a buildSrc yet.)
+// JitPack builds a tag and passes it as -Pversion=<tag> (see jitpack.yml), which Gradle sets
+// on the root project before this script runs. Honour it when present so the published
+// artifact's version always matches the tag it was built from, and fall back to this literal
+// for ordinary local builds. Assigning `version` unconditionally below would silently discard
+// the tag and publish everything as FALLBACK_VERSION.
+def FALLBACK_VERSION = '0.2.0'
+def resolvedVersion = rootProject.version.toString() == 'unspecified'
+        ? FALLBACK_VERSION
+        : rootProject.version.toString()
+
 subprojects {
     apply plugin: 'java'
 
     group = 'io.github.jaymcole'
-    version = '0.2.0'
+    version = resolvedVersion
 
     repositories {
         mavenCentral()
