@@ -47,9 +47,12 @@ update…"** note. Honor it.
 
 A JavaFX desktop app: a **node-graph editor for home automation**, with a focus
 on computer-vision triggers. You wire nodes on an infinite canvas — constants,
-math, converters, control-flow branches, camera-motion sensors, Discord bots, an
-Arduino "squirrel alarm" sign — into graphs that react to events. Graphs are
-saved as JSON and reopened between sessions.
+math, converters, control-flow branches, camera-motion sensors — into graphs that
+react to events. This repository ships the engine, the UI, and a set of
+dependency-free primitive nodes; integrations (Discord, an Arduino IoT sign, and
+more) are node libraries fetched at runtime — see
+[docs/architecture/plugins.md](docs/architecture/plugins.md). Graphs are saved as
+JSON and reopened between sessions.
 
 Two kinds of connection run between nodes, and keeping them separate is the
 central design idea (see [Core standards](#core-architectural-standards)):
@@ -84,12 +87,15 @@ central design idea (see [Core standards](#core-architectural-standards)):
 - **Entry points:** `Launcher` (the `main` you actually run) delegates to
   `App extends Application`. The split exists so JavaFX launches cleanly from a
   plain classpath jar — do not move `main` into `App`.
-- **Key dependencies:** `net.dv8tion:JDA` (Discord gateway), `org.json` (save
-  files, config, secrets blob), `org.jmdns:jmdns` (mDNS/Bonjour for the web-server
-  node's `.local` hosting), `slf4j-api` (JDA and jmdns log through SLF4J). HouseGraph's
-  own code logs through the in-house `logging/` package; a bundled SLF4J provider
-  (`logging/slf4j/`) routes JDA's SLF4J logs into that same pipeline, so there is no
-  separate console binding — see [`docs/architecture/logging.md`](docs/architecture/logging.md).
+- **Key dependencies:** `org.json` (save files, config, secrets blob),
+  `org.jmdns:jmdns` (mDNS/Bonjour for the web-server node's `.local` hosting),
+  `slf4j-api` (third-party libraries — jmdns today, JDA inside the out-of-tree
+  `housegraph-discord` library — log through SLF4J). HouseGraph's own code logs
+  through the in-house `logging/` package; a bundled SLF4J provider
+  (`logging/slf4j/`) routes those SLF4J logs into that same pipeline, so there is
+  no separate console binding — see [`docs/architecture/logging.md`](docs/architecture/logging.md).
+  A node library loaded at runtime brings its own third-party dependencies; see
+  [`docs/architecture/plugins.md`](docs/architecture/plugins.md).
 
 ---
 
@@ -101,29 +107,30 @@ subsystems depend on the engine, never the reverse. The module boundary sits
 across the middle of this picture — everything below the line is published.
 
 ```
-   ┌─ app/ ────────────────────────────────────────────────────┐
-   │    ┌────────────────────────────────────────────┐         │
-   │    │  ui/         JavaFX canvas, views, editors, │         │
-   │    │              undo, save/load                │         │
-   │    └───────────────────┬────────────────────────┘         │
-   │    ┌───────────────────▼────────────────────────┐         │
-   │    │  graph/nodes/  the built-in node library    │         │
-   │    │  discord/ camera/ ml/ web/  integration     │         │
-   │    └───────────────────┬────────────────────────┘         │
-   └────────────────────────┼──────────────────────────────────┘
-                            │ depends on
-   ┌─ housegraph-api/ ──────▼──────────────────────────────────┐
-   │        ┌────────────────────────────────────────┐         │
-   │        │  graph/   execution engine + node model │         │
-   │        └──────┬───────────────┬─────────────────┘         │
-   │   ┌───────────▼──┐  ┌─────────▼───────┐  ┌─────────────┐  │
-   │   │ resource/    │  │ storage/ store/ │  │ annotations/│  │
-   │   │ name-keyed   │  │ dirs, secrets,  │  │ @Node.Type, │  │
-   │   │ lookup+events│  │ preferences     │  │ @Display    │  │
-   │   └──────────────┘  └─────────────────┘  └─────────────┘  │
-   │                                                            │
-   │   logging/  — cross-cutting; depends on nothing            │
-   └────────────────────────────────────────────────────────────┘
+   ┌─ app/ ─────────────────────────────────────────────────────┐
+   │    ┌─────────────────────────────────────────────┐         │
+   │    │  ui/         JavaFX canvas, views, editors,  │         │
+   │    │              undo, save/load                 │         │
+   │    └────────────────────┬────────────────────────┘         │
+   │    ┌────────────────────▼────────────────────────┐         │
+   │    │  graph/nodes/  the built-in node library     │         │
+   │    │  camera/ ml/ web/  integration clients        │         │
+   │    │  plugin/  host side of out-of-tree libraries  │         │
+   │    └────────────────────┬────────────────────────┘         │
+   └─────────────────────────┼───────────────────────────────────┘
+                             │ depends on
+   ┌─ housegraph-api/ ───────▼────────────────────────────────────┐
+   │        ┌────────────────────────────────────────┐            │
+   │        │  graph/   execution engine + node model │            │
+   │        └──────┬───────────────┬─────────────────┘            │
+   │   ┌───────────▼──┐  ┌─────────▼───────┐  ┌──────────────┐    │
+   │   │ resource/    │  │ storage/ store/ │  │ annotations/ │    │
+   │   │ name-keyed   │  │ dirs, secrets,  │  │ @Node.Type,  │    │
+   │   │ lookup+events│  │ preferences     │  │ @Display     │    │
+   │   └──────────────┘  └─────────────────┘  └──────────────┘    │
+   │                                                               │
+   │   logging/  — cross-cutting; depends on nothing               │
+   └───────────────────────────────────────────────────────────────┘
 ```
 
 Out-of-tree node libraries sit *beside* `app/`, depending only on
@@ -141,7 +148,7 @@ looking for a class.
 | Named resources & event pub/sub | api | `resource` | [resources.md](docs/architecture/resources.md) |
 | On-disk locations, secrets, preferences | api | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
 | Logging (levels, sinks, the log window) | api / app | `logging`, `ui.log` | [logging.md](docs/architecture/logging.md) |
-| Discord / cameras | app | `discord`, `camera` | [integrations.md](docs/architecture/integrations.md) |
+| Cameras | app | `camera` | [integrations.md](docs/architecture/integrations.md) |
 | Out-of-tree node libraries | app | `plugin`, `ui.plugin` | [plugins.md](docs/architecture/plugins.md) |
 | Local ML inference (DJL, no Python) | app | `ml` (`ImageNetClassifier`, `AnimalVerdict`) | [integrations.md](docs/architecture/integrations.md) |
 | Tests | both | `<module>/src/test/...` | [testing.md](docs/architecture/testing.md) |
@@ -203,5 +210,6 @@ them.
 - **Make a new type manually editable** → add one line to the `sdk.ValueEditors`
   static block (out-of-tree node libraries call `ValueEditors.register(...)`
   instead). See [ui.md](docs/architecture/ui.md).
-- **Add a named-resource integration** → follow the Discord-bot pattern in
-  [resources.md](docs/architecture/resources.md).
+- **Add a named-resource integration** → follow the pattern in
+  [resources.md](docs/architecture/resources.md) (`EchoResourceNode` is the
+  in-repo worked example; the Discord bot in `housegraph-discord` is a fuller one).

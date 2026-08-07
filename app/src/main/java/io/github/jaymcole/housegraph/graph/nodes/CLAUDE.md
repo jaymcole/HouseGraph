@@ -4,8 +4,14 @@ Full context: [`docs/architecture/nodes.md`](../../../../../../../../../../docs/
 Start at the repo-root [`CLAUDE.md`](../../../../../../../../../../CLAUDE.md) if you haven't.
 
 Every concrete node lives here, one folder per **category** (`camera`,
-`constants`, `control`, `converters`, `debug`, `discord`, `loader`,
-`math`, `object`, `resource`, `viewers`, `web`).
+`constants`, `control`, `converters`, `debug`, `loader`, `math`, `ml`,
+`object`, `resource`, `viewers`, `web`).
+
+This is the built-in library only — dependency-free primitives and the integrations
+that haven't been extracted yet. A node type doesn't have to live in this repository
+at all: see [`docs/architecture/plugins.md`](../../../../../../../../../../docs/architecture/plugins.md)
+for out-of-tree node libraries (`housegraph-discord`, `housegraph-iot`, and more),
+loaded at runtime from a GitHub repo.
 
 ## Adding a node — there is no registration step
 
@@ -38,7 +44,8 @@ Then, as needed:
   here — store its `SecretsStore` key and resolve at runtime.
 - **Long-lived resource** → register in `ResourceRegistry` from `onActivated()`,
   tear down in `onRemoved()`, open the connection only on user action
-  (see `discord/DiscordBotNode.java`).
+  (see `resource/EchoResourceNode.java`; the Discord bot node in the
+  `housegraph-discord` library is a fuller example).
 - **Dynamic ports** → react in `onInputEdgeAdded/Removed`, persist the shape in
   `saveState` (see `object/ObjectDecomposerNode.java`).
 

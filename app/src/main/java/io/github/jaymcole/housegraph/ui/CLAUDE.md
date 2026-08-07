@@ -36,8 +36,9 @@ Hold these when editing here:
   background threads and marshals its callbacks to the UI via its callback
   executor, which `GraphCanvas` sets to `Platform::runLater`. Never call into
   JavaFX from an engine thread, and never call blocking work on the FX thread
-  (do it on a worker thread, then `Platform.runLater` the UI update — see
-  `DiscordBotNode`'s connect flow).
+  (do it on a worker thread, then `Platform.runLater` the UI update — see the
+  Discord bot node's connect flow in the out-of-tree `housegraph-discord` library,
+  or `PluginWindow`'s install flow in this repository for an in-tree example).
 - **Reversible canvas mutations are `Command`s.** Anything the user can undo goes
   through `UndoManager` as a `Command` (`execute()`/`undo()`), not an ad-hoc
   mutation. Use `record()` for gestures applied live (e.g. a drag) that become one

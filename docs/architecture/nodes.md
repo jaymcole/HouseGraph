@@ -51,9 +51,8 @@ flag. Persistence rules (enforced by `GraphFileIO`):
 `markSecret()`, `transientValue()`, and `required()` are all fluent, for field initialization.
 Many library nodes already ship with author-required inputs where a missing value makes the node
 meaningless — e.g. the string converters' `in`, the viewers' displayed value, the `If` nodes'
-condition, the object decomposer's `Object`, and the Discord Send/Reply message + target. Nodes
-with a sensible default for a missing input (e.g. `Add`, whose operands default to 0) leave them
-optional.
+condition, the object decomposer's `Object`. Nodes with a sensible default for a missing input
+(e.g. `Add`, whose operands default to 0) leave them optional.
 
 **Anchor type & hidden converters.** A `NodeVariable`'s `type` (a `Class<?>`) governs which
 outputs may feed it. An edge is allowed when the input type is assignable from the output type
@@ -154,13 +153,17 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 
 ## Node categories (current folders under `graph/nodes/`)
 
-`camera`, `constants`, `control`, `converters`, `debug`, `discord`,
+`camera`, `constants`, `control`, `converters`, `debug`,
 `loader`, `math`, `ml`, `object`, `resource`, `viewers`, `web`.
+
+This is the **built-in** library. Integrations that have been extracted into
+out-of-tree node libraries (`discord`, `iot`) no longer have a folder here — see
+[plugins.md](plugins.md).
 
 `web` holds nodes for hosting on the local network — currently the web-server
 resource node, which serves a directory of static files as `<name>.local` and
-drives the `web` package's `LocalWebServer` (mirroring how `camera`/`discord`
-nodes drive their client packages). See [integrations.md](integrations.md).
+drives the `web` package's `LocalWebServer` (mirroring how `camera` nodes drive
+their client package). See [integrations.md](integrations.md).
 
 `ml` holds nodes backed by locally-run machine-learning models. They drive the
 JVM-native inference clients in the `ml` package (models run through Deep Java

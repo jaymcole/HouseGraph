@@ -1,35 +1,38 @@
 # External Integrations
 
-HouseGraph talks to several external worlds: Discord (chat bots), IP cameras
-(ONVIF/Reolink), an Arduino "squirrel alarm" sign, and the local network itself
-(hosting a website on a `.local` name). Each integration keeps its client code in
-a dedicated package and surfaces to the graph through nodes under
-`graph/nodes/<category>/`. None of the engine depends on these — they depend on
-the engine.
+HouseGraph talks to several external worlds: IP cameras (ONVIF/Reolink) and the
+local network itself (hosting a website on a `.local` name). Each integration
+keeps its client code in a dedicated package and surfaces to the graph through
+nodes under `graph/nodes/<category>/`. None of the engine depends on these — they
+depend on the engine.
 
-## Discord (`discord/`, nodes in `graph/nodes/discord/`)
+## Discord — **extracted**
 
-- **`DiscordBot`** — a thin wrapper around a JDA gateway connection (the long-lived
-  resource behind a Discord bot node). JDA keeps the connection alive
-  (heartbeats/reconnects) while held. `connect(token)` logs in and blocks until
-  ready (call it off the UI thread); `disconnect()` shuts down. Incoming non-bot
-  messages go to `setMessageHandler`; slash commands are registered via
-  `syncCommands` and their invocations forwarded to `setSlashHandler`, deferred so
-  a slow graph has ~15 min to answer via a `DiscordReply` handle; `sendMessage`
-  posts to a channel by id.
-  - **Reading message content requires the privileged `MESSAGE_CONTENT` intent**
-    enabled in Discord's developer portal; slash commands need no special intent.
-- **`SlashCommandRegistry`** — where slash-command nodes declare their commands by
-  bot name, independent of load order (see [resources.md](resources.md)). The bot
-  syncs the declared set to Discord on Connect.
-- **`CommandMatcher`** — matches an incoming message against a text trigger (e.g.
-  `!deploy`) with whitespace/end-of-message boundaries, and extracts the argument
-  text.
-- Value types: `DiscordMessage`, `DiscordSlashCommand`, `DiscordReply`,
-  `CommandOption`, `DiscordOptionType`, `SlashCommandSpec` describe events and
-  command declarations passed through the registry / handlers.
-- **Secrets:** the bot token comes from `SecretsStore` by key — never wired,
-  never saved. See `DiscordBotNode` and [storage-and-secrets.md](storage-and-secrets.md).
+> This integration no longer lives in this repository. It is the
+> `housegraph-discord` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. It was the hardest extraction — a sibling client
+> package, `SecretsStore` access (now `sdk.Secrets`), `ResourceRegistry`,
+> `Subscription`, both `AutoStartable` and `NodeContentProvider`, dynamic ports via
+> `rebuildPorts`, a `saveState` map — deliberately done second, once `iot` had
+> proven the pipeline, so any gap the hardest case exposed was found while only one
+> plugin existed to fix up. See [plugins.md](plugins.md).
+>
+> One build wrinkle worth knowing if you extract something else that bundles a
+> library depending on SLF4J: **JDA depends on `slf4j-api` itself**, and left
+> alone that transitive dependency ends up in the shaded jar too — which the
+> host's install-time validation rejects a jar for, because a bundled `slf4j-api`
+> means a second, silently-swallowing logging binding. The library's build
+> excludes it explicitly (`exclude group: 'org.slf4j', module: 'slf4j-api'`
+> on the JDA dependency); `housegraph-api` already supplies the real one.
+>
+> Also: a node combining `@Node.Type` (which needs
+> `io.github.jaymcole.housegraph.annotations.Node`) with `NodeContentProvider`
+> (which returns `javafx.scene.Node`) hits an import collision — both are named
+> `Node`. None of this repository's own nodes had ever combined the two. Fix:
+> don't import `javafx.scene.Node`; write `javafx.scene.Node` fully qualified at
+> each use. See the discord nodes for the pattern, or `HelloWorldNode` in the
+> template, which already used this to avoid the same collision.
 
 ## Cameras (`camera/`, nodes in `graph/nodes/camera/`)
 
@@ -200,9 +203,9 @@ directory.
 
 Vision/ML models run **in-JVM**, locally, through
 [Deep Java Library](https://djl.ai) (DJL) on its PyTorch engine — no Python, no
-external service. This mirrors how `camera`/`discord` split a headless client
-package from its UI nodes: the `ml` package holds JavaFX-free inference clients;
-`graph.nodes.ml` holds the nodes that drive them.
+external service. This mirrors how `camera` (and, before extraction, `discord`)
+splits a headless client package from its UI nodes: the `ml` package holds
+JavaFX-free inference clients; `graph.nodes.ml` holds the nodes that drive them.
 
 - **`ImageNetClassifier`** (`ml/`) — a shared, lazily-loaded ResNet-50 / ImageNet
   classifier. The DJL `ZooModel` is loaded once on first use and reused
@@ -224,7 +227,7 @@ package from its UI nodes: the `ml` package holds JavaFX-free inference clients;
 **Runtime download, not a bundled model.** The first classification after launch
 downloads the PyTorch native library and the model weights into DJL's on-disk
 cache (under the user's home); later runs are fast and offline. First use
-therefore needs network access, like the camera/Discord integrations.
+therefore needs network access, like the camera integration.
 
 **No secrets, no credentials** — models are public and fetched by DJL; nothing
 here touches `SecretsStore`.
@@ -237,6 +240,8 @@ factor shared model lifecycle/loading into `ml/` rather than duplicating per nod
 ---
 
 **When you change this, update…** this file whenever you add/modify an
-integration (a new Discord capability, a new camera protocol, a new IoT device or
-device command, a new local model / inference engine, a change to the web-server
-hosting or mDNS behavior) or change how an integration handles credentials.
+integration that still lives in this repository (a new camera protocol, a new
+local model / inference engine, a change to the web-server hosting or mDNS
+behavior) or change how an integration handles credentials. Extracted
+integrations (Discord, IoT) are documented in the housegraph-nodes repository;
+update this file's "extracted" note only if the extraction story itself changes.
