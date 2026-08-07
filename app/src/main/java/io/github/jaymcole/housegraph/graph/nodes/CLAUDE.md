@@ -1,7 +1,7 @@
 # `graph/nodes/` — the node library
 
-Full context: [`docs/architecture/nodes.md`](../../../../../../../../../docs/architecture/nodes.md).
-Start at the repo-root [`CLAUDE.md`](../../../../../../../../../CLAUDE.md) if you haven't.
+Full context: [`docs/architecture/nodes.md`](../../../../../../../../../../docs/architecture/nodes.md).
+Start at the repo-root [`CLAUDE.md`](../../../../../../../../../../CLAUDE.md) if you haven't.
 
 Every concrete node lives here, one folder per **category** (`camera`,
 `constants`, `control`, `converters`, `debug`, `discord`, `iot`, `loader`,
@@ -55,4 +55,4 @@ Then, as needed:
 - Add a test mirroring the existing node tests.
 
 **Adding a brand-new category folder? Note it in
-[`docs/architecture/nodes.md`](../../../../../../../../../docs/architecture/nodes.md).**
+[`docs/architecture/nodes.md`](../../../../../../../../../../docs/architecture/nodes.md).**

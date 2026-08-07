@@ -60,14 +60,23 @@ central design idea (see [Core standards](#core-architectural-standards)):
 
 ## Build & run
 
+- **Two Gradle modules.** The root project builds nothing; it is an aggregator.
+  - **`housegraph-api/`** — the published artifact: `graph/` (engine + node model),
+    `annotations/`, `logging/`, `resource/`, `storage/`, `store/`. This is what an
+    out-of-tree node library compiles against, so **a breaking change here breaks
+    every plugin**.
+  - **`app/`** — the JavaFX program nobody compiles against: `ui/`, `App`/`Launcher`,
+    the built-in node library `graph/nodes/`, and the integration clients.
 - **Java 21** toolchain (set via Gradle; you don't need it installed globally if
   Gradle can provision it).
-- **JavaFX 21** via the `org.openjfx.javafxplugin` Gradle plugin
-  (`javafx.controls`, `javafx.fxml`).
+- **JavaFX 21** via the `org.openjfx.javafxplugin` Gradle plugin (`javafx.controls`
+  in both modules, plus `javafx.swing` in `app` for the ML node's `SwingFXUtils`
+  bridge). The api module declares it on the `api` configuration, because a node
+  supplies its inline UI by returning a `javafx.scene.Node`.
 
 ```bash
-./gradlew run           # launch the app
-./gradlew test          # run the JUnit 5 test suite
+./gradlew run           # launch the app (delegates to :app:run)
+./gradlew test          # run the JUnit 5 test suite in both modules
 ./gradlew compileJava   # compile only (fast sanity check for doc/Javadoc edits)
 ```
 
@@ -87,41 +96,53 @@ central design idea (see [Core standards](#core-architectural-standards)):
 
 Dependencies point **downward**: the UI depends on the graph engine; the graph
 engine depends on nothing above it and never imports JavaFX. Integration
-subsystems depend on the engine, never the reverse.
+subsystems depend on the engine, never the reverse. The module boundary sits
+across the middle of this picture — everything below the line is published.
 
 ```
-        ┌────────────────────────────────────────────┐
-        │  ui/         JavaFX canvas, views, editors, │
-        │              undo, save/load                │
-        └───────────────────┬────────────────────────┘
+   ┌─ app/ ────────────────────────────────────────────────────┐
+   │    ┌────────────────────────────────────────────┐         │
+   │    │  ui/         JavaFX canvas, views, editors, │         │
+   │    │              undo, save/load                │         │
+   │    └───────────────────┬────────────────────────┘         │
+   │    ┌───────────────────▼────────────────────────┐         │
+   │    │  graph/nodes/  the built-in node library    │         │
+   │    │  discord/ camera/ ml/ web/  integration     │         │
+   │    └───────────────────┬────────────────────────┘         │
+   └────────────────────────┼──────────────────────────────────┘
                             │ depends on
-        ┌───────────────────▼────────────────────────┐
-        │  graph/      execution engine + node model  │
-        │  graph/nodes/  the node library (by folder) │
-        └──────┬───────────────┬──────────────┬───────┘
-               │               │              │
-   ┌───────────▼──┐  ┌─────────▼───────┐  ┌───▼─────────────┐
-   │ resource/    │  │ storage/        │  │ discord/ camera/│
-   │ name-keyed   │  │ dirs, secrets,  │  │ integration     │
-   │ lookup+events│  │ preferences     │  │ clients         │
-   └──────────────┘  └─────────────────┘  └─────────────────┘
-
-   logging/  — cross-cutting; depends on nothing, so any layer may log
+   ┌─ housegraph-api/ ──────▼──────────────────────────────────┐
+   │        ┌────────────────────────────────────────┐         │
+   │        │  graph/   execution engine + node model │         │
+   │        └──────┬───────────────┬─────────────────┘         │
+   │   ┌───────────▼──┐  ┌─────────▼───────┐  ┌─────────────┐  │
+   │   │ resource/    │  │ storage/ store/ │  │ annotations/│  │
+   │   │ name-keyed   │  │ dirs, secrets,  │  │ @Node.Type, │  │
+   │   │ lookup+events│  │ preferences     │  │ @Display    │  │
+   │   └──────────────┘  └─────────────────┘  └─────────────┘  │
+   │                                                            │
+   │   logging/  — cross-cutting; depends on nothing            │
+   └────────────────────────────────────────────────────────────┘
 ```
 
-| Concern | Package | Deep dive |
-| --- | --- | --- |
-| App lifecycle / entry points | `io.github.jaymcole.housegraph` (`App`, `Launcher`) | [overview.md](docs/architecture/overview.md) |
-| Execution engine (resolve/execute, threading) | `graph` (`NodeGraph`, `NodeProcessingStatus`, `GraphExecutionListener`) | [graph-engine.md](docs/architecture/graph-engine.md) |
-| Node model & discovery | `graph` (`BaseNode`, `NodeVariable`, `Edge`, `FlowEdge`, `FlowPort`, `NodeRegistry`), `annotations` | [nodes.md](docs/architecture/nodes.md) |
-| The node library | `graph.nodes.*` (one folder per category) | [nodes.md](docs/architecture/nodes.md) |
-| Canvas, views, undo, save/load | `ui` | [ui.md](docs/architecture/ui.md) |
-| Named resources & event pub/sub | `resource` | [resources.md](docs/architecture/resources.md) |
-| On-disk locations, secrets, preferences | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
-| Logging (levels, sinks, the log window) | `logging`, `ui.log` | [logging.md](docs/architecture/logging.md) |
-| Discord / cameras / Arduino IoT | `discord`, `camera`, `extras/squirrel_status` | [integrations.md](docs/architecture/integrations.md) |
-| Local ML inference (DJL, no Python) | `ml` (`ImageNetClassifier`, `AnimalVerdict`) | [integrations.md](docs/architecture/integrations.md) |
-| Tests | `src/test/...` | [testing.md](docs/architecture/testing.md) |
+Out-of-tree node libraries sit *beside* `app/`, depending only on
+`housegraph-api`. Note `graph/` lives in the api module while `graph/nodes/` lives
+in `app` — distinct packages, not a split package, but worth knowing before you go
+looking for a class.
+
+| Concern | Module | Package | Deep dive |
+| --- | --- | --- | --- |
+| App lifecycle / entry points | app | `io.github.jaymcole.housegraph` (`App`, `Launcher`) | [overview.md](docs/architecture/overview.md) |
+| Execution engine (resolve/execute, threading) | api | `graph` (`NodeGraph`, `NodeProcessingStatus`, `GraphExecutionListener`) | [graph-engine.md](docs/architecture/graph-engine.md) |
+| Node model & discovery | api | `graph` (`BaseNode`, `NodeVariable`, `Edge`, `FlowEdge`, `FlowPort`, `NodeRegistry`), `annotations` | [nodes.md](docs/architecture/nodes.md) |
+| The built-in node library | app | `graph.nodes.*` (one folder per category) | [nodes.md](docs/architecture/nodes.md) |
+| Canvas, views, undo, save/load | app | `ui` | [ui.md](docs/architecture/ui.md) |
+| Named resources & event pub/sub | api | `resource` | [resources.md](docs/architecture/resources.md) |
+| On-disk locations, secrets, preferences | api | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
+| Logging (levels, sinks, the log window) | api / app | `logging`, `ui.log` | [logging.md](docs/architecture/logging.md) |
+| Discord / cameras / Arduino IoT | app | `discord`, `camera`, `extras/squirrel_status` | [integrations.md](docs/architecture/integrations.md) |
+| Local ML inference (DJL, no Python) | app | `ml` (`ImageNetClassifier`, `AnimalVerdict`) | [integrations.md](docs/architecture/integrations.md) |
+| Tests | both | `<module>/src/test/...` | [testing.md](docs/architecture/testing.md) |
 
 ---
 

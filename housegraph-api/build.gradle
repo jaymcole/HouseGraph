@@ -1,0 +1,27 @@
+plugins {
+    id 'java-library'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+}
+
+description = 'HouseGraph plugin API: graph engine, node model, and the node-authoring SDK.'
+
+javafx {
+    version = '21.0.4'
+    // javafx.controls pulls javafx.base and javafx.graphics with it.
+    modules = ['javafx.controls']
+    // `api`, not the plugin's default `implementation`: a node supplies its inline UI by
+    // returning a javafx.scene.Node, so JavaFX is part of this module's compile-time contract
+    // and must reach consumers (:app, and any out-of-tree node library) transitively.
+    configuration = 'api'
+}
+
+dependencies {
+    // `api`, not `implementation`: both are part of the contract an out-of-tree node library
+    // codes against, so they must reach that author's *compile* classpath transitively.
+    //   - org.json: this project's universal serialization format; pinning one copy beats
+    //     every plugin shading its own.
+    //   - slf4j-api: the bundled provider in logging/slf4j implements SLF4JServiceProvider,
+    //     and it must be the single binding in the process (see docs/architecture/plugins.md).
+    api 'org.json:json:20231013'
+    api 'org.slf4j:slf4j-api:2.0.13'
+}

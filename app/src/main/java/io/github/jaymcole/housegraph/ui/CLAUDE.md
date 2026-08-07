@@ -1,7 +1,7 @@
 # `ui/` — the JavaFX layer
 
-Full context: [`docs/architecture/ui.md`](../../../../../../../../docs/architecture/ui.md).
-Start at the repo-root [`CLAUDE.md`](../../../../../../../../CLAUDE.md) if you haven't.
+Full context: [`docs/architecture/ui.md`](../../../../../../../../../docs/architecture/ui.md).
+Start at the repo-root [`CLAUDE.md`](../../../../../../../../../CLAUDE.md) if you haven't.
 
 This is the only package that owns JavaFX-thread concerns. It sits at the top of
 the dependency stack: it depends on `graph/` (and below), never the reverse.
@@ -50,4 +50,4 @@ Hold these when editing here:
   nothing else changes — and note it in the ui doc.
 
 **When you change canvas interaction, views, commands, editors, or the save
-format, update [`docs/architecture/ui.md`](../../../../../../../../docs/architecture/ui.md).**
+format, update [`docs/architecture/ui.md`](../../../../../../../../../docs/architecture/ui.md).**

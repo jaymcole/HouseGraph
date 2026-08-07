@@ -1,8 +1,8 @@
 # `graph/` — the execution engine and node model
 
-Full context: [`docs/architecture/graph-engine.md`](../../../../../../../../docs/architecture/graph-engine.md)
-and [`docs/architecture/nodes.md`](../../../../../../../../docs/architecture/nodes.md).
-Start at the repo-root [`CLAUDE.md`](../../../../../../../../CLAUDE.md) if you haven't.
+Full context: [`docs/architecture/graph-engine.md`](../../../../../../../../../docs/architecture/graph-engine.md)
+and [`docs/architecture/nodes.md`](../../../../../../../../../docs/architecture/nodes.md).
+Start at the repo-root [`CLAUDE.md`](../../../../../../../../../CLAUDE.md) if you haven't.
 
 This package is the headless core. Hold these invariants when editing here:
 

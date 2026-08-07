@@ -1,0 +1,46 @@
+plugins {
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+}
+
+description = 'The HouseGraph desktop application.'
+
+javafx {
+    version = '21.0.4'
+    // javafx.swing supplies SwingFXUtils, the bridge from a JavaFX Image to the java.awt
+    // BufferedImage that DJL's ImageFactory consumes. Only the ml node needs it, so it leaves
+    // when ml is extracted. javafx.controls arrives transitively from :housegraph-api, but is
+    // named here too so this module states its own requirements.
+    modules = ['javafx.controls', 'javafx.swing']
+}
+
+application {
+    // Launcher, not App: a non-Application main class so JavaFX starts cleanly from a plain
+    // classpath jar. Do not move main into App.
+    mainClass = 'io.github.jaymcole.housegraph.Launcher'
+}
+
+dependencies {
+    // Brings JavaFX, org.json and slf4j-api transitively (all declared `api` over there).
+    implementation project(':housegraph-api')
+
+    // --- Everything below belongs to a node category that is being extracted into its own
+    // --- repository; each line leaves with its category. See docs/architecture/plugins.md.
+
+    implementation('net.dv8tion:JDA:5.2.1') {
+        exclude module: 'opus-java' // no voice — drop the native audio dependency
+    }
+
+    // Pure-Java mDNS/Bonjour, for the web-server node: advertises a "<name>.local"
+    // hostname + _http._tcp service on the LAN (the JDK has no mDNS of its own).
+    implementation 'org.jmdns:jmdns:3.5.9'
+
+    // Deep Java Library: JVM-native ML inference (see the ml package). The BOM pins all DJL
+    // artifacts to one version. The PyTorch engine downloads the matching native library (and
+    // models download their weights) on first use, cached under the user's home — no Python,
+    // no manual native jars.
+    implementation platform('ai.djl:bom:0.36.0')
+    implementation 'ai.djl:api'
+    implementation 'ai.djl.pytorch:pytorch-model-zoo'
+    runtimeOnly 'ai.djl.pytorch:pytorch-engine'
+}
