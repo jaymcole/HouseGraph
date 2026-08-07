@@ -247,11 +247,41 @@ Updating, disabling or removing a library while its nodes are on the canvas is r
 an explanation, because Java can't unload a class while instances exist: those nodes would
 stay bound to the old loader's `Class` objects and the type would exist twice.
 
+## Where the node libraries live
+
+| Repository | What it is |
+| --- | --- |
+| [housegraph-plugin-template](https://github.com/jaymcole/housegraph-plugin-template) | Template for **one** library in **one** repository — what a third party starts from |
+| [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes) | First-party libraries, as subprojects of one repository |
+
+The first-party libraries share a repository on purpose. The API will change, and when it
+does every library needs rebuilding — that's one commit and one tag in a monorepo, against
+one PR and one tag per repository otherwise. The build rules are also easy to get subtly
+wrong in ways that fail *silently*, so they live once in `buildSrc` as the
+`housegraph-node-library` convention plugin rather than being copied per library and left
+to drift. A subproject declares only its identity, in about ten lines.
+
+The trade is lockstep versioning: one tag releases every library at the same version. That
+is also why a release carries several jars, and why the asset naming convention
+(`<pluginId>-<version>-all.jar`) is load-bearing rather than tidy.
+
+### Extraction status
+
+| Category | Status |
+| --- | --- |
+| `iot` | **Extracted** → `housegraph-iot`. Its Arduino firmware moved with it — firmware and the node driving it are no use apart |
+| `discord`, `camera`, `web`, `ml` | Still in `app`. Each drops a dependency from `app/build.gradle` when it goes |
+
+**Extracting a category keeps old saves working**, and the `iot` extraction proved it: a
+graph saved while the node shipped in the app recorded it by its bare class name with no
+plugin key, and that still resolves — the registry indexes a node's simple name alongside
+its declared `@Node.Type` id. New saves use the prefixed id plus the owning library. The
+Add-Node menu entry is unchanged too, because the library's `categoryPrefix` reproduces the
+old category name.
+
 ## Still to come
 
-- **Template repository** node projects fork from. *(not yet built)*
-- **Extracting the integration node categories** — `discord`, `camera`, `web`, `ml`, `iot`.
-  *(not yet started)*
+- Extracting `discord`, `camera`, `web` and `ml`.
 
 ---
 

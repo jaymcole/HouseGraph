@@ -66,7 +66,18 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   it to a camera node's Password input via a Secret Loader).
 - **`DiscoveredCamera`** — the value model produced by discovery/enrichment.
 
-## Arduino IoT (`graph/nodes/iot/`, sketch in `extras/squirrel_status/`)
+## Arduino IoT — **extracted**
+
+> This integration no longer lives in this repository. It is the `housegraph-iot` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed through
+> **Node Libraries…**, and the Arduino sketch moved with it — firmware and the node that
+> drives it are no use apart. It was the first extraction precisely because it depends on
+> nothing but the JDK and the node model, so it exercised the whole pipeline with nothing
+> else that could fail. See [plugins.md](plugins.md).
+>
+> The description below is kept because the pattern it demonstrates — an action node whose
+> control flows straight through, with inputs that can be typed or wired — is still the
+> model for writing one.
 
 - **`SquirrelAlarmNode`** — the action side of the pattern: when triggered, sends
   an HTTP GET to `http://<host>/<status>`; the device plays the matching animation
@@ -74,15 +85,15 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   Control flows straight through (an OUT flow port) so more work can be chained
   after it. Both `Host` and `Status` inputs can be typed or wired.
 - **The device** is an Arduino UNO R4 WiFi driving an LED matrix. Its firmware is
-  the Arduino sketch under `extras/squirrel_status/` at the repository root (`.ino`
-  + per-animation `.h` files). It advertises itself over
+  the Arduino sketch under `housegraph-iot/firmware/squirrel_status/` in the
+  housegraph-nodes repository (`.ino` + per-animation `.h` files). It advertises itself over
   mDNS as `squirrel-alarm.local`; if that doesn't resolve, use its IP in the
   node's `Host` field. WiFi credentials go in a gitignored `wifi_secrets.h`
   (see `wifi_secrets.h.example`). To add an animation: export it from the Arduino
   LED-matrix editor, save `<name>.h`, and include it in the sketch.
 
-  > Note: `extras/` is not Java — it's device firmware and test assets, so it lives
-  > at the repository root rather than inside a source set. Gradle never sees it.
+  > Note: `extras/` here now holds only the sample website for the web-server node. It is
+  > not Java, so it lives at the repository root rather than inside a source set.
 
 ## Local web hosting (`web/`, nodes in `graph/nodes/web/`)
 
