@@ -14,6 +14,7 @@ import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
@@ -234,23 +235,62 @@ public final class PluginWindow {
      * downloaded and run.
      */
     public void installFrom(String repositoryUrl) {
+        installFrom(repositoryUrl, null);
+    }
+
+    /**
+     * @param wantedPluginId the library to take from the release when the repository publishes
+     *                       several (an update knows which); null to ask
+     */
+    public void installFrom(String repositoryUrl, String wantedPluginId) {
         runOffThread("Looking up the latest release of " + repositoryUrl + "…", () -> {
             GitHubReleases.Release release = GitHubReleases.latest(repositoryUrl, null)
                     .orElseThrow(() -> new IllegalStateException("No release information returned"));
-            Platform.runLater(() -> confirmThenInstall(repositoryUrl, release));
+            Platform.runLater(() -> chooseAssetThenInstall(repositoryUrl, release, wantedPluginId));
         });
     }
 
-    private void confirmThenInstall(String repositoryUrl, GitHubReleases.Release release) {
+    /**
+     * Chooses which library to install from a release, asking when the repository publishes more
+     * than one — a monorepo attaches a jar per library, and installing whichever came first would
+     * silently be the wrong one.
+     *
+     * @param wantedPluginId the library already known to be wanted (an update), or null to ask
+     */
+    private void chooseAssetThenInstall(String repositoryUrl, GitHubReleases.Release release, String wantedPluginId) {
+        if (wantedPluginId != null) {
+            release.assetFor(wantedPluginId).ifPresentOrElse(
+                    asset -> confirmThenInstall(repositoryUrl, release, asset),
+                    () -> status.setText("Release " + release.tagName() + " has no jar for \""
+                            + wantedPluginId + "\"."));
+            return;
+        }
+        if (!release.hasSeveralLibraries()) {
+            confirmThenInstall(repositoryUrl, release, release.assets().get(0));
+            return;
+        }
+        ChoiceDialog<GitHubReleases.Asset> picker =
+                new ChoiceDialog<>(release.assets().get(0), release.assets());
+        picker.initOwner(stage);
+        picker.setTitle("Choose a node library");
+        picker.setHeaderText("Release " + release.tagName() + " publishes "
+                + release.assets().size() + " node libraries.");
+        picker.setContentText("Install:");
+        // The list shows asset names, which by convention start with the library id.
+        picker.showAndWait().ifPresent(asset -> confirmThenInstall(repositoryUrl, release, asset));
+    }
+
+    private void confirmThenInstall(String repositoryUrl, GitHubReleases.Release release,
+                                    GitHubReleases.Asset asset) {
         // Trust-on-first-use, stated plainly. This matters most when a save file proposed the
         // repository: that is untrusted input asking to download and execute code, so it must never
         // install silently. And there is no sandbox to fall back on.
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.initOwner(stage);
         confirm.setTitle("Install node library");
-        confirm.setHeaderText("Install " + release.asset().name() + " from " + repositoryUrl + "?");
+        confirm.setHeaderText("Install " + asset.name() + " from " + repositoryUrl + "?");
         confirm.setContentText("Release " + release.tagName() + " — "
-                + formatSize(release.asset().sizeBytes()) + ".\n\n"
+                + formatSize(asset.sizeBytes()) + ".\n\n"
                 + "A node library runs with the same access as HouseGraph itself: your files, your "
                 + "network, and your saved secrets. Install it only if you trust its author, exactly "
                 + "as you would any program you downloaded.");
@@ -260,11 +300,11 @@ public final class PluginWindow {
             return;
         }
 
-        runOffThread("Downloading " + release.asset().name() + "…", () -> {
-            PluginInstaller.install(repositoryUrl, release, catalog);
+        runOffThread("Downloading " + asset.name() + "…", () -> {
+            PluginInstaller.install(repositoryUrl, release, asset, catalog);
         }, () -> {
             latestKnown.put(catalogIdOf(repositoryUrl), release);
-            librariesChanged("Installed " + release.asset().name() + ".");
+            librariesChanged("Installed " + asset.name() + ".");
         });
     }
 
@@ -305,7 +345,9 @@ public final class PluginWindow {
             if (requiresRestart(row.getId(), "updated")) {
                 return;
             }
-            installFrom(installed.repository());
+            // Pass the library id: a monorepo's release carries a jar per library, and an update
+            // must take the one it already has rather than asking again.
+            installFrom(installed.repository(), installed.id());
         });
     }
 

@@ -71,16 +71,27 @@ public final class PluginInstaller {
             throws IOException, InterruptedException {
         GitHubReleases.Release release = GitHubReleases.latest(repositoryUrl, null)
                 .orElseThrow(() -> new InstallException("No release information returned for " + repositoryUrl));
-        return install(repositoryUrl, release, catalog);
+        if (release.hasSeveralLibraries()) {
+            throw new InstallException("Release " + release.tagName() + " publishes "
+                    + release.assets().size() + " node libraries; pick one rather than installing blindly.");
+        }
+        return install(repositoryUrl, release, release.assets().get(0), catalog);
     }
 
-    /** Installs an already-resolved release, so a caller that showed a confirmation can reuse it. */
+    /**
+     * Installs one library from an already-resolved release, so a caller that showed a confirmation
+     * can reuse it — and so a repository publishing several libraries installs the chosen one rather
+     * than whichever happened to be listed first.
+     *
+     * @param asset the specific jar to install from {@code release}
+     */
     public static PluginCatalog.Installed install(String repositoryUrl,
                                                   GitHubReleases.Release release,
+                                                  GitHubReleases.Asset asset,
                                                   PluginCatalog catalog) throws IOException, InterruptedException {
         Path staged = Files.createTempFile("housegraph-plugin-", ".jar.part");
         try {
-            download(release.asset().downloadUrl(), staged);
+            download(asset.downloadUrl(), staged);
 
             PluginManifest manifest = PluginManifest.read(staged)
                     .orElseThrow(() -> new InstallException(

@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -51,8 +52,44 @@ public final class GitHubReleases {
     public record Asset(String name, String downloadUrl, long sizeBytes) {
     }
 
-    /** The latest release of a repository, and the jar to install from it. */
-    public record Release(String tagName, String version, Asset asset, String etag) {
+    /**
+     * The latest release of a repository, and every node library jar attached to it.
+     *
+     * <p>A list rather than a single asset because a repository may hold <em>several</em> node
+     * libraries — a monorepo releases all of them together. Picking one arbitrarily would silently
+     * install the wrong library, which is the kind of bug that wastes an afternoon.
+     */
+    public record Release(String tagName, String version, List<Asset> assets, String etag) {
+
+        public Release {
+            assets = List.copyOf(assets);
+        }
+
+        /** True when this release publishes more than one node library, so the user must choose. */
+        public boolean hasSeveralLibraries() {
+            return assets.size() > 1;
+        }
+
+        /**
+         * The asset providing a specific library, matched on the naming convention the template
+         * enforces: an asset is named {@code <pluginId>-<version>-all.jar}. Falls back to the only
+         * asset when a release has just one, so single-library repositories need no convention at all.
+         *
+         * @param pluginId the library wanted
+         * @return its asset, or empty if this release doesn't carry it
+         */
+        public Optional<Asset> assetFor(String pluginId) {
+            if (assets.size() == 1) {
+                return Optional.of(assets.get(0));
+            }
+            if (pluginId == null || pluginId.isBlank()) {
+                return Optional.empty();
+            }
+            return assets.stream()
+                    .filter(asset -> asset.name().toLowerCase(Locale.ROOT)
+                            .startsWith(pluginId.toLowerCase(Locale.ROOT) + "-"))
+                    .findFirst();
+        }
     }
 
     /** Raised for an outcome worth showing the user verbatim, rather than a generic failure. */
@@ -143,47 +180,58 @@ public final class GitHubReleases {
     /** Builds a {@link Release} from the API's JSON. Pure, so asset selection is directly testable. */
     static Release parse(JSONObject releaseJson, String etag) {
         String tag = releaseJson.optString("tag_name", "");
-        Asset asset = chooseAsset(releaseJson.optJSONArray("assets"));
-        if (asset == null) {
+        List<Asset> assets = jarAssets(releaseJson.optJSONArray("assets"));
+        if (assets.isEmpty()) {
             throw new LookupException("Release " + tag + " has no .jar attached. The library's release "
                     + "workflow has to upload its shaded jar as a release asset.");
         }
         // Tags are conventionally "v1.2.3" while the manifest records "1.2.3"; strip the prefix so
         // the two can be compared.
         String version = tag.startsWith("v") ? tag.substring(1) : tag;
-        return new Release(tag, version, asset, etag);
+        return new Release(tag, version, assets, etag);
     }
 
     /**
-     * Picks the jar to install: a shaded {@code *-all.jar} if present, else the only {@code .jar}.
-     * Prefers the shaded one because a plain jar almost certainly lacks the library's dependencies.
+     * Every node library jar attached to a release.
+     *
+     * <p>When any asset is a shaded {@code *-all.jar}, only those are returned: a plain jar
+     * alongside a shaded one is the unshaded build of the same thing and would be missing the
+     * library's dependencies. Sources and javadoc jars are excluded for the same reason — they are
+     * not the library.
+     *
+     * @param assets the release's {@code assets} array
+     * @return the installable jars, in release order
      */
-    static Asset chooseAsset(JSONArray assets) {
+    static List<Asset> jarAssets(JSONArray assets) {
+        List<Asset> shaded = new ArrayList<>();
+        List<Asset> plain = new ArrayList<>();
         if (assets == null) {
-            return null;
+            return shaded;
         }
-        Asset onlyJar = null;
-        int jarCount = 0;
         for (int i = 0; i < assets.length(); i++) {
             JSONObject entry = assets.optJSONObject(i);
             if (entry == null) {
                 continue;
             }
             String name = entry.optString("name", "");
-            if (!name.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            String lower = name.toLowerCase(Locale.ROOT);
+            if (!lower.endsWith(".jar") || lower.endsWith("-sources.jar") || lower.endsWith("-javadoc.jar")) {
                 continue;
             }
             Asset asset = new Asset(name, entry.optString("browser_download_url", ""), entry.optLong("size", 0));
-            if (name.toLowerCase(Locale.ROOT).endsWith("-all.jar")) {
-                return asset;
+            if (lower.endsWith("-all.jar")) {
+                shaded.add(asset);
+            } else {
+                plain.add(asset);
             }
-            jarCount++;
-            onlyJar = asset;
         }
-        if (jarCount > 1) {
-            log.warn("Release has several jars and none named *-all.jar; using {}", onlyJar.name());
+        if (!shaded.isEmpty()) {
+            return shaded;
         }
-        return onlyJar;
+        if (plain.size() > 1) {
+            log.warn("Release has several jars and none is named *-all.jar; the user will have to choose");
+        }
+        return plain;
     }
 
     private static String rateLimitMessage(HttpResponse<String> response) {
