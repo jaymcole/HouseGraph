@@ -4,7 +4,7 @@ Full context: [`docs/architecture/nodes.md`](../../../../../../../../../../docs/
 Start at the repo-root [`CLAUDE.md`](../../../../../../../../../../CLAUDE.md) if you haven't.
 
 Every concrete node lives here, one folder per **category** (`camera`,
-`constants`, `control`, `converters`, `debug`, `discord`, `iot`, `loader`,
+`constants`, `control`, `converters`, `debug`, `discord`, `loader`,
 `math`, `object`, `resource`, `viewers`, `web`).
 
 ## Adding a node — there is no registration step

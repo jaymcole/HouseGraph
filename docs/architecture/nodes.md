@@ -154,7 +154,7 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 
 ## Node categories (current folders under `graph/nodes/`)
 
-`camera`, `constants`, `control`, `converters`, `debug`, `discord`, `iot`,
+`camera`, `constants`, `control`, `converters`, `debug`, `discord`,
 `loader`, `math`, `ml`, `object`, `resource`, `viewers`, `web`.
 
 `web` holds nodes for hosting on the local network — currently the web-server

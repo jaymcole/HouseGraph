@@ -141,7 +141,8 @@ looking for a class.
 | Named resources & event pub/sub | api | `resource` | [resources.md](docs/architecture/resources.md) |
 | On-disk locations, secrets, preferences | api | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
 | Logging (levels, sinks, the log window) | api / app | `logging`, `ui.log` | [logging.md](docs/architecture/logging.md) |
-| Discord / cameras / Arduino IoT | app | `discord`, `camera`, `extras/squirrel_status` | [integrations.md](docs/architecture/integrations.md) |
+| Discord / cameras | app | `discord`, `camera` | [integrations.md](docs/architecture/integrations.md) |
+| Out-of-tree node libraries | app | `plugin`, `ui.plugin` | [plugins.md](docs/architecture/plugins.md) |
 | Local ML inference (DJL, no Python) | app | `ml` (`ImageNetClassifier`, `AnimalVerdict`) | [integrations.md](docs/architecture/integrations.md) |
 | Tests | both | `<module>/src/test/...` | [testing.md](docs/architecture/testing.md) |
 
