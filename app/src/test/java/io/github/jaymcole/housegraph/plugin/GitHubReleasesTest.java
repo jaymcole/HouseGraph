@@ -55,31 +55,82 @@ class GitHubReleasesTest {
     // --- Asset selection ------------------------------------------------------------------------
 
     @Test
-    void prefersTheShadedJarBecauseAPlainOneLacksItsDependencies() {
-        JSONArray assets = new JSONArray(List.of(
+    void prefersShadedJarsBecauseAPlainOneLacksItsDependencies() {
+        List<GitHubReleases.Asset> jars = GitHubReleases.jarAssets(new JSONArray(List.of(
                 asset("widgets-1.0.0.jar", 1000),
                 asset("widgets-1.0.0-all.jar", 9000),
-                asset("widgets-1.0.0-sources.jar", 500)));
+                asset("widgets-1.0.0-sources.jar", 500))));
 
-        GitHubReleases.Asset chosen = GitHubReleases.chooseAsset(assets);
-
-        assertEquals("widgets-1.0.0-all.jar", chosen.name());
-        assertEquals(9000, chosen.sizeBytes(), "the size is shown in the install confirmation");
+        assertEquals(1, jars.size(), "the plain jar is the unshaded build of the same thing");
+        assertEquals("widgets-1.0.0-all.jar", jars.get(0).name());
+        assertEquals(9000, jars.get(0).sizeBytes(), "the size is shown in the install confirmation");
     }
 
     @Test
-    void fallsBackToTheOnlyJarWhenNothingIsNamedAll() {
-        GitHubReleases.Asset chosen = GitHubReleases.chooseAsset(new JSONArray(List.of(
+    void fallsBackToAPlainJarWhenNothingIsShaded() {
+        List<GitHubReleases.Asset> jars = GitHubReleases.jarAssets(new JSONArray(List.of(
                 asset("notes.txt", 10), asset("widgets.jar", 700))));
 
-        assertEquals("widgets.jar", chosen.name());
+        assertEquals(List.of("widgets.jar"), jars.stream().map(GitHubReleases.Asset::name).toList());
     }
 
     @Test
-    void findsNoAssetWhenTheReleaseHasNoJar() {
-        assertEquals(null, GitHubReleases.chooseAsset(new JSONArray(List.of(asset("notes.txt", 10)))));
-        assertEquals(null, GitHubReleases.chooseAsset(new JSONArray()));
-        assertEquals(null, GitHubReleases.chooseAsset(null));
+    void sourcesAndJavadocJarsAreNotNodeLibraries() {
+        List<GitHubReleases.Asset> jars = GitHubReleases.jarAssets(new JSONArray(List.of(
+                asset("widgets-1.0.0-sources.jar", 100), asset("widgets-1.0.0-javadoc.jar", 100))));
+
+        assertTrue(jars.isEmpty());
+    }
+
+    @Test
+    void findsNoJarsWhenTheReleaseHasNone() {
+        assertTrue(GitHubReleases.jarAssets(new JSONArray(List.of(asset("notes.txt", 10)))).isEmpty());
+        assertTrue(GitHubReleases.jarAssets(new JSONArray()).isEmpty());
+        assertTrue(GitHubReleases.jarAssets(null).isEmpty());
+    }
+
+    // --- A repository publishing several libraries (a monorepo) ---------------------------------
+
+    @Test
+    void aMonorepoReleaseKeepsEveryLibrarysJar() {
+        GitHubReleases.Release release = GitHubReleases.parse(new JSONObject()
+                .put("tag_name", "v1.0.0")
+                .put("assets", new JSONArray(List.of(
+                        asset("housegraph-discord-1.0.0-all.jar", 5_000_000),
+                        asset("housegraph-camera-1.0.0-all.jar", 900_000),
+                        asset("housegraph-iot-1.0.0-all.jar", 40_000)))), null);
+
+        assertEquals(3, release.assets().size());
+        assertTrue(release.hasSeveralLibraries(), "the user has to be asked which one they meant");
+    }
+
+    @Test
+    void aLibraryIsMatchedToItsOwnJarByTheNamingConvention() {
+        // This is what makes updating a monorepo library work: it must take the jar it already has,
+        // not whichever was attached first.
+        GitHubReleases.Release release = GitHubReleases.parse(new JSONObject()
+                .put("tag_name", "v1.0.0")
+                .put("assets", new JSONArray(List.of(
+                        asset("housegraph-discord-1.0.0-all.jar", 5_000_000),
+                        asset("housegraph-camera-1.0.0-all.jar", 900_000)))), null);
+
+        assertEquals("housegraph-camera-1.0.0-all.jar",
+                release.assetFor("housegraph-camera").orElseThrow().name());
+        assertEquals("housegraph-discord-1.0.0-all.jar",
+                release.assetFor("housegraph-discord").orElseThrow().name());
+        assertTrue(release.assetFor("housegraph-nothere").isEmpty());
+    }
+
+    @Test
+    void aSingleLibraryReleaseNeedsNoNamingConventionAtAll() {
+        // Someone forking the template shouldn't have to think about asset naming.
+        GitHubReleases.Release release = GitHubReleases.parse(new JSONObject()
+                .put("tag_name", "v1.0.0")
+                .put("assets", new JSONArray(List.of(asset("anything-you-like.jar", 100)))), null);
+
+        assertFalse(release.hasSeveralLibraries());
+        assertEquals("anything-you-like.jar", release.assetFor("housegraph-widgets").orElseThrow().name(),
+                "with one jar there is nothing to disambiguate");
     }
 
     // --- Release parsing ------------------------------------------------------------------------

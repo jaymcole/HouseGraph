@@ -67,8 +67,7 @@ there is nothing to register.
 
 ## Consuming `housegraph-api`
 
-Published through **JitPack**, which builds a git tag and serves a multi-module
-project's subprojects as `com.github.<user>.<repo>:<module>:<tag>`:
+Published through **JitPack**, which builds a git tag:
 
 ```groovy
 repositories {
@@ -78,9 +77,22 @@ repositories {
 
 dependencies {
     // compileOnly is required, not stylistic -- see below.
-    compileOnly 'com.github.jaymcole.HouseGraph:housegraph-api:v0.2.0'
+    compileOnly 'com.github.jaymcole:HouseGraph:v0.2.0'
 }
 ```
+
+> **On that coordinate.** JitPack documents multi-module projects as
+> `com.github.<user>.<repo>:<module>:<tag>`, and `housegraph-api/build.gradle` publishes
+> under exactly that name. But JitPack found only *one* artifact in the build and
+> **relocated it to the repository-level coordinate**, so
+> `com.github.jaymcole.HouseGraph:housegraph-api:v0.2.0` 404s while
+> `com.github.jaymcole:HouseGraph:v0.2.0` resolves. Verified against the live repository by
+> compiling a node against it.
+>
+> The artifact named `HouseGraph` *is* `housegraph-api` — `:app` has no publication and
+> nobody compiles against it — so the name is misleading but harmless. Keep it in mind if a
+> second module is ever published from this repository: JitPack would then switch to
+> per-module coordinates and this one would stop working.
 
 Two requirements on the consumer, both with sharp failure modes:
 
@@ -188,6 +200,14 @@ is skipped with a warning; its nodes become placeholders and the graph still ope
 requests/hour/IP. So updates are never checked automatically, and the stored `ETag` is
 sent back as `If-None-Match` — a 304 doesn't count against the limit, making a repeat
 check free.
+
+**One repository may publish several libraries.** A monorepo releases every library at
+once, attaching a jar each, so a `Release` carries *all* of them and the user picks which
+to install. Updates don't ask — `Release.assetFor(pluginId)` matches on the convention the
+template enforces, **`<pluginId>-<version>-all.jar`** — so an update takes the jar it
+already has rather than whichever was attached first. A release with a single jar needs no
+convention at all, so someone forking the single-library template never has to think about
+asset naming.
 
 ## Opening a graph that needs a library — done
 
