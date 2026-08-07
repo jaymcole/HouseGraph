@@ -11,6 +11,7 @@ import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import javafx.geometry.Point2D;
@@ -24,6 +25,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -72,7 +74,7 @@ public final class GraphFileIO {
      * this when a change can't be handled by the shape-sniffing forgiving reads below, and add the
      * corresponding step to {@link #migrate}.
      */
-    static final int CURRENT_VERSION = 1;
+    static final int CURRENT_VERSION = 2;
 
     /** The version assumed for a save file that has no {@code version} key (written before versioning). */
     static final int LEGACY_VERSION = 0;
@@ -101,10 +103,38 @@ public final class GraphFileIO {
     static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry) {
         List<ClipboardNode> snapshotNodes = snapshot.nodes();
         JSONArray nodesJson = new JSONArray();
+        // Keyed by library id, insertion-ordered so the written table is stable between saves.
+        Map<String, JSONObject> pluginRows = new LinkedHashMap<>();
         for (ClipboardNode entry : snapshotNodes) {
             BaseNode node = entry.node();
+
+            // A node type this build couldn't resolve is written back byte-for-byte, apart from its
+            // position. Re-deriving it from the placeholder's rebuilt ports would silently drop the
+            // state map, concurrency/timeout settings, required-input flags, and any key a future
+            // format adds that this build doesn't know about. See MissingNode.
+            if (node instanceof MissingNode missing) {
+                JSONObject preserved = new JSONObject(missing.rawJson().toString());
+                preserved.put("x", entry.x());
+                preserved.put("y", entry.y());
+                nodesJson.put(preserved);
+                if (missing.missingPluginId() != null) {
+                    pluginRows.putIfAbsent(missing.missingPluginId(),
+                            missing.rawPluginRow() != null
+                                    ? new JSONObject(missing.rawPluginRow().toString())
+                                    : new JSONObject().put("id", missing.missingPluginId()));
+                }
+                continue;
+            }
+
             JSONObject nodeJson = new JSONObject();
             nodeJson.put("type", NodeRegistry.persistentTypeId(node.getClass()));
+            String pluginId = registry.pluginIdOf(node.getClass());
+            // Built-ins carry no "plugin" key at all, so a graph using only core nodes produces a v2
+            // file that differs from its v1 form by exactly the version number.
+            if (!NodeRegistry.CORE_PLUGIN_ID.equals(pluginId)) {
+                nodeJson.put("plugin", pluginId);
+                pluginRows.computeIfAbsent(pluginId, id -> new JSONObject().put("id", id));
+            }
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
             nodeJson.put("executionPolicy", node.getExecutionPolicy().name());
@@ -155,6 +185,12 @@ public final class GraphFileIO {
 
         JSONObject root = new JSONObject();
         root.put("version", CURRENT_VERSION);
+        // Written only when non-empty, matching the discipline used for maxConcurrency/timeoutMillis/
+        // requiredInputs. This is the table the load-time dependency check reads in one pass, before
+        // a single node is built or a single class is loaded.
+        if (!pluginRows.isEmpty()) {
+            root.put("plugins", new JSONArray(pluginRows.values()));
+        }
         root.put("nodes", nodesJson);
         root.put("dataEdges", dataEdgesJson);
         root.put("flowEdges", flowEdgesJson);
@@ -165,24 +201,32 @@ public final class GraphFileIO {
         int version = root.optInt("version", LEGACY_VERSION);
         root = migrate(root, version);
 
+        // A v1 file has no plugins table; optJSONArray gives null and the map stays empty, which is
+        // exactly the legacy behaviour (every node resolves with a null owning library).
+        Map<String, JSONObject> pluginRows = readPluginRows(root.optJSONArray("plugins"));
+
         List<ClipboardNode> nodes = new ArrayList<>();
         JSONArray nodesJson = root.getJSONArray("nodes");
         for (int i = 0; i < nodesJson.length(); i++) {
             JSONObject nodeJson = nodesJson.getJSONObject(i);
             String typeName = nodeJson.getString("type");
+            String pluginId = nodeJson.optString("plugin", null);
             double x = nodeJson.getDouble("x");
             double y = nodeJson.getDouble("y");
-            Class<? extends BaseNode> nodeClass = registry.resolveClass(typeName);
+            Class<? extends BaseNode> nodeClass = registry.resolveClass(typeName, pluginId);
             if (nodeClass == null) {
-                log.warn("Skipping unknown node type in save file: {}", typeName);
-                // Keep the index slot (with a null node) so this node's absence doesn't shift every
-                // later node's index and misdirect the edges that reference them - place() drops the
-                // slot and skips only the edges attached to it. Same for a failed instantiate below.
-                nodes.add(new ClipboardNode(null, x, y));
+                log.warn("Node type \"{}\"{} is not installed; keeping it as a placeholder so it survives a save",
+                        typeName, pluginId == null ? "" : " (from \"" + pluginId + "\")");
+                // NOT a null slot. A null was dropped by place() and never written back, so opening a
+                // graph without the providing library and re-saving destroyed the node, its values,
+                // its state, and every edge touching it. MissingNode preserves all of that verbatim.
+                nodes.add(new ClipboardNode(MissingNode.from(nodeJson, pluginRows.get(pluginId)), x, y));
                 continue;
             }
             BaseNode node = NodeRegistry.instantiate(nodeClass);
             if (node == null) {
+                // A resolvable type that won't instantiate is an internal error, not absent user
+                // data — there is nothing to preserve, so the index-holding null slot still applies.
                 nodes.add(new ClipboardNode(null, x, y));
                 continue;
             }
@@ -208,8 +252,17 @@ public final class GraphFileIO {
             nodes.add(new ClipboardNode(node, x, y));
         }
 
-        List<ClipboardDataEdge> dataEdges = new ArrayList<>();
         JSONArray dataEdgesJson = root.getJSONArray("dataEdges");
+        JSONArray flowEdgesJson = root.getJSONArray("flowEdges");
+
+        // Back-fill placeholder ports from the edges before resolving any of them. A placeholder
+        // rebuilds its data ports from the saved value arrays, but flow ports are never persisted on
+        // a node — they exist only as edge endpoints — so without this pass every flow edge touching
+        // a missing node would be dropped, and the graph would lose its wiring even though the node
+        // itself survived.
+        backFillPlaceholderPorts(nodes, dataEdgesJson, flowEdgesJson);
+
+        List<ClipboardDataEdge> dataEdges = new ArrayList<>();
         for (int i = 0; i < dataEdgesJson.length(); i++) {
             JSONObject edgeJson = dataEdgesJson.getJSONObject(i);
             int sourceNode = edgeJson.getInt("sourceNode");
@@ -226,7 +279,6 @@ public final class GraphFileIO {
         }
 
         List<ClipboardFlowEdge> flowEdges = new ArrayList<>();
-        JSONArray flowEdgesJson = root.getJSONArray("flowEdges");
         for (int i = 0; i < flowEdgesJson.length(); i++) {
             JSONObject edgeJson = flowEdgesJson.getJSONObject(i);
             int sourceNode = edgeJson.getInt("sourceNode");
@@ -273,6 +325,53 @@ public final class GraphFileIO {
     /** The node at {@code index} in a snapshot list, or null if out of range or a placeholder slot. */
     private static BaseNode nodeAt(List<ClipboardNode> nodes, int index) {
         return index >= 0 && index < nodes.size() ? nodes.get(index).node() : null;
+    }
+
+    /** The root {@code plugins} table as a lookup by library id. Empty for a v1 file, which has none. */
+    private static Map<String, JSONObject> readPluginRows(JSONArray pluginsJson) {
+        // A LinkedHashMap rather than Map.of() even when empty: a node with no "plugin" key looks it
+        // up with a null id, and the immutable maps throw on a null key.
+        Map<String, JSONObject> rows = new LinkedHashMap<>();
+        if (pluginsJson == null) {
+            return rows;
+        }
+        for (int i = 0; i < pluginsJson.length(); i++) {
+            JSONObject row = pluginsJson.optJSONObject(i);
+            if (row == null) {
+                continue;
+            }
+            String id = row.optString("id", null);
+            if (id != null && !id.isBlank()) {
+                rows.putIfAbsent(id, row);
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * Gives every {@link MissingNode} the ports the edge lists say it had, so those edges resolve
+     * onto it instead of being dropped. Runs before edge resolution, and only touches placeholders —
+     * a real node's ports are authoritative and must never be invented from a save file.
+     */
+    private static void backFillPlaceholderPorts(List<ClipboardNode> nodes, JSONArray dataEdges, JSONArray flowEdges) {
+        for (int i = 0; i < dataEdges.length(); i++) {
+            JSONObject edgeJson = dataEdges.getJSONObject(i);
+            if (nodeAt(nodes, edgeJson.getInt("sourceNode")) instanceof MissingNode source) {
+                source.ensureDataPort(edgeJson.opt("sourceVariable"), true);
+            }
+            if (nodeAt(nodes, edgeJson.getInt("targetNode")) instanceof MissingNode target) {
+                target.ensureDataPort(edgeJson.opt("targetVariable"), false);
+            }
+        }
+        for (int i = 0; i < flowEdges.length(); i++) {
+            JSONObject edgeJson = flowEdges.getJSONObject(i);
+            if (nodeAt(nodes, edgeJson.getInt("sourceNode")) instanceof MissingNode source) {
+                source.ensureFlowPort(edgeJson.opt("sourcePort"), true);
+            }
+            if (nodeAt(nodes, edgeJson.getInt("targetNode")) instanceof MissingNode target) {
+                target.ensureFlowPort(edgeJson.opt("targetPort"), false);
+            }
+        }
     }
 
     private static JSONArray waypointsToJson(List<Point2D> waypoints) {

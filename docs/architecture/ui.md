@@ -205,9 +205,14 @@ JSON shape:
 
 ```jsonc
 {
-  "version": 1,                    // save-format version; absent = a pre-versioning (legacy) file
+  "version": 2,                    // save-format version; absent = a pre-versioning (legacy) file
+  "plugins": [                     // the node libraries this graph depends on; omitted when only core is used
+    { "id": "housegraph-discord", "name": "Discord", "version": "0.3.1",
+      "repository": "https://github.com/jaymcole/housegraph-discord" }
+  ],
   "nodes": [
     { "type": "<stable type id>",  // NodeRegistry.persistentTypeId: simple class name, or a @Node.Type id
+      "plugin": "housegraph-discord", // which library above provides it; absent for a built-in node
       "x": 0.0, "y": 0.0,
       "executionPolicy": "QUEUE",  // DROP | RESTART | QUEUE | PARALLEL; absent = QUEUE
       "inputs":  [ { "name": "V1", "value": 3.0 }, ... ],  // keyed by port name, not position
@@ -233,10 +238,19 @@ Key rules to preserve when editing this format:
   (simple names + `@Node.Type` ids/aliases) and falls back to fully-qualified-class-name
   resolution for older saves. This is what keeps a renamed or relocated node class from
   stranding existing graphs.
-- **The root is versioned.** `version` (`GraphFileIO.CURRENT_VERSION`) stamps the
+- **The root is versioned.** `version` (`GraphFileIO.CURRENT_VERSION`, now `2`) stamps the
   format; a file without it reads as legacy. `GraphFileIO.migrate` is the single seam for
   future structural migrations the shape-sniffing reads can't express — bump the version
-  and add a step there together.
+  and add a step there together. Version 2 added the `plugins` table and the per-node
+  `plugin` key; both are purely additive, so `migrate` still passes v1 files straight
+  through with no step.
+- **Nodes record which library provides them.** A built-in node writes no `plugin` key at
+  all, so a graph using only core nodes produces a v2 file differing from its v1 form by
+  exactly the version number. For anything else, `plugin` names a row in the root
+  `plugins` table, which carries the library's name, version and — the part that matters —
+  the **repository it can be installed from**. That table is what the load-time dependency
+  check reads in a single pass before any node is built or any class is loaded, and it is
+  what lets `resolveClass` disambiguate a type id claimed by two libraries.
 - **Ports are persisted by name, not position.** Values are `{name, value}` objects
   matched to inputs by name on load; a data/flow edge references its variable/port by
   **name** when that name is non-blank and unique on the node, else by positional
@@ -252,17 +266,36 @@ Key rules to preserve when editing this format:
 - **Backward compatibility:** the old **positional** shape still loads — bare scalar
   `inputs`/`outputs` arrays, integer edge references, and a positional
   `requiredInputs` boolean array are all detected by JSON shape and read positionally.
-  Unknown node types load as an index-preserving placeholder with a warning (rather
-  than failing the load); missing `waypoints`/`sourcePort`/`targetPort` default
-  sensibly, and a missing/unknown `executionPolicy` loads as `QUEUE`. An edge whose
-  named endpoint no longer resolves on its node is dropped rather than mis-wired. When
-  you change the format, keep this forgiving-read behavior and document the new fields.
-- **Skipped nodes hold their index slot.** A save-file node that can't be rebuilt
-  (an unknown type) is kept in the loaded node list as a `ClipboardNode` with a
-  `null` node, so it does **not** shift every later node's index. Without this, a
-  single unknown node silently misdirected every edge after it onto the wrong
-  nodes. `GraphCanvas.place` builds an index-aligned lookup list (a `null` slot per
-  unbuilt node), places only the real nodes, and uses that list to resolve edges.
+  A v1 file has no `plugins` table and no per-node `plugin` key, which reads exactly as
+  before (every node resolves with no owning library). Missing
+  `waypoints`/`sourcePort`/`targetPort` default sensibly, and a missing/unknown
+  `executionPolicy` loads as `QUEUE`. An edge whose named endpoint no longer resolves on
+  its node is dropped rather than mis-wired. When you change the format, keep this
+  forgiving-read behavior and document the new fields.
+- **A node whose type isn't installed is preserved, not dropped.** It loads as a
+  `MissingNode` — a real node that reaches the canvas, shows as misconfigured, refuses to
+  run, and holds the node's original JSON. `toJson` writes that JSON back **verbatim**,
+  overwriting only `x`/`y`. Re-deriving it would silently lose `state`, `maxConcurrency`,
+  `timeoutMillis`, `requiredInputs`, and any key a future format adds.
+
+  > This is why version 2 exists. Previously an unresolvable node became a `null` slot
+  > that never reached the canvas and was never written back, so opening a graph without
+  > its library and pressing Quick Save **permanently destroyed** that node, its values,
+  > its state, and every edge touching it — and `App` auto-reopens the last file at
+  > startup, so it could happen before the user saw a thing. A v1-era build opening a v2
+  > file would reintroduce exactly that, which is what the version stamp signals.
+
+  Its data ports are rebuilt from the saved `inputs`/`outputs` names so named edge
+  endpoints still resolve. Flow ports are never persisted on a node — only referenced by
+  edges — so `fromJson` back-fills them from the edge lists in a pass before edges are
+  resolved. `GraphCanvas.copySelection` filters placeholders out, since duplicating one
+  would produce an empty node with no JSON behind it.
+- **A `null` slot now means only an internal failure.** A node whose type *does* resolve
+  but won't instantiate keeps an index-holding `ClipboardNode` with a `null` node — there
+  is no user data to preserve. It still must not shift every later node's index; without
+  that, one bad node silently misdirected every edge after it. `GraphCanvas.place` builds
+  an index-aligned lookup list (a `null` slot per unbuilt node), places only the real
+  nodes, and uses that list to resolve edges.
 - **Edge reconnection is per-edge and self-contained** (`GraphCanvas.place`).
   Each saved edge is reconnected in isolation, and one whose endpoints no longer
   resolve — a node index past the loaded node count, a `null` placeholder slot, or a

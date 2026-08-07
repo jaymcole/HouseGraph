@@ -29,6 +29,7 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
 import io.github.jaymcole.housegraph.graph.TypeConverters;
 import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
 import io.github.jaymcole.housegraph.logging.Log;
@@ -1092,7 +1093,26 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         if (selectedNodes.isEmpty()) {
             return;
         }
-        GraphSnapshot snapshot = snapshotOf(selectedNodes);
+        // A MissingNode is a preserved save-file blob, not a working node. Duplicating one would call
+        // its no-arg constructor and yield an empty placeholder with nothing behind it, so copying it
+        // has no value. Filtering here beats adding a duplicate-yourself hook to BaseNode that every
+        // node author would then have to understand, for this one case.
+        Set<NodeView> copyable = new LinkedHashSet<>();
+        int skipped = 0;
+        for (NodeView view : selectedNodes) {
+            if (view.getNode() instanceof MissingNode) {
+                skipped++;
+            } else {
+                copyable.add(view);
+            }
+        }
+        if (skipped > 0) {
+            log.info("Not copying {} placeholder node(s) for uninstalled types", skipped);
+        }
+        if (copyable.isEmpty()) {
+            return;
+        }
+        GraphSnapshot snapshot = snapshotOf(copyable);
         clipboardNodes = snapshot.nodes();
         clipboardDataEdges = snapshot.dataEdges();
         clipboardFlowEdges = snapshot.flowEdges();

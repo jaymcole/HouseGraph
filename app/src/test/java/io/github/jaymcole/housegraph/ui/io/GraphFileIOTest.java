@@ -9,6 +9,7 @@ import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
+import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import io.github.jaymcole.housegraph.graph.nodes.loader.SecretLoaderNode;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -125,13 +127,25 @@ class GraphFileIOTest {
 
         GraphSnapshot snapshot = fromJson(root);
 
-        // The slot is preserved (with a null node and its saved position) so it can hold the
-        // index for any later node; place() is what drops it off the actual canvas.
         assertEquals(1, snapshot.nodes().size());
         ClipboardNode placeholder = snapshot.nodes().get(0);
-        assertNull(placeholder.node(), "an unrebuildable node loads as a null-node placeholder");
+        assertTrue(placeholder.node() instanceof MissingNode,
+                "an unresolvable type loads as a real placeholder node, not a null slot that a later save would drop");
+        assertEquals("com.example.NotARealNode", ((MissingNode) placeholder.node()).missingType());
+        assertTrue(placeholder.node().isMisconfigured(), "it must look broken on the canvas, not runnable");
         assertEquals(7.0, placeholder.x());
         assertEquals(9.0, placeholder.y());
+    }
+
+    @Test
+    void aPlaceholderRefusesToRunRatherThanSilentlyDoingNothing() {
+        GraphSnapshot snapshot = fromJson(rootWith(List.of(unknownNodeJson(0.0, 0.0)), List.of(), List.of()));
+        BaseNode placeholder = snapshot.nodes().get(0).node();
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> placeholder.process(ProcessContext.uncancelled()));
+        assertTrue(failure.getMessage().contains("com.example.NotARealNode"),
+                "the failure has to name the type so the user knows what to install");
     }
 
     @Test
@@ -157,11 +171,138 @@ class GraphFileIOTest {
 
         assertEquals(3, snapshot.nodes().size());
         assertTrue(snapshot.nodes().get(0).node() instanceof ConstantFloatNode);
-        assertNull(snapshot.nodes().get(1).node(), "the unknown node holds index 1 as a placeholder");
+        assertTrue(snapshot.nodes().get(1).node() instanceof MissingNode, "the unknown node holds index 1");
         assertTrue(snapshot.nodes().get(2).node() instanceof AddNode,
                 "the node after the unknown one keeps its original index");
         // The edge's saved indices are untouched, and index 2 still lands on the AddNode.
         assertEquals(2, snapshot.dataEdges().get(0).targetNodeIndex());
+    }
+
+    // --- The data-loss regression: an uninstalled node type must survive a load/save round trip ---
+
+    @Test
+    void anUninstalledNodeSurvivesALoadSaveRoundTripByteForByte() {
+        // THE regression guard for this whole format version. Before it, an unresolvable node loaded
+        // as a null slot that never reached the canvas and was never written back, so opening a graph
+        // without its library and pressing Quick Save destroyed the node permanently.
+        JSONObject original = unknownNodeJson(7.0, 9.0);
+        original.put("plugin", "housegraph-widgets");
+        original.put("executionPolicy", "PARALLEL");
+        original.put("maxConcurrency", 4);
+        original.put("timeoutMillis", 5000);
+        original.put("state", new JSONObject(Map.of("running", "true")));
+        original.put("requiredInputs", List.of("Token"));
+        original.put("inputs", List.of(namedValue("Token", "abc")));
+        original.put("outputs", List.of(namedValue("Result", "xyz")));
+        // A key this build knows nothing about, standing in for whatever a future format adds.
+        original.put("somethingThisBuildDoesNotUnderstand", "keep me");
+
+        JSONObject root = rootWith(List.of(original), List.of(), List.of());
+        root.put("plugins", List.of(new JSONObject()
+                .put("id", "housegraph-widgets")
+                .put("name", "Widgets")
+                .put("version", "1.2.3")
+                .put("repository", "https://github.com/example/housegraph-widgets")));
+
+        JSONObject rewritten = toJson(fromJson(root));
+
+        JSONObject node = rewritten.getJSONArray("nodes").getJSONObject(0);
+        assertTrue(original.similar(node), "the node's JSON must come back out exactly as it went in");
+
+        JSONObject pluginRow = rewritten.getJSONArray("plugins").getJSONObject(0);
+        assertEquals("https://github.com/example/housegraph-widgets", pluginRow.getString("repository"),
+                "the repository is the only record of where the missing library comes from; losing it "
+                        + "would leave the user unable to repair the graph");
+        assertEquals("1.2.3", pluginRow.getString("version"));
+    }
+
+    @Test
+    void movingAPlaceholderOnCanvasUpdatesOnlyItsCoordinates() {
+        JSONObject original = unknownNodeJson(7.0, 9.0);
+        GraphSnapshot loaded = fromJson(rootWith(List.of(original), List.of(), List.of()));
+
+        // Same node, dragged elsewhere on the canvas.
+        ClipboardNode moved = new ClipboardNode(loaded.nodes().get(0).node(), 300.0, 400.0);
+        JSONObject node = toJson(new GraphSnapshot(List.of(moved), List.of(), List.of()))
+                .getJSONArray("nodes").getJSONObject(0);
+
+        assertEquals(300.0, node.getDouble("x"));
+        assertEquals(400.0, node.getDouble("y"));
+        assertEquals("com.example.NotARealNode", node.getString("type"), "everything else is still verbatim");
+    }
+
+    @Test
+    void edgesIntoAndOutOfAnUninstalledNodeSurviveARoundTrip() {
+        // Data ports come back from the saved value arrays; flow ports exist only as edge endpoints,
+        // so they have to be back-filled from the edge lists or every flow edge here would be dropped.
+        JSONObject missing = unknownNodeJson(0.0, 0.0);
+        missing.put("inputs", List.of(namedValue("In", "v")));
+        missing.put("outputs", List.of(namedValue("Out", "v")));
+
+        // The source endpoint is positional so this test turns only on the placeholder's own
+        // endpoint resolving, not on what a real node happens to call its ports.
+        JSONObject dataEdge = new JSONObject()
+                .put("sourceNode", 0).put("sourceVariable", 0)
+                .put("targetNode", 1).put("targetVariable", "In");
+        JSONObject flowEdge = new JSONObject()
+                .put("sourceNode", 1).put("sourcePort", "Then")
+                .put("targetNode", 2).put("targetPort", 0);
+
+        JSONObject root = rootWith(
+                List.of(realNodeJson(ConstantFloatNode.class), missing, realNodeJson(AddNode.class)),
+                List.of(dataEdge), List.of(flowEdge));
+
+        GraphSnapshot snapshot = fromJson(root);
+
+        assertEquals(1, snapshot.dataEdges().size(), "a named data endpoint resolves onto the placeholder");
+        assertEquals(1, snapshot.dataEdges().get(0).targetNodeIndex(), "and still points at the placeholder");
+        assertEquals(1, snapshot.flowEdges().size(), "a named flow endpoint is back-filled onto the placeholder");
+        assertEquals(1, snapshot.flowEdges().get(0).sourceNodeIndex());
+
+        // ...and they are still there after writing back out and reading again.
+        GraphSnapshot again = fromJson(toJson(snapshot));
+        assertEquals(1, again.dataEdges().size());
+        assertEquals(1, again.flowEdges().size());
+    }
+
+    // --- Format version 2 -----------------------------------------------------------------------
+
+    @Test
+    void aCoreOnlyGraphWritesNoPluginKeysAtAll() {
+        JSONObject json = toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0.0, 0.0)), List.of(), List.of()));
+
+        assertEquals(2, json.getInt("version"));
+        assertFalse(json.has("plugins"), "no plugins table when nothing outside core is used");
+        assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("plugin"),
+                "a built-in node carries no plugin key, so a core-only v2 file differs from v1 only in its version");
+    }
+
+    @Test
+    void aVersionOneFileWithNoPluginInformationStillLoads() {
+        JSONObject root = new JSONObject();
+        root.put("version", 1);
+        root.put("nodes", List.of(realNodeJson(AddNode.class)));
+        root.put("dataEdges", List.of());
+        root.put("flowEdges", List.of());
+
+        GraphSnapshot snapshot = fromJson(root);
+
+        assertEquals(1, snapshot.nodes().size());
+        assertTrue(snapshot.nodes().get(0).node() instanceof AddNode);
+    }
+
+    private static JSONObject rootWith(List<JSONObject> nodes, List<JSONObject> dataEdges, List<JSONObject> flowEdges) {
+        JSONObject root = new JSONObject();
+        root.put("version", GraphFileIO.CURRENT_VERSION);
+        root.put("nodes", nodes);
+        root.put("dataEdges", dataEdges);
+        root.put("flowEdges", flowEdges);
+        return root;
+    }
+
+    private static JSONObject namedValue(String name, Object value) {
+        return new JSONObject().put("name", name).put("value", value);
     }
 
     private static JSONObject unknownNodeJson(double x, double y) {
