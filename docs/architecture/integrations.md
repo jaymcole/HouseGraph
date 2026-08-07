@@ -1,10 +1,11 @@
 # External Integrations
 
-HouseGraph talks to several external worlds: IP cameras (ONVIF/Reolink) and the
-local network itself (hosting a website on a `.local` name). Each integration
-keeps its client code in a dedicated package and surfaces to the graph through
-nodes under `graph/nodes/<category>/`. None of the engine depends on these — they
-depend on the engine.
+This repository still hosts one integration with the local network itself
+(hosting a website on a `.local` name) plus local ML inference; each keeps its
+client code in a dedicated package and surfaces to the graph through nodes under
+`graph/nodes/<category>/`. None of the engine depends on these — they depend on
+the engine. Everything else has moved to out-of-tree node libraries — see the
+notes below and [plugins.md](plugins.md).
 
 ## Discord — **extracted**
 
@@ -34,7 +35,17 @@ depend on the engine.
 > each use. See the discord nodes for the pattern, or `HelloWorldNode` in the
 > template, which already used this to avoid the same collision.
 
-## Cameras (`camera/`, nodes in `graph/nodes/camera/`)
+## Cameras — **extracted**
+
+> This integration no longer lives in this repository. It is the
+> `housegraph-camera` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. Third extraction, and — unlike Discord — an easy
+> one: no third-party dependency at all (ONVIF/Reolink are plain HTTP/SOAP over
+> `java.net.http.HttpClient`, discovery is plain JDK sockets), so nothing here
+> needed the SLF4J-exclude or asset-naming lessons Discord surfaced. The
+> `@Node.Type`-vs-`NodeContentProvider` `Node` import collision still applied,
+> since three of these nodes have an inline UI. See [plugins.md](plugins.md).
 
 A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
 
@@ -62,11 +73,11 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
     a JSON body). The package stays JavaFX-free; the node wraps the bytes in an
     `Image`.
 - **`CameraConfigStore`** — reads/merges/writes the camera registry
-  (`cameras.json` under `config()`), keyed by MAC, each entry `{ name, model,
-  lastKnownIp }`. Merging is non-destructive; a malformed file is refused rather
-  than clobbered. **This file is not encrypted and deliberately holds no
-  credentials** — a camera password is a secret (store it in `SecretsStore`, feed
-  it to a camera node's Password input via a Secret Loader).
+  (`cameras.json` under the library's own config location), keyed by MAC, each
+  entry `{ name, model, lastKnownIp }`. Merging is non-destructive; a malformed
+  file is refused rather than clobbered. **This file is not encrypted and
+  deliberately holds no credentials** — a camera password is a secret, resolved
+  via `sdk.Secrets` and fed to a camera node's Password input via a Secret Loader.
 - **`DiscoveredCamera`** — the value model produced by discovery/enrichment.
 
 ## Arduino IoT — **extracted**
@@ -203,9 +214,11 @@ directory.
 
 Vision/ML models run **in-JVM**, locally, through
 [Deep Java Library](https://djl.ai) (DJL) on its PyTorch engine — no Python, no
-external service. This mirrors how `camera` (and, before extraction, `discord`)
-splits a headless client package from its UI nodes: the `ml` package holds
-JavaFX-free inference clients; `graph.nodes.ml` holds the nodes that drive them.
+external service. This mirrors the split every extracted integration also used —
+`camera`, `discord` — a headless client package from its UI nodes: the `ml`
+package holds JavaFX-free inference clients; `graph.nodes.ml` holds the nodes
+that drive them. `ml` is the next candidate for extraction (see
+[plugins.md](plugins.md)).
 
 - **`ImageNetClassifier`** (`ml/`) — a shared, lazily-loaded ResNet-50 / ImageNet
   classifier. The DJL `ZooModel` is loaded once on first use and reused
@@ -227,7 +240,7 @@ JavaFX-free inference clients; `graph.nodes.ml` holds the nodes that drive them.
 **Runtime download, not a bundled model.** The first classification after launch
 downloads the PyTorch native library and the model weights into DJL's on-disk
 cache (under the user's home); later runs are fast and offline. First use
-therefore needs network access, like the camera integration.
+therefore needs network access.
 
 **No secrets, no credentials** — models are public and fetched by DJL; nothing
 here touches `SecretsStore`.
@@ -240,8 +253,8 @@ factor shared model lifecycle/loading into `ml/` rather than duplicating per nod
 ---
 
 **When you change this, update…** this file whenever you add/modify an
-integration that still lives in this repository (a new camera protocol, a new
-local model / inference engine, a change to the web-server hosting or mDNS
-behavior) or change how an integration handles credentials. Extracted
-integrations (Discord, IoT) are documented in the housegraph-nodes repository;
-update this file's "extracted" note only if the extraction story itself changes.
+integration that still lives in this repository (a new local model / inference
+engine, a change to the web-server hosting or mDNS behavior) or change how an
+integration handles credentials. Extracted integrations (Discord, IoT, Camera)
+are documented in the housegraph-nodes repository; update this file's
+"extracted" note only if the extraction story itself changes.

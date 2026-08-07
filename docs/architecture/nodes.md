@@ -103,8 +103,8 @@ only on a pure data node with no flow ports):
 - **At an execution entry point** — a node `execute()` is called on directly (a trigger button, a
   timer, an inbound event) — it gates the **whole run** started by a re-trigger.
   `BaseNode.isExecutionEntryPoint()` marks these (default: "has a flow-out but no flow-in"; a node
-  that self-triggers *and* has a flow-in, like `DiscoverCamerasNode`'s Discover button, overrides it
-  to `true`).
+  that self-triggers *and* has a flow-in — like the `housegraph-camera` library's Discover Cameras
+  node, whose button calls `execute()` directly — overrides it to `true`).
 - **At a mid-cascade node** — one reached along a flow edge — it gates re-entry of that node's own
   `process()` when a *second* run overlaps it. This lets two branches of one trigger differ (a slow
   branch that `DROP`s overlaps, a fast branch that `QUEUE`s them). A consequence of the `QUEUE`
@@ -153,22 +153,22 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 
 ## Node categories (current folders under `graph/nodes/`)
 
-`camera`, `constants`, `control`, `converters`, `debug`,
-`loader`, `math`, `ml`, `object`, `resource`, `viewers`, `web`.
+`constants`, `control`, `converters`, `debug`, `loader`, `math`, `ml`, `object`,
+`resource`, `viewers`, `web`.
 
 This is the **built-in** library. Integrations that have been extracted into
-out-of-tree node libraries (`discord`, `iot`) no longer have a folder here — see
-[plugins.md](plugins.md).
+out-of-tree node libraries (`discord`, `iot`, `camera`) no longer have a folder
+here — see [plugins.md](plugins.md).
 
 `web` holds nodes for hosting on the local network — currently the web-server
 resource node, which serves a directory of static files as `<name>.local` and
-drives the `web` package's `LocalWebServer` (mirroring how `camera` nodes drive
-their client package). See [integrations.md](integrations.md).
+drives the `web` package's `LocalWebServer` (the same headless-client-package
+split every extracted integration also used). See [integrations.md](integrations.md).
 
 `ml` holds nodes backed by locally-run machine-learning models. They drive the
 JVM-native inference clients in the `ml` package (models run through Deep Java
-Library — no Python), the same way `camera` nodes drive the `camera` clients. The
-first is `ml/AnimalClassifierNode` (a squirrel/bird/other/none image classifier);
+Library — no Python), with that same split. The first is `ml/AnimalClassifierNode`
+(a squirrel/bird/other/none image classifier);
 detectors and other model-backed nodes will join it. See
 [integrations.md](integrations.md) for the model-inference story.
 

@@ -22,8 +22,8 @@ linked below.
   secrets, preferences.
 - [logging.md](logging.md) — log levels, the console/file/buffer sinks, and the
   standalone log window.
-- [integrations.md](integrations.md) — cameras and other integrations still built
-  into this repository.
+- [integrations.md](integrations.md) — local web hosting, local ML inference, and
+  other integrations still built into this repository.
 - [plugins.md](plugins.md) — the module split, out-of-tree node libraries, how
   they're fetched and loaded, and the extraction status of each integration.
 - [testing.md](testing.md) — test conventions and the headless-testability rule.
@@ -54,7 +54,7 @@ housegraph-api/ graph/ (engine + node model)  ──────►  resource/
   `NodeRegistry`, renders `NodeView`s, wires user gestures to engine calls, and
   drives save/load.
 - **`graph/nodes/`** subclasses depend on the engine and, for integration nodes
-  still in this repo, on `resource/`, `storage/`, or `camera/`. An out-of-tree
+  still in this repo, on `resource/`, `storage/`, or `web/`. An out-of-tree
   node library depends only on `housegraph-api` — never on `app`.
 - **`app/plugin/`** is the host side of loading out-of-tree libraries (manifest
   reading, cataloguing, fetching, class loading). It is not published; a node

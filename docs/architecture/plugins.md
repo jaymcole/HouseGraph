@@ -5,9 +5,9 @@
 > see the coordinate note below), `NodeRegistry` scans multiple roots and tracks which
 > library owns each node type, the save format records and preserves them, the runtime
 > loads libraries from jars, the app has a library window and a load-time dependency
-> check, and two integrations have been extracted (`iot`, `discord`) with old saves
-> verified to keep working against a real installed jar. Remaining: extracting `camera`,
-> `web`, and `ml`.
+> check, and three integrations have been extracted (`iot`, `discord`, `camera`) with old
+> saves verified to keep working against a real installed jar each time. Remaining:
+> extracting `web` and `ml`.
 
 Node implementations live in **their own GitHub repositories**. HouseGraph fetches
 them at runtime from a repo URL the user supplies and loads them into the running
@@ -265,15 +265,15 @@ is also why a release carries several jars, and why the asset naming convention
 | --- | --- |
 | `iot` | **Extracted** → `housegraph-iot`. Its Arduino firmware moved with it — firmware and the node driving it are no use apart |
 | `discord` | **Extracted** → `housegraph-discord`. The hardest case, done second on purpose — see below |
-| `camera`, `web`, `ml` | Still in `app`. Each drops a dependency from `app/build.gradle` when it goes |
+| `camera` | **Extracted** → `housegraph-camera`. No third-party dependency at all, so the SLF4J-exclude lesson didn't apply; the `Node`-import collision did (three of its nodes have an inline UI) |
+| `web`, `ml` | Still in `app`. Each drops a dependency from `app/build.gradle` when it goes |
 
-**Extracting a category keeps old saves working**, and both extractions proved it: a graph
-saved while a node shipped in the app recorded it by its bare class name with no plugin
-key, and that still resolves — the registry indexes a node's simple name alongside its
-declared `@Node.Type` id. New saves use the prefixed id plus the owning library. The
-Add-Node menu is unchanged too, because a library's `categoryPrefix` reproduces the old
-category name. Verified for both extractions against a real installed jar, not only in
-unit tests.
+**Extracting a category keeps old saves working**, verified for all three extractions
+against a real installed jar, not only in unit tests: a graph saved while a node shipped
+in the app recorded it by its bare class name with no plugin key, and that still resolves
+— the registry indexes a node's simple name alongside its declared `@Node.Type` id. New
+saves use the prefixed id plus the owning library. The Add-Node menu is unchanged too,
+because a library's `categoryPrefix` reproduces the old category name.
 
 **`discord` was deliberately the hardest case, done second.** It carries a sibling client
 package, `SecretsStore`/`sdk.Secrets` access, `ResourceRegistry` + `Subscription`, both
@@ -296,7 +296,7 @@ worth knowing before extracting anything else that bundles a library depending o
 
 ## Still to come
 
-- Extracting `camera`, `web` and `ml`.
+- Extracting `web` and `ml`.
 
 ---
 

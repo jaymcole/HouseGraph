@@ -34,7 +34,8 @@ Use this map of change → what to update:
 | Resource registry / pub-sub semantics | `ResourceRegistry` Javadoc **and** [`docs/architecture/resources.md`](docs/architecture/resources.md) |
 | Secret storage / crypto / on-disk locations | `SecretsStore` / `AppDirectories` Javadoc **and** [`docs/architecture/storage-and-secrets.md`](docs/architecture/storage-and-secrets.md) |
 | Logging levels / sinks / bootstrap / the log window | `LogManager` / `Logging` / `LogWindow` Javadoc **and** [`docs/architecture/logging.md`](docs/architecture/logging.md) |
-| Discord / camera / IoT integration | [`docs/architecture/integrations.md`](docs/architecture/integrations.md) |
+| An integration still built into this repo (web hosting, local ML) | [`docs/architecture/integrations.md`](docs/architecture/integrations.md) |
+| Out-of-tree node libraries (fetching, loading, extraction status) | [`docs/architecture/plugins.md`](docs/architecture/plugins.md) |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
 
@@ -47,9 +48,9 @@ update…"** note. Honor it.
 
 A JavaFX desktop app: a **node-graph editor for home automation**, with a focus
 on computer-vision triggers. You wire nodes on an infinite canvas — constants,
-math, converters, control-flow branches, camera-motion sensors — into graphs that
-react to events. This repository ships the engine, the UI, and a set of
-dependency-free primitive nodes; integrations (Discord, an Arduino IoT sign, and
+math, converters, control-flow branches — into graphs that react to events. This
+repository ships the engine, the UI, and a set of dependency-free primitive
+nodes; integrations (camera-motion sensors, Discord, an Arduino IoT sign, and
 more) are node libraries fetched at runtime — see
 [docs/architecture/plugins.md](docs/architecture/plugins.md). Graphs are saved as
 JSON and reopened between sessions.
