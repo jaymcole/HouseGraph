@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph;
 
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.plugin.PluginCatalog;
+import io.github.jaymcole.housegraph.plugin.PluginInstaller;
+import io.github.jaymcole.housegraph.plugin.PluginLoader;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.logging.Logging;
@@ -35,6 +38,9 @@ public class App extends Application {
     private final AppPreferences preferences = AppPreferences.load();
     private NodeGraph graph;
     private NodeRegistry nodeRegistry;
+    private PluginCatalog pluginCatalog;
+    private PluginLoader pluginLoader;
+    private GraphCanvas canvas;
 
     /** The file most recently saved to or loaded from; the target for Quick Save. Null until chosen. */
     private File currentFile;
@@ -47,11 +53,23 @@ public class App extends Application {
         // Reapply any per-output levels the user chose in a previous session.
         LogLevelPreferences.restore(preferences);
 
+        // Installed node libraries, read purely from local state — no startup path makes a network
+        // call, so the app opens the same offline as on. Pruning runs before any loader exists,
+        // because a loader holds an open handle on its jars and on Windows an open jar can't be
+        // deleted.
+        pluginCatalog = PluginCatalog.load();
+        PluginInstaller.pruneSupersededVersions(pluginCatalog);
+        pluginLoader = PluginLoader.from(pluginCatalog, App.class.getClassLoader());
+        // Install as this thread's context loader before anything spawns a thread. start() runs on
+        // the FX thread, which is NOT the thread main() ran on, so doing this in Launcher would have
+        // no effect here. Virtual threads inherit the creating thread's context loader, so every
+        // engine execution thread created below carries it — which is what a library's own
+        // ServiceLoader or Class.forName lookups need when they run inside a node's process().
+        Thread.currentThread().setContextClassLoader(pluginLoader.classLoader());
+
         graph = new NodeGraph();
-        // One root for now — the app's own node library. Installed node libraries add a root each
-        // once the plugin runtime lands; nothing else here has to change when they do.
-        nodeRegistry = new NodeRegistry(List.of(NodeRegistry.ScanRoot.core(App.class.getClassLoader())));
-        GraphCanvas canvas = new GraphCanvas(graph, nodeRegistry);
+        nodeRegistry = new NodeRegistry(pluginLoader.scanRoots());
+        canvas = new GraphCanvas(graph, nodeRegistry);
 
         // Quick Save writes straight to the current file with no dialog. Until one has been
         // chosen (fresh session, never saved), it falls back to the Save-As flow.
@@ -110,8 +128,32 @@ public class App extends Application {
         if (graph != null) {
             graph.dispose();
         }
+        // Release the handles held on installed node-library jars, so the next run can prune or
+        // replace them (on Windows an open jar can be neither deleted nor overwritten).
+        if (pluginLoader != null) {
+            pluginLoader.close();
+        }
         // Flush and close the log file so the last lines reach disk.
         Logging.shutdown();
+    }
+
+    /**
+     * Rebuilds everything that depends on the set of installed node libraries, after one is
+     * installed, removed, enabled or disabled. The old loader is closed first, because it holds an
+     * open handle on each jar.
+     * <p>
+     * This is safe while no node from an affected library is on the canvas. Where one is, the
+     * caller must ask for a restart instead: live nodes stay bound to the old loader's {@code Class}
+     * objects, so the same type would exist twice and {@code duplicate()} would clone the old one.
+     */
+    public void reloadNodeLibraries() {
+        if (pluginLoader != null) {
+            pluginLoader.close();
+        }
+        pluginLoader = PluginLoader.from(pluginCatalog, App.class.getClassLoader());
+        Thread.currentThread().setContextClassLoader(pluginLoader.classLoader());
+        nodeRegistry.setRoots(pluginLoader.scanRoots());
+        canvas.reloadNodeTypes();
     }
 
     /** Prompts for a destination file, then saves the graph there. */
