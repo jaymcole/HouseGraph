@@ -2,13 +2,18 @@
 
 > **Status: in progress.** The refactor that makes this real is landing in phases.
 > Sections marked *(not yet built)* describe the agreed design, not shipped code.
-> Phases 0–6 are done: the build is split, the node-facing extension points are in
-> the published API, that API is configured for publication, `NodeRegistry` scans
-> multiple roots and tracks which library owns each node type, the save format records
-> and preserves them, and the runtime can load a library from a jar. **No tag has been
-> pushed yet**, so no JitPack coordinate resolves in the real world — the publish was
-> verified end-to-end against `mavenLocal` by compiling a node in a scratch project, and
-> jar loading by compiling a node at test time into a jar it can only be reached through.
+> Phases 0–7 are done — everything on the host side. The build is split, the node-facing
+> extension points are in the published API, that API is configured for publication,
+> `NodeRegistry` scans multiple roots and tracks which library owns each node type, the
+> save format records and preserves them, the runtime loads libraries from jars, and the
+> app has a library window and a load-time dependency check.
+>
+> **No tag has been pushed yet**, so no JitPack coordinate resolves in the real world. The
+> publish was verified end-to-end against `mavenLocal` by compiling a node in a scratch
+> project; jar loading by compiling a node at test time into a jar it can only be reached
+> through; and the whole path by building a real library jar and watching the app load it
+> at startup. What remains is the template repository and moving the integration node
+> categories out.
 
 Node implementations live in **their own GitHub repositories**. HouseGraph fetches
 them at runtime from a repo URL the user supplies and loads them into the running
@@ -184,10 +189,49 @@ requests/hour/IP. So updates are never checked automatically, and the stored `ET
 sent back as `If-None-Match` — a 304 doesn't count against the limit, making a repeat
 check free.
 
+## Opening a graph that needs a library — done
+
+`GraphDependencyCheck.inspect` compares the save file's root `plugins` table against the
+catalog in one pure pass, before any node is built or any class is loaded. `App` collapses
+both load paths into `openGraph(file, interactive)`, and what happens next depends on who
+asked:
+
+- **The user chose the file** — a dialog listing what's missing, offering *Open anyway*
+  (default) or *Install and open*. Opening anyway is safe precisely because of
+  `MissingNode`; before that fix it would have been a data-loss trap.
+- **Startup reopen** — never blocks and never touches the network. It runs after
+  `stage.show()`, so a modal would appear over an already-rendered canvas, and someone
+  reopening the app wants to see their graph rather than a network-dependent prompt. A
+  toolbar notice links to the library window instead.
+
+An install offered from a save file still goes through the same per-repository
+confirmation as any other: a save file is untrusted input proposing a code download, so it
+never installs silently.
+
+A library installed at an *older* version than the graph was saved against is reported but
+does not block — its nodes still resolve, they may just lack a newer feature.
+
+**Documented limitation:** a v1 file has no `plugins` table, so the check reports nothing
+even when it uses an uninstalled library's node. Those nodes are still preserved as
+placeholders, but with no repository recorded there's nothing to offer. The first save
+under v2 fixes it permanently.
+
+## The library window — done
+
+`ui/plugin/PluginWindow`, modelled on `LogWindow` rather than `SecretsEditor`: non-modal,
+unowned, singleton, toggle-to-front. Installing is long and network-bound, and the user
+should be able to watch the canvas and log window while it runs — a modal forbids exactly
+that. It's a deliberately thin shell; everything worth testing lives in `plugin/`.
+
+Updating, disabling or removing a library while its nodes are on the canvas is refused with
+an explanation, because Java can't unload a class while instances exist: those nodes would
+stay bound to the old loader's `Class` objects and the type would exist twice.
+
 ## Still to come
 
-- **Dependency window** and the load-time dependency check. *(not yet built)*
 - **Template repository** node projects fork from. *(not yet built)*
+- **Extracting the integration node categories** — `discord`, `camera`, `web`, `ml`, `iot`.
+  *(not yet started)*
 
 ---
 

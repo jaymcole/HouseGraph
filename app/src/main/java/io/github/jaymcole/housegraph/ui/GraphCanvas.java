@@ -1263,6 +1263,25 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         contextMenu.getItems().setAll(buildAddNodeMenu());
     }
 
+    /**
+     * How many nodes currently on the canvas come from a given node library. Updating, disabling or
+     * removing a library while any of its nodes are live needs a restart rather than a hot reload:
+     * Java can't unload a class while instances exist, so those nodes would stay bound to the old
+     * loader's {@code Class} objects and the same type would exist twice.
+     *
+     * @param pluginId the library id
+     * @return the number of live nodes from it
+     */
+    public int countLiveNodesFrom(String pluginId) {
+        int count = 0;
+        for (NodeView nodeView : nodeViews) {
+            if (nodeRegistry.pluginIdOf(nodeView.getNode().getClass()).equals(pluginId)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private Menu buildAddNodeMenu() {
         Menu addNodeMenu = new Menu("Add Node");
         Map<String, Menu> categoryMenus = new TreeMap<>();

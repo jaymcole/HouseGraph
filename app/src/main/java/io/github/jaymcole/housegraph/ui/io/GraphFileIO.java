@@ -90,11 +90,36 @@ public final class GraphFileIO {
     }
 
     public static void load(GraphCanvas canvas, File file) throws IOException {
-        JSONObject root;
+        canvas.loadSnapshot(fromRoot(readRoot(file), canvas.getNodeRegistry()));
+    }
+
+    /**
+     * Parses a save file without building anything from it.
+     * <p>
+     * Split out from {@link #load} so a caller can inspect the root — specifically its
+     * {@code plugins} table — <em>before</em> any node is constructed or any class is loaded. That
+     * is what lets the app tell the user which node libraries are missing up front rather than
+     * discovering it one failed node at a time.
+     *
+     * @param file the save file
+     * @return the parsed root
+     * @throws IOException if the file can't be read
+     */
+    public static JSONObject readRoot(File file) throws IOException {
         try (FileReader reader = new FileReader(file)) {
-            root = new JSONObject(new JSONTokener(reader));
+            return new JSONObject(new JSONTokener(reader));
         }
-        canvas.loadSnapshot(fromJson(root, canvas.getNodeRegistry()));
+    }
+
+    /**
+     * Builds a snapshot from an already-parsed root, for a caller that inspected it first.
+     *
+     * @param root     the parsed save file
+     * @param registry resolves node types, and records which library each came from
+     * @return the loadable snapshot
+     */
+    public static GraphSnapshot fromRoot(JSONObject root, NodeRegistry registry) {
+        return fromJson(root, registry);
     }
 
     // The registry is a parameter rather than a static lookup so these two stay headless AND
