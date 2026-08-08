@@ -34,7 +34,7 @@ Use this map of change → what to update:
 | Resource registry / pub-sub semantics | `ResourceRegistry` Javadoc **and** [`docs/architecture/resources.md`](docs/architecture/resources.md) |
 | Secret storage / crypto / on-disk locations | `SecretsStore` / `AppDirectories` Javadoc **and** [`docs/architecture/storage-and-secrets.md`](docs/architecture/storage-and-secrets.md) |
 | Logging levels / sinks / bootstrap / the log window | `LogManager` / `Logging` / `LogWindow` Javadoc **and** [`docs/architecture/logging.md`](docs/architecture/logging.md) |
-| An integration still built into this repo (web hosting, local ML) | [`docs/architecture/integrations.md`](docs/architecture/integrations.md) |
+| An integration still built into this repo (local ML) | [`docs/architecture/integrations.md`](docs/architecture/integrations.md) |
 | Out-of-tree node libraries (fetching, loading, extraction status) | [`docs/architecture/plugins.md`](docs/architecture/plugins.md) |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
@@ -88,14 +88,14 @@ central design idea (see [Core standards](#core-architectural-standards)):
 - **Entry points:** `Launcher` (the `main` you actually run) delegates to
   `App extends Application`. The split exists so JavaFX launches cleanly from a
   plain classpath jar — do not move `main` into `App`.
-- **Key dependencies:** `org.json` (save files, config, secrets blob),
-  `org.jmdns:jmdns` (mDNS/Bonjour for the web-server node's `.local` hosting),
-  `slf4j-api` (third-party libraries — jmdns today, JDA inside the out-of-tree
-  `housegraph-discord` library — log through SLF4J). HouseGraph's own code logs
-  through the in-house `logging/` package; a bundled SLF4J provider
-  (`logging/slf4j/`) routes those SLF4J logs into that same pipeline, so there is
-  no separate console binding — see [`docs/architecture/logging.md`](docs/architecture/logging.md).
-  A node library loaded at runtime brings its own third-party dependencies; see
+- **Key dependencies:** `org.json` (save files, config, secrets blob) and
+  `slf4j-api`, which third-party libraries bundled inside out-of-tree node
+  libraries (JDA in `housegraph-discord`, jmdns in `housegraph-web`) log
+  through. HouseGraph's own code logs through the in-house `logging/` package; a
+  bundled SLF4J provider (`logging/slf4j/`) routes those SLF4J logs into that
+  same pipeline, so there is no separate console binding — see
+  [`docs/architecture/logging.md`](docs/architecture/logging.md). A node library
+  loaded at runtime brings its own third-party dependencies; see
   [`docs/architecture/plugins.md`](docs/architecture/plugins.md).
 
 ---
@@ -115,7 +115,7 @@ across the middle of this picture — everything below the line is published.
    │    └────────────────────┬────────────────────────┘         │
    │    ┌────────────────────▼────────────────────────┐         │
    │    │  graph/nodes/  the built-in node library     │         │
-   │    │  camera/ ml/ web/  integration clients        │         │
+   │    │  ml/  integration clients                     │         │
    │    │  plugin/  host side of out-of-tree libraries  │         │
    │    └────────────────────┬────────────────────────┘         │
    └─────────────────────────┼───────────────────────────────────┘

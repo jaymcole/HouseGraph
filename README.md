@@ -26,15 +26,16 @@ design idea:
   preserved exactly and offered for install, never silently lost.
 - First-party node libraries, in [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes):
   a **Discord** bot with modular text/slash commands (via JDA), an **IoT**
-  library driving an Arduino UNO R4 WiFi LED-matrix sign, and a **Camera**
-  library for ONVIF/Reolink IP-camera discovery and motion detection.
-- Built-in: a **Web Server** node that hosts a directory of static files on the
-  LAN as `<name>.local` (via jmdns multicast DNS) — optionally with a **Data
-  Store** node giving the hosted site shared, server-side persistence over a
-  `/api/data` endpoint — and local, JVM-native ML inference (via Deep Java
-  Library — no Python): an **Animal Classifier** node tells a squirrel from a
-  bird from a frame, with weights downloaded on first use and run locally
-  thereafter.
+  library driving an Arduino UNO R4 WiFi LED-matrix sign, a **Camera** library
+  for ONVIF/Reolink IP-camera discovery and motion detection, and a **Web**
+  library with a **Web Server** node that hosts a directory of static files on
+  the LAN as `<name>.local` (via jmdns multicast DNS) — optionally with a
+  **Data Store** node giving the hosted site shared, server-side persistence
+  over a `/api/data` endpoint — and a **Node Server** node for launching an
+  external Node.js server the same way.
+- Built-in: local, JVM-native ML inference (via Deep Java Library — no
+  Python): an **Animal Classifier** node tells a squirrel from a bird from a
+  frame, with weights downloaded on first use and run locally thereafter.
 - Concurrent, thread-safe execution engine with branch fan-out, for-each loops
   (a **For Each** node runs its body once per list item), and data-cycle detection.
 - Encrypted secret store (AES-256-GCM) so tokens and passwords never touch save
@@ -72,7 +73,7 @@ in sync**. Subsystem deep-dives live in
 | [resources.md](docs/architecture/resources.md) | named resources & event pub/sub |
 | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) | on-disk layout, encrypted secrets |
 | [logging.md](docs/architecture/logging.md) | log levels, sinks, and the log window |
-| [integrations.md](docs/architecture/integrations.md) | local web hosting, local ML, and other integrations still built into this repository |
+| [integrations.md](docs/architecture/integrations.md) | local ML and other integrations still built into this repository |
 | [plugins.md](docs/architecture/plugins.md) | out-of-tree node libraries: fetching, loading, and writing your own |
 | [testing.md](docs/architecture/testing.md) | test conventions |
 

@@ -154,16 +154,11 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 ## Node categories (current folders under `graph/nodes/`)
 
 `constants`, `control`, `converters`, `debug`, `loader`, `math`, `ml`, `object`,
-`resource`, `viewers`, `web`.
+`resource`, `viewers`.
 
 This is the **built-in** library. Integrations that have been extracted into
-out-of-tree node libraries (`discord`, `iot`, `camera`) no longer have a folder
-here — see [plugins.md](plugins.md).
-
-`web` holds nodes for hosting on the local network — currently the web-server
-resource node, which serves a directory of static files as `<name>.local` and
-drives the `web` package's `LocalWebServer` (the same headless-client-package
-split every extracted integration also used). See [integrations.md](integrations.md).
+out-of-tree node libraries (`discord`, `iot`, `camera`, `web`) no longer have a
+folder here — see [plugins.md](plugins.md).
 
 `ml` holds nodes backed by locally-run machine-learning models. They drive the
 JVM-native inference clients in the `ml` package (models run through Deep Java

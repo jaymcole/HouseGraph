@@ -5,13 +5,13 @@ Start at the repo-root [`CLAUDE.md`](../../../../../../../../../../CLAUDE.md) if
 
 Every concrete node lives here, one folder per **category** (`constants`,
 `control`, `converters`, `debug`, `loader`, `math`, `ml`, `object`, `resource`,
-`viewers`, `web`).
+`viewers`).
 
 This is the built-in library only — dependency-free primitives and the integrations
 that haven't been extracted yet. A node type doesn't have to live in this repository
 at all: see [`docs/architecture/plugins.md`](../../../../../../../../../../docs/architecture/plugins.md)
 for out-of-tree node libraries (`housegraph-discord`, `housegraph-iot`,
-`housegraph-camera`, and more), loaded at runtime from a GitHub repo.
+`housegraph-camera`, `housegraph-web`, and more), loaded at runtime from a GitHub repo.
 
 ## Adding a node — there is no registration step
 

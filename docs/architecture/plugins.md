@@ -5,9 +5,9 @@
 > see the coordinate note below), `NodeRegistry` scans multiple roots and tracks which
 > library owns each node type, the save format records and preserves them, the runtime
 > loads libraries from jars, the app has a library window and a load-time dependency
-> check, and three integrations have been extracted (`iot`, `discord`, `camera`) with old
-> saves verified to keep working against a real installed jar each time. Remaining:
-> extracting `web` and `ml`.
+> check, and four integrations have been extracted (`iot`, `discord`, `camera`, `web`) with
+> old saves verified to keep working against a real installed jar each time. Remaining:
+> extracting `ml`.
 
 Node implementations live in **their own GitHub repositories**. HouseGraph fetches
 them at runtime from a repo URL the user supplies and loads them into the running
@@ -266,9 +266,10 @@ is also why a release carries several jars, and why the asset naming convention
 | `iot` | **Extracted** → `housegraph-iot`. Its Arduino firmware moved with it — firmware and the node driving it are no use apart |
 | `discord` | **Extracted** → `housegraph-discord`. The hardest case, done second on purpose — see below |
 | `camera` | **Extracted** → `housegraph-camera`. No third-party dependency at all, so the SLF4J-exclude lesson didn't apply; the `Node`-import collision did (three of its nodes have an inline UI) |
-| `web`, `ml` | Still in `app`. Each drops a dependency from `app/build.gradle` when it goes |
+| `web` | **Extracted** → `housegraph-web`. Bundles jmdns, which — like JDA — transitively depends on `slf4j-api`; the exclude lesson from `discord` applied again, this time applied proactively before the build rather than discovered from a failed jar check. The `Node`-import collision applied too (both of its nodes have an inline UI) |
+| `ml` | Still in `app`. The last one; drops the DJL BOM and `javafx.swing` from `app/build.gradle` when it goes |
 
-**Extracting a category keeps old saves working**, verified for all three extractions
+**Extracting a category keeps old saves working**, verified for all four extractions
 against a real installed jar, not only in unit tests: a graph saved while a node shipped
 in the app recorded it by its bare class name with no plugin key, and that still resolves
 — the registry indexes a node's simple name alongside its declared `@Node.Type` id. New
@@ -296,7 +297,8 @@ worth knowing before extracting anything else that bundles a library depending o
 
 ## Still to come
 
-- Extracting `web` and `ml`.
+- Extracting `ml` — the last category, saved for last because its shading and native-library
+  size are the messiest of the five.
 
 ---
 

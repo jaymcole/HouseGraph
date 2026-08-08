@@ -1,9 +1,8 @@
 # External Integrations
 
-This repository still hosts one integration with the local network itself
-(hosting a website on a `.local` name) plus local ML inference; each keeps its
-client code in a dedicated package and surfaces to the graph through nodes under
-`graph/nodes/<category>/`. None of the engine depends on these — they depend on
+This repository still hosts local ML inference; it keeps its client code in a
+dedicated package and surfaces to the graph through nodes under
+`graph/nodes/<category>/`. None of the engine depends on it — it depends on
 the engine. Everything else has moved to out-of-tree node libraries — see the
 notes below and [plugins.md](plugins.md).
 
@@ -109,15 +108,27 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   > Note: `extras/` here now holds only the sample website for the web-server node. It is
   > not Java, so it lives at the repository root rather than inside a source set.
 
-## Local web hosting (`web/`, nodes in `graph/nodes/web/`)
+## Local web hosting — **extracted**
+
+> This integration no longer lives in this repository. It is the
+> `housegraph-web` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. Fourth extraction. Like Discord, it bundles a
+> library that transitively depends on `slf4j-api` — **jmdns**, here, not JDA —
+> so the same `exclude group: 'org.slf4j', module: 'slf4j-api'` fix on the
+> dependency block applies again (confirmed proactively this time via
+> `gradlew :app:dependencies` before writing the build, rather than discovered
+> after a failed jar-content check). The `@Node.Type`-vs-`NodeContentProvider`
+> `Node` import collision also applied, since both nodes have an inline UI. See
+> [plugins.md](plugins.md).
 
 Hosts a website reachable on the LAN at `http://<name>.local:<port>/`, either by
 serving a directory of static files from the JVM (`WebServerNode`) or by launching an
 external Node.js server as a child process (`NodeServerNode`). Like the other
-integrations, a JavaFX-free client package (`web/`) holds the machinery and
-`graph.nodes.web` holds the nodes.
+extracted integrations, a JavaFX-free client package (`plugins.web` in
+housegraph-nodes) holds the machinery and `plugins.web.nodes` holds the nodes.
 
-- **`LocalWebServer`** (`web/`) — the long-lived resource behind the web-server
+- **`LocalWebServer`** — the long-lived resource behind the web-server
   node, pairing two pieces:
   - the JDK's built-in `com.sun.net.httpserver.HttpServer` (no dependency) serving
     a base directory, with a directory-index (`index.html`) fallback,
@@ -131,14 +142,14 @@ integrations, a JavaFX-free client package (`web/`) holds the machinery and
   `start(root, name, port)` binds the socket and joins the multicast group (call it
   off the UI thread); `stop()` tears both halves down and is idempotent. If mDNS
   fails, `start` unwinds the HTTP server so it's all-or-nothing.
-- **`WebServerNode`** (`graph/nodes/web/`) — the node. Website name, directory
+- **`WebServerNode`** — the node. Website name, directory
   (chosen with a Browse… button), and port are authored inline and persisted via
   `saveState` — a **directory path, never the files** (the site is served live from
   disk). Liveness is user-driven (Start/Stop, off the UI thread), and it registers
   its `LocalWebServer` in `ResourceRegistry` under the site name; torn down in
   `onRemoved()`. It also has a **`Store` data input** — see below.
 
-Both server classes share **`LanAddress`** (`web/`) for picking the non-loopback
+Both server classes share **`LanAddress`** for picking the non-loopback
 site-local IPv4 to advertise over mDNS, so the choice is made one way.
 
 ### Hosting a Node.js server instead (`NodeProcessServer` / `NodeServerNode`)
@@ -147,7 +158,7 @@ For apps that aren't just static files — an Express server, a Vite dev server,
 anything `npm start` runs — the **Node-server node** hosts by launching an external
 Node.js process rather than serving from the JVM.
 
-- **`NodeProcessServer`** (`web/`) — the JavaFX-free resource. `start(dir, command,
+- **`NodeProcessServer`** — the JavaFX-free resource. `start(dir, command,
   name, port)` spawns the command through the platform shell (`cmd /c` on Windows,
   `sh -c` elsewhere, so PATH-resolved launchers like `npm`/`npx` work as typed) in
   the chosen project directory, pumps the child's merged stdout/stderr into the log
@@ -159,7 +170,7 @@ Node.js process rather than serving from the JVM.
   declared port as `PORT` into the child's environment and advertises it, but the
   Node app must actually listen on it (e.g. `app.listen(process.env.PORT)`); if they
   disagree, the advertisement points nowhere.
-- **`NodeServerNode`** (`graph/nodes/web/`) — the node. Server name, project directory
+- **`NodeServerNode`** — the node. Server name, project directory
   (Browse…), **start command** (default `npm start`), and port are authored inline and
   persisted via `saveState` — a directory path and command string, **never the project
   files**. Same user-driven Start/Stop-off-the-UI-thread lifecycle as `WebServerNode`,
@@ -215,9 +226,9 @@ directory.
 Vision/ML models run **in-JVM**, locally, through
 [Deep Java Library](https://djl.ai) (DJL) on its PyTorch engine — no Python, no
 external service. This mirrors the split every extracted integration also used —
-`camera`, `discord` — a headless client package from its UI nodes: the `ml`
+`camera`, `discord`, `web` — a headless client package from its UI nodes: the `ml`
 package holds JavaFX-free inference clients; `graph.nodes.ml` holds the nodes
-that drive them. `ml` is the next candidate for extraction (see
+that drive them. `ml` is the last remaining candidate for extraction (see
 [plugins.md](plugins.md)).
 
 - **`ImageNetClassifier`** (`ml/`) — a shared, lazily-loaded ResNet-50 / ImageNet
@@ -254,7 +265,7 @@ factor shared model lifecycle/loading into `ml/` rather than duplicating per nod
 
 **When you change this, update…** this file whenever you add/modify an
 integration that still lives in this repository (a new local model / inference
-engine, a change to the web-server hosting or mDNS behavior) or change how an
-integration handles credentials. Extracted integrations (Discord, IoT, Camera)
-are documented in the housegraph-nodes repository; update this file's
-"extracted" note only if the extraction story itself changes.
+engine) or change how an integration handles credentials. Extracted
+integrations (Discord, IoT, Camera, Web) are documented in the housegraph-nodes
+repository; update this file's "extracted" note only if the extraction story
+itself changes.

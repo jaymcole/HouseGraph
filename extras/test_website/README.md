@@ -1,8 +1,10 @@
 # test_website — a sample site for the Web Server node
 
 A tiny static site (`index.html` + `style.css` + `app.js`) for exercising the
-**Web Server** node (`graph/nodes/web/WebServerNode`). It's plain files, not Java —
-Gradle doesn't compile it, exactly like the `squirrel_status/` firmware next door.
+**Web Server** node (`WebServerNode`, in the `housegraph-web` library — see
+[housegraph-nodes](https://github.com/jaymcole/housegraph-nodes)). It's plain
+files, not Java — Gradle doesn't compile it, exactly like the
+`squirrel_status/` firmware next door.
 
 ## How to use
 
