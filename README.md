@@ -57,6 +57,20 @@ what a node library compiles against) and `app` (the desktop program).
 
 The `main` you run is `io.github.jaymcole.housegraph.Launcher`.
 
+### Standalone jar
+
+To run the app without an IDE, build a self-contained executable jar (bundles
+JavaFX, `housegraph-api`, and all other dependencies via the Shadow plugin):
+
+```bash
+./gradlew :app:shadowJar
+java -jar app/build/libs/app-<version>.jar
+```
+
+Out-of-tree node libraries are unaffected — they're still fetched/loaded at
+runtime, not bundled into this jar. See
+[docs/architecture/plugins.md](docs/architecture/plugins.md).
+
 ## Documentation
 
 Start with **[`CLAUDE.md`](CLAUDE.md)** — the architecture map, the standards the

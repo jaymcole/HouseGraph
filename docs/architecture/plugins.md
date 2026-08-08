@@ -237,6 +237,17 @@ unowned, singleton, toggle-to-front. Installing is long and network-bound, and t
 should be able to watch the canvas and log window while it runs — a modal forbids exactly
 that. It's a deliberately thin shell; everything worth testing lives in `plugin/`.
 
+The table supports multi-selection. Update, Enable/Disable, and Remove all act on the whole
+selection at once — each still goes through the same per-library gates (an install
+confirmation per update, one summary alert for whichever selected libraries are blocked)
+rather than a single blocker aborting the batch. Check for Updates checks just the selection
+when rows are selected, or every installed library when nothing is.
+
+When a release publishes several libraries, the picker's dropdown shows only each asset's
+name — `Asset` is a record, and its default `toString()` dumping every field made for an
+unreadable list. Size is shown as a detail label below the dropdown once something is
+selected, rather than crowding the dropdown itself.
+
 Updating, disabling or removing a library while its nodes are on the canvas is refused with
 an explanation, because Java can't unload a class while instances exist: those nodes would
 stay bound to the old loader's `Class` objects and the type would exist twice.

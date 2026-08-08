@@ -14,16 +14,23 @@ import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.util.StringConverter;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -36,6 +43,11 @@ import java.util.Optional;
  * should be able to look at the canvas and the log window while it runs — a modal dialog would
  * forbid exactly that. Structurally it is a table of rows with per-row status, which is
  * {@code LogWindow}'s shape; {@code SecretsEditor}'s list-plus-form is for editing one item.
+ *
+ * <p>The table allows multi-selection, and Update/Enable-Disable/Remove act on the whole
+ * selection at once (each library that's individually blocked — in use on the canvas — is
+ * skipped with one summary alert rather than aborting the batch). Check for Updates checks the
+ * selection when one exists, or every installed library when nothing is selected.
  *
  * <p>Deliberately a thin shell. Everything worth testing lives in the headless
  * {@code plugin} package, because this project has no infrastructure for testing JavaFX windows.
@@ -163,7 +175,7 @@ public final class PluginWindow {
 
         Button check = new Button("Check for Updates");
         // Never automatic: unauthenticated GitHub allows 60 requests an hour per IP, and checking
-        // every library costs one each.
+        // every library costs one each. Checks the selection if any rows are selected, else everything.
         check.setOnAction(e -> checkForUpdates());
 
         Button update = new Button("Update");
@@ -175,11 +187,15 @@ public final class PluginWindow {
         Button remove = new Button("Remove");
         remove.setOnAction(e -> removeSelected());
 
+        // Every action above operates on the full selection (TableView.SelectionMode.MULTIPLE),
+        // so ctrl/shift-click for bulk enable/disable, update, or remove.
+
         return new ToolBar(add, check, update, toggle, remove);
     }
 
     private TableView<Row> buildTable() {
         table.setItems(rows);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.getColumns().setAll(
                 column("Id", 170, row -> new SimpleStringProperty(row.getId())),
@@ -269,15 +285,51 @@ public final class PluginWindow {
             confirmThenInstall(repositoryUrl, release, release.assets().get(0));
             return;
         }
-        ChoiceDialog<GitHubReleases.Asset> picker =
-                new ChoiceDialog<>(release.assets().get(0), release.assets());
-        picker.initOwner(stage);
-        picker.setTitle("Choose a node library");
-        picker.setHeaderText("Release " + release.tagName() + " publishes "
+        buildAssetPicker(release).showAndWait()
+                .ifPresent(asset -> confirmThenInstall(repositoryUrl, release, asset));
+    }
+
+    /**
+     * A dropdown of jar names only — an {@link GitHubReleases.Asset}'s default {@code toString()}
+     * dumps every field, which reads as noise when all the user needs to recognize is the name. The
+     * size is shown separately, below the dropdown, once something is selected.
+     */
+    private Dialog<GitHubReleases.Asset> buildAssetPicker(GitHubReleases.Release release) {
+        Dialog<GitHubReleases.Asset> dialog = new Dialog<>();
+        dialog.initOwner(stage);
+        dialog.setTitle("Choose a node library");
+        dialog.setHeaderText("Release " + release.tagName() + " publishes "
                 + release.assets().size() + " node libraries.");
-        picker.setContentText("Install:");
-        // The list shows asset names, which by convention start with the library id.
-        picker.showAndWait().ifPresent(asset -> confirmThenInstall(repositoryUrl, release, asset));
+
+        ComboBox<GitHubReleases.Asset> combo =
+                new ComboBox<>(FXCollections.observableArrayList(release.assets()));
+        combo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(GitHubReleases.Asset asset) {
+                return asset == null ? "" : asset.name();
+            }
+
+            @Override
+            public GitHubReleases.Asset fromString(String string) {
+                throw new UnsupportedOperationException("not editable");
+            }
+        });
+        combo.setMaxWidth(Double.MAX_VALUE);
+        combo.getSelectionModel().selectFirst();
+
+        Label details = new Label();
+        details.setWrapText(true);
+        combo.valueProperty().addListener((obs, old, asset) ->
+                details.setText(asset == null ? "" : formatSize(asset.sizeBytes())));
+        details.setText(formatSize(combo.getValue().sizeBytes()));
+
+        VBox content = new VBox(8, new Label("Install:"), combo, details);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setResultConverter(button ->
+                button != null && button.getButtonData().isDefaultButton() ? combo.getValue() : null);
+        return dialog;
     }
 
     private void confirmThenInstall(String repositoryUrl, GitHubReleases.Release release,
@@ -316,13 +368,20 @@ public final class PluginWindow {
                 .orElse("");
     }
 
+    /** With no selection, every installed library; otherwise just the selected rows. */
     private void checkForUpdates() {
-        if (catalog.all().isEmpty()) {
+        List<Row> selected = new ArrayList<>(table.getSelectionModel().getSelectedItems());
+        List<PluginCatalog.Installed> targets = selected.isEmpty()
+                ? catalog.all()
+                : selected.stream().map(row -> catalog.byId(row.getId()).orElseThrow()).toList();
+        if (targets.isEmpty()) {
             status.setText("Nothing installed yet.");
             return;
         }
-        runOffThread("Checking for updates…", () -> {
-            for (PluginCatalog.Installed installed : catalog.all()) {
+        String verb = selected.isEmpty() ? "Checking for updates…"
+                : "Checking for updates on " + targets.size() + " selected…";
+        runOffThread(verb, () -> {
+            for (PluginCatalog.Installed installed : targets) {
                 if (installed.repository() == null) {
                     continue;
                 }
@@ -336,86 +395,142 @@ public final class PluginWindow {
     }
 
     private void updateSelected() {
-        selected().ifPresent(row -> {
+        List<Row> selected = selectedRows();
+        if (selected.isEmpty()) {
+            return;
+        }
+        List<String> blocked = new ArrayList<>();
+        List<String> noRepository = new ArrayList<>();
+        List<PluginCatalog.Installed> toUpdate = new ArrayList<>();
+        for (Row row : selected) {
+            if (liveNodeCount.applyAsInt(row.getId()) > 0) {
+                blocked.add(row.getId());
+                continue;
+            }
             PluginCatalog.Installed installed = catalog.byId(row.getId()).orElseThrow();
             if (installed.repository() == null) {
-                status.setText("\"" + row.getId() + "\" has no recorded repository to update from.");
-                return;
+                noRepository.add(row.getId());
+                continue;
             }
-            if (requiresRestart(row.getId(), "updated")) {
-                return;
-            }
-            // Pass the library id: a monorepo's release carries a jar per library, and an update
-            // must take the one it already has rather than asking again.
+            toUpdate.add(installed);
+        }
+        warnBlocked(blocked, "updated");
+        if (!noRepository.isEmpty()) {
+            status.setText("No recorded repository to update from: " + String.join(", ", noRepository) + ".");
+        }
+        // Pass the library id with each: a monorepo's release carries a jar per library, and an
+        // update must take the one it already has rather than asking again. Each still goes through
+        // its own confirmation dialog before downloading.
+        for (PluginCatalog.Installed installed : toUpdate) {
             installFrom(installed.repository(), installed.id());
-        });
+        }
     }
 
     private void toggleSelected() {
-        selected().ifPresent(row -> {
+        List<Row> selected = selectedRows();
+        if (selected.isEmpty()) {
+            return;
+        }
+        List<String> blocked = new ArrayList<>();
+        int enabledCount = 0;
+        int disabledCount = 0;
+        for (Row row : selected) {
             PluginCatalog.Installed installed = catalog.byId(row.getId()).orElseThrow();
             boolean enabling = !installed.enabled();
-            if (!enabling && requiresRestart(row.getId(), "disabled")) {
-                return;
+            if (!enabling && liveNodeCount.applyAsInt(row.getId()) > 0) {
+                blocked.add(row.getId());
+                continue;
             }
             catalog.setEnabled(row.getId(), enabling);
-            catalog.save();
-            librariesChanged((enabling ? "Enabled " : "Disabled ") + row.getId() + ".");
-        });
+            if (enabling) {
+                enabledCount++;
+            } else {
+                disabledCount++;
+            }
+        }
+        warnBlocked(blocked, "disabled");
+        if (enabledCount == 0 && disabledCount == 0) {
+            return;
+        }
+        catalog.save();
+        StringBuilder message = new StringBuilder();
+        if (enabledCount > 0) {
+            message.append("Enabled ").append(enabledCount).append(enabledCount == 1 ? " library. " : " libraries. ");
+        }
+        if (disabledCount > 0) {
+            message.append("Disabled ").append(disabledCount).append(disabledCount == 1 ? " library." : " libraries.");
+        }
+        librariesChanged(message.toString().trim());
     }
 
     private void removeSelected() {
-        selected().ifPresent(row -> {
-            if (requiresRestart(row.getId(), "removed")) {
-                return;
+        List<Row> selected = selectedRows();
+        if (selected.isEmpty()) {
+            return;
+        }
+        List<String> blocked = new ArrayList<>();
+        List<Row> removable = new ArrayList<>();
+        for (Row row : selected) {
+            if (liveNodeCount.applyAsInt(row.getId()) > 0) {
+                blocked.add(row.getId());
+            } else {
+                removable.add(row);
             }
-            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-            confirm.initOwner(stage);
-            confirm.setHeaderText("Remove \"" + row.getId() + "\"?");
-            confirm.setContentText("Graphs using its nodes will still open — those nodes are kept as "
-                    + "placeholders and come back if you reinstall it.");
-            if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
-                return;
-            }
+        }
+        warnBlocked(blocked, "removed");
+        if (removable.isEmpty()) {
+            return;
+        }
+
+        boolean plural = removable.size() > 1;
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.initOwner(stage);
+        confirm.setHeaderText(plural ? "Remove " + removable.size() + " libraries?"
+                : "Remove \"" + removable.get(0).getId() + "\"?");
+        confirm.setContentText("Graphs using " + (plural ? "their nodes" : "its nodes") + " will still open "
+                + "— those nodes are kept as placeholders and come back if you reinstall "
+                + (plural ? "them" : "it") + ".");
+        if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
+            return;
+        }
+        for (Row row : removable) {
             catalog.remove(row.getId());
-            catalog.save();
-            librariesChanged("Removed " + row.getId() + ". Its jar is cleaned up at next startup.");
-        });
+        }
+        catalog.save();
+        librariesChanged("Removed " + removable.size() + (plural ? " libraries. Their jars are"
+                : " library. Its jar is") + " cleaned up at next startup.");
     }
 
     /**
-     * Blocks a change that can't be applied while nodes from that library are on the canvas, and
-     * says so plainly. You cannot unload a class while instances exist: those nodes stay bound to
-     * the old loader's {@code Class} objects, so the same type would exist twice and
-     * {@code NodeRegistry.duplicate} would clone the stale one.
-     *
-     * @return true if the caller should stop
+     * Shows one summary alert for every library a bulk action skipped because its nodes are on the
+     * canvas. You cannot unload a class while instances exist: those nodes stay bound to the old
+     * loader's {@code Class} objects, so the same type would exist twice and
+     * {@code NodeRegistry.duplicate} would clone the stale one. A no-op when nothing was blocked.
      */
-    private boolean requiresRestart(String pluginId, String verb) {
-        int live = liveNodeCount.applyAsInt(pluginId);
-        if (live == 0) {
-            return false;
+    private void warnBlocked(List<String> blockedIds, String verb) {
+        if (blockedIds.isEmpty()) {
+            return;
         }
+        boolean plural = blockedIds.size() > 1;
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(stage);
-        alert.setHeaderText("\"" + pluginId + "\" can't be " + verb + " while it's in use");
-        alert.setContentText(live + " node" + (live == 1 ? "" : "s") + " in the open graph come"
-                + (live == 1 ? "s" : "") + " from this library. Java can't unload a class while "
-                + "instances of it exist, so this takes effect after a restart. Remove those nodes "
-                + "first, or restart HouseGraph.");
+        alert.setHeaderText((plural ? blockedIds.size() + " libraries can't be " + verb
+                : "\"" + blockedIds.get(0) + "\" can't be " + verb) + " while in use");
+        alert.setContentText("Java can't unload a class while instances of it exist, so this takes "
+                + "effect after a restart. Remove those nodes from the canvas first, or restart "
+                + "HouseGraph.\n\n" + String.join(", ", blockedIds));
         alert.getDialogPane().setMinWidth(460);
         alert.showAndWait();
-        status.setText("\"" + pluginId + "\" is in use by " + live + " node(s); restart to change it.");
-        return true;
+        status.setText((plural ? blockedIds.size() + " libraries are" : "\"" + blockedIds.get(0) + "\" is")
+                + " in use; restart to change " + (plural ? "them" : "it") + ".");
     }
 
-    private Optional<Row> selected() {
-        Row row = table.getSelectionModel().getSelectedItem();
-        if (row == null) {
-            status.setText("Select a library first.");
-            return Optional.empty();
+    private List<Row> selectedRows() {
+        List<Row> selected = new ArrayList<>(table.getSelectionModel().getSelectedItems());
+        if (selected.isEmpty()) {
+            status.setText("Select at least one library first.");
         }
-        return Optional.of(row);
+        return selected;
     }
 
     private void librariesChanged(String message) {

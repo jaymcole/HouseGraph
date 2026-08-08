@@ -1,6 +1,7 @@
 plugins {
     id 'application'
     id 'org.openjfx.javafxplugin' version '0.1.0'
+    id 'com.gradleup.shadow' version '8.3.5'
 }
 
 description = 'The HouseGraph desktop application.'
@@ -23,4 +24,12 @@ dependencies {
     // integration node category has been extracted into out-of-tree node libraries — see
     // docs/architecture/plugins.md — so this is the only dependency app/ has left.
     implementation project(':housegraph-api')
+}
+
+shadowJar {
+    // Plain name (no "-all" suffix) so it's easy to find: app/build/libs/app-<version>.jar.
+    archiveClassifier = ''
+    // housegraph-api ships an SLF4J provider registered via META-INF/services; merge rather
+    // than let one copy silently win if another provider ever ends up on the runtime classpath.
+    mergeServiceFiles()
 }
