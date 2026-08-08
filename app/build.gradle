@@ -27,10 +27,6 @@ dependencies {
     // --- Everything below belongs to a node category that is being extracted into its own
     // --- repository; each line leaves with its category. See docs/architecture/plugins.md.
 
-    // Pure-Java mDNS/Bonjour, for the web-server node: advertises a "<name>.local"
-    // hostname + _http._tcp service on the LAN (the JDK has no mDNS of its own).
-    implementation 'org.jmdns:jmdns:3.5.9'
-
     // Deep Java Library: JVM-native ML inference (see the ml package). The BOM pins all DJL
     // artifacts to one version. The PyTorch engine downloads the matching native library (and
     // models download their weights) on first use, cached under the user's home — no Python,
