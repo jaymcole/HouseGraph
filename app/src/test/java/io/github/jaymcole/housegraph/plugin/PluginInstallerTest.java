@@ -122,4 +122,27 @@ class PluginInstallerTest {
         assertFalse(Files.exists(old), "an update leaves the previous version behind; startup is when it can go");
         assertTrue(Files.exists(current.resolve("housegraph-widgets.jar")));
     }
+
+    @Test
+    void pruningDeletesAWholeLibraryDirectoryOnceItsIdLeavesTheCatalog(@TempDir Path temp) throws Exception {
+        // Remove() in the library window only edits the catalog — it defers the jar cleanup here
+        // rather than deleting a jar the running loader might still have open.
+        Path pluginsRoot = temp.resolve("plugins");
+        PluginCatalog catalog = PluginCatalog.loadFrom(temp.resolve("plugins.json"), pluginsRoot);
+        catalog.put(new PluginCatalog.Installed("housegraph-kept", "Kept", "1.0.0",
+                null, "0.2", List.of("a.b"), "kept", null, true));
+
+        Path removedVersion = pluginsRoot.resolve("housegraph-removed").resolve("1.0.0");
+        Path keptVersion = pluginsRoot.resolve("housegraph-kept").resolve("1.0.0");
+        Files.createDirectories(removedVersion);
+        Files.createDirectories(keptVersion);
+        Files.writeString(removedVersion.resolve("housegraph-removed.jar"), "gone");
+        Files.writeString(keptVersion.resolve("housegraph-kept.jar"), "kept");
+
+        PluginInstaller.pruneSupersededVersions(catalog);
+
+        assertFalse(Files.exists(pluginsRoot.resolve("housegraph-removed")),
+                "housegraph-removed is no longer in the catalog, so its whole directory should go");
+        assertTrue(Files.exists(keptVersion.resolve("housegraph-kept.jar")));
+    }
 }

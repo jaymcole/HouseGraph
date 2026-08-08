@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -215,12 +217,16 @@ public final class PluginInstaller {
     }
 
     /**
-     * Deletes versions of a library other than the installed one. Called at startup, before any
-     * loader exists — while a loader is open its jar can't be deleted on Windows.
+     * Deletes on-disk library directories that no longer belong: every version of a library removed
+     * from the catalog entirely (a Remove in the library window only edits the catalog, deferring
+     * the jar cleanup to here so it never fights a loader that may still have the jar open), and
+     * stale versions of a library still in the catalog. Called at startup, before any loader exists —
+     * while a loader is open its jar can't be deleted on Windows.
      *
      * @param catalog the installed libraries
      */
     public static void pruneSupersededVersions(PluginCatalog catalog) {
+        pruneRemovedLibraries(catalog);
         for (PluginCatalog.Installed installed : catalog.all()) {
             Path libraryRoot = catalog.pluginsRoot().resolve(PluginCatalog.sanitize(installed.id()));
             if (!Files.isDirectory(libraryRoot)) {
@@ -234,6 +240,28 @@ public final class PluginInstaller {
             } catch (IOException e) {
                 log.warn("Could not prune old versions of \"{}\": {}", installed.id(), e.toString());
             }
+        }
+    }
+
+    /**
+     * Deletes every top-level library directory under {@code catalog.pluginsRoot()} whose id isn't
+     * in the catalog at all, as opposed to {@link #pruneSupersededVersions}'s per-library version
+     * pruning, which only ever looks at ids the catalog still has.
+     */
+    private static void pruneRemovedLibraries(PluginCatalog catalog) {
+        Path pluginsRoot = catalog.pluginsRoot();
+        if (!Files.isDirectory(pluginsRoot)) {
+            return;
+        }
+        Set<String> keepIds = catalog.all().stream()
+                .map(installed -> PluginCatalog.sanitize(installed.id()))
+                .collect(Collectors.toSet());
+        try (var libraries = Files.list(pluginsRoot)) {
+            libraries.filter(Files::isDirectory)
+                    .filter(dir -> !keepIds.contains(dir.getFileName().toString()))
+                    .forEach(PluginInstaller::deleteRecursively);
+        } catch (IOException e) {
+            log.warn("Could not scan {} for removed libraries: {}", pluginsRoot, e.toString());
         }
     }
 

@@ -238,19 +238,45 @@ should be able to watch the canvas and log window while it runs — a modal forb
 that. It's a deliberately thin shell; everything worth testing lives in `plugin/`.
 
 The table supports multi-selection. Update, Enable/Disable, and Remove all act on the whole
-selection at once — each still goes through the same per-library gates (an install
-confirmation per update, one summary alert for whichever selected libraries are blocked)
-rather than a single blocker aborting the batch. Check for Updates checks just the selection
-when rows are selected, or every installed library when nothing is.
+selection at once — each still goes through the same per-library gate (an install
+confirmation per update, one confirmation for a batch remove) rather than a single blocker
+aborting the batch. Check for Updates checks just the selection when rows are selected, or
+every installed library when nothing is.
 
 When a release publishes several libraries, the picker's dropdown shows only each asset's
 name — `Asset` is a record, and its default `toString()` dumping every field made for an
 unreadable list. Size is shown as a detail label below the dropdown once something is
 selected, rather than crowding the dropdown itself.
 
-Updating, disabling or removing a library while its nodes are on the canvas is refused with
-an explanation, because Java can't unload a class while instances exist: those nodes would
-stay bound to the old loader's `Class` objects and the type would exist twice.
+### Changing a library while its nodes are on the canvas: deferred, not refused
+
+Updating, disabling, enabling, or removing a library always writes through to the catalog
+(`config/plugins.json`) and, for an update, downloads the new jar to its own version-stamped
+path — none of that touches the shared `PluginLoader` or any jar it has open, so it's safe no
+matter what's live. What *can't* safely happen while any node-library node is on the canvas is
+the in-memory hot reload (`App.tryReloadNodeLibraries`, née `reloadNodeLibraries`): rebuilding
+the shared class loader re-scans every enabled library's classes, not just the changed one, so
+a node still bound to the old `Class` object would be left stranded — the same type existing
+twice — the instant that reload ran. `GraphCanvas.hasLiveLibraryNodes()` is the gate:
+`tryReloadNodeLibraries()` runs the reload and returns `true` only when it's empty; otherwise it
+does nothing and returns `false`, leaving the just-saved change to take effect on the next
+restart, which always rebuilds `PluginLoader`/`NodeRegistry` fresh from the catalog on disk.
+
+Because the reload is all-or-nothing across every library, `PluginWindow` gates on *any*
+node-library node being live anywhere on the canvas, not just nodes from the library being
+changed — installing or enabling an unrelated library while something else's nodes are live
+defers too, for the same reason. A library whose change is deferred shows "Pending restart" in
+its Status column (with a live node count, when that library itself has one); the first time in
+a session that anything defers, one summary alert says so, and later deferrals just update the
+status line so a batch of changes doesn't produce a dialog per action. `GraphCanvas`'s
+`countLiveNodesFrom(pluginId)` (one library) and `hasLiveLibraryNodes()` (any library) are
+different methods for this reason — the former drives the per-row live-count display, the
+latter gates the reload itself.
+
+A library removed from the catalog leaves its jar directory on disk untouched (the running
+loader may still have it open); `PluginInstaller.pruneSupersededVersions` deletes it at the next
+startup, before any loader exists — the same moment it already prunes a superseded version's
+directory for a library that's merely been updated.
 
 ## Where the node libraries live
 

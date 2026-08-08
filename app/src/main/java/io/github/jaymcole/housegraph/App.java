@@ -148,7 +148,7 @@ public class App extends Application {
     }
 
     private void openPluginWindow() {
-        PluginWindow.show(pluginCatalog, this::reloadNodeLibraries, canvas::countLiveNodesFrom);
+        PluginWindow.show(pluginCatalog, this::tryReloadNodeLibraries, canvas::countLiveNodesFrom);
     }
 
     @Override
@@ -169,14 +169,23 @@ public class App extends Application {
 
     /**
      * Rebuilds everything that depends on the set of installed node libraries, after one is
-     * installed, removed, enabled or disabled. The old loader is closed first, because it holds an
-     * open handle on each jar.
+     * installed, removed, enabled or disabled — but only when it's safe to. The old loader is closed
+     * and a new one built from the current catalog, which re-scans and re-loads the classes of
+     * <b>every</b> enabled library, not just the one that changed. That's only safe while no node
+     * from <b>any</b> library is on the canvas: a live node would stay bound to its old loader's
+     * {@code Class} object while the registry now knows only the new one, so the same type would
+     * exist twice and {@code duplicate()} would clone the wrong one.
      * <p>
-     * This is safe while no node from an affected library is on the canvas. Where one is, the
-     * caller must ask for a restart instead: live nodes stay bound to the old loader's {@code Class}
-     * objects, so the same type would exist twice and {@code duplicate()} would clone the old one.
+     * When it isn't safe, the catalog/disk change the caller already made (a JSON write, or a jar
+     * installed to a fresh version-stamped path) is left as-is and simply doesn't take effect until
+     * the next restart, which calls {@link #start} and reads the catalog fresh.
+     *
+     * @return true if the reload actually ran; false if it was skipped because a library node is live
      */
-    public void reloadNodeLibraries() {
+    public boolean tryReloadNodeLibraries() {
+        if (canvas.hasLiveLibraryNodes()) {
+            return false;
+        }
         if (pluginLoader != null) {
             pluginLoader.close();
         }
@@ -184,6 +193,7 @@ public class App extends Application {
         Thread.currentThread().setContextClassLoader(pluginLoader.classLoader());
         nodeRegistry.setRoots(pluginLoader.scanRoots());
         canvas.reloadNodeTypes();
+        return true;
     }
 
     /** Prompts for a destination file, then saves the graph there. */
@@ -308,7 +318,7 @@ public class App extends Application {
                     .filter(GraphDependencyCheck.RequiredPlugin::isInstallable)
                     .map(GraphDependencyCheck.RequiredPlugin::repository)
                     .forEach(repository -> PluginWindow.showAndInstall(pluginCatalog,
-                            this::reloadNodeLibraries, canvas::countLiveNodesFrom, repository));
+                            this::tryReloadNodeLibraries, canvas::countLiveNodesFrom, repository));
         }
         return true;
     }

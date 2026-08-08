@@ -1282,6 +1282,25 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return count;
     }
 
+    /**
+     * Whether any node from **any** node library (as opposed to a built-in) is currently live on the
+     * canvas. This is the gate for a node-library hot reload, not {@link #countLiveNodesFrom}: the
+     * shared {@code PluginLoader} and {@code NodeRegistry} are rebuilt for every enabled library at
+     * once, so a reload triggered by a change to one library still re-scans every other library's
+     * classes too. A node from an unrelated library left live through that reload would end up bound
+     * to a now-discarded {@code Class} object, which is exactly the failure a hot reload must avoid.
+     *
+     * @return true if at least one live node is not from {@link NodeRegistry#CORE_PLUGIN_ID}
+     */
+    public boolean hasLiveLibraryNodes() {
+        for (NodeView nodeView : nodeViews) {
+            if (!nodeRegistry.pluginIdOf(nodeView.getNode().getClass()).equals(NodeRegistry.CORE_PLUGIN_ID)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private Menu buildAddNodeMenu() {
         Menu addNodeMenu = new Menu("Add Node");
         Map<String, Menu> categoryMenus = new TreeMap<>();

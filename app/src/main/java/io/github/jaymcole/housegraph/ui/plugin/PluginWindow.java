@@ -30,9 +30,11 @@ import javafx.util.StringConverter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Manage installed node libraries: add one from a GitHub URL, check for updates, remove, or
@@ -45,8 +47,13 @@ import java.util.Optional;
  * {@code LogWindow}'s shape; {@code SecretsEditor}'s list-plus-form is for editing one item.
  *
  * <p>The table allows multi-selection, and Update/Enable-Disable/Remove act on the whole
- * selection at once (each library that's individually blocked — in use on the canvas — is
- * skipped with one summary alert rather than aborting the batch). Check for Updates checks the
+ * selection at once. The catalog/disk change always happens immediately — the version-stamped
+ * jar path and plain JSON catalog write are safe even while a library's nodes are live. What
+ * defers is the in-memory hot reload: rebuilding the shared class loader would leave any
+ * node-library node currently on the canvas bound to a discarded {@code Class}, so a reload only
+ * runs when the canvas has none. When it can't, the change is left pending and takes effect on
+ * the next restart; the first time that happens in a session gets one summary alert, later ones
+ * just update the status line and the row's "Pending restart" state. Check for Updates checks the
  * selection when one exists, or every installed library when nothing is selected.
  *
  * <p>Deliberately a thin shell. Everything worth testing lives in the headless
@@ -59,7 +66,7 @@ public final class PluginWindow {
     private static PluginWindow instance;
 
     private final PluginCatalog catalog;
-    private final Runnable onLibrariesChanged;
+    private final java.util.function.BooleanSupplier tryReloadLibraries;
     private final java.util.function.ToIntFunction<String> liveNodeCount;
     private final Stage stage;
     private final TableView<Row> table = new TableView<>();
@@ -68,6 +75,14 @@ public final class PluginWindow {
 
     /** Latest known release per library id, from the last explicit update check. */
     private final Map<String, GitHubReleases.Release> latestKnown = new HashMap<>();
+
+    /**
+     * Library ids whose catalog/disk change has landed but whose hot reload hasn't run yet because
+     * a node-library node was live on the canvas at the time. Cleared entirely the moment a reload
+     * does succeed — that reload always rebuilds from the whole current catalog, so nothing is left
+     * outstanding once it runs. Its emptiness also gates the one-time-per-session summary alert.
+     */
+    private final Set<String> pendingRestart = new LinkedHashSet<>();
 
     /** One table row. A view model, so the table never reaches into the catalog mid-render. */
     public static final class Row {
@@ -112,15 +127,17 @@ public final class PluginWindow {
      * Opens the window, or brings it to the front if already open.
      *
      * @param catalog            the installed libraries
-     * @param onLibrariesChanged called on the FX thread after a change that needs the node registry
-     *                           and Add-Node menu rebuilt
-     * @param liveNodeCount      how many nodes from a given library are on the canvas right now;
-     *                           a change affecting live nodes needs a restart, not a hot reload
+     * @param tryReloadLibraries called on the FX thread after a change that needs the node registry
+     *                           and Add-Node menu rebuilt; attempts the rebuild and returns whether
+     *                           it actually ran, which is false whenever a node-library node is live
+     *                           on the canvas — the change still lands on disk, it just waits for a
+     *                           restart instead
+     * @param liveNodeCount      how many nodes from a given library are on the canvas right now
      */
-    public static void show(PluginCatalog catalog, Runnable onLibrariesChanged,
+    public static void show(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
                             java.util.function.ToIntFunction<String> liveNodeCount) {
         if (instance == null) {
-            instance = new PluginWindow(catalog, onLibrariesChanged, liveNodeCount);
+            instance = new PluginWindow(catalog, tryReloadLibraries, liveNodeCount);
         }
         instance.open();
     }
@@ -132,17 +149,17 @@ public final class PluginWindow {
      *
      * @param repositoryUrl the repository a save file recorded for a library it needs
      */
-    public static void showAndInstall(PluginCatalog catalog, Runnable onLibrariesChanged,
+    public static void showAndInstall(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
                                       java.util.function.ToIntFunction<String> liveNodeCount,
                                       String repositoryUrl) {
-        show(catalog, onLibrariesChanged, liveNodeCount);
+        show(catalog, tryReloadLibraries, liveNodeCount);
         instance.installFrom(repositoryUrl);
     }
 
-    private PluginWindow(PluginCatalog catalog, Runnable onLibrariesChanged,
+    private PluginWindow(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
                          java.util.function.ToIntFunction<String> liveNodeCount) {
         this.catalog = catalog;
-        this.onLibrariesChanged = onLibrariesChanged;
+        this.tryReloadLibraries = tryReloadLibraries;
         this.liveNodeCount = liveNodeCount;
         stage = new Stage();
         stage.setTitle("HouseGraph Node Libraries");
@@ -229,6 +246,12 @@ public final class PluginWindow {
             java.nio.file.Path jar = catalog.jarFor(catalog.byId(row.getId()).orElseThrow());
             if (!java.nio.file.Files.isRegularFile(jar)) {
                 row.stateProperty().set("Jar missing — reinstall");
+            }
+            if (pendingRestart.contains(row.getId())) {
+                int live = liveNodeCount.applyAsInt(row.getId());
+                row.stateProperty().set(live > 0
+                        ? "Pending restart (" + live + (live == 1 ? " node live)" : " nodes live)")
+                        : "Pending restart");
             }
         }
         table.refresh();
@@ -355,8 +378,9 @@ public final class PluginWindow {
         runOffThread("Downloading " + asset.name() + "…", () -> {
             PluginInstaller.install(repositoryUrl, release, asset, catalog);
         }, () -> {
-            latestKnown.put(catalogIdOf(repositoryUrl), release);
-            librariesChanged("Installed " + asset.name() + ".");
+            String id = catalogIdOf(repositoryUrl);
+            latestKnown.put(id, release);
+            librariesChanged("Installed " + asset.name() + ".", List.of(id));
         });
     }
 
@@ -399,14 +423,9 @@ public final class PluginWindow {
         if (selected.isEmpty()) {
             return;
         }
-        List<String> blocked = new ArrayList<>();
         List<String> noRepository = new ArrayList<>();
         List<PluginCatalog.Installed> toUpdate = new ArrayList<>();
         for (Row row : selected) {
-            if (liveNodeCount.applyAsInt(row.getId()) > 0) {
-                blocked.add(row.getId());
-                continue;
-            }
             PluginCatalog.Installed installed = catalog.byId(row.getId()).orElseThrow();
             if (installed.repository() == null) {
                 noRepository.add(row.getId());
@@ -414,13 +433,13 @@ public final class PluginWindow {
             }
             toUpdate.add(installed);
         }
-        warnBlocked(blocked, "updated");
         if (!noRepository.isEmpty()) {
             status.setText("No recorded repository to update from: " + String.join(", ", noRepository) + ".");
         }
         // Pass the library id with each: a monorepo's release carries a jar per library, and an
         // update must take the one it already has rather than asking again. Each still goes through
-        // its own confirmation dialog before downloading.
+        // its own confirmation dialog before downloading. A library whose nodes are live on the
+        // canvas updates its jar and catalog entry just the same — see librariesChanged.
         for (PluginCatalog.Installed installed : toUpdate) {
             installFrom(installed.repository(), installed.id());
         }
@@ -431,26 +450,19 @@ public final class PluginWindow {
         if (selected.isEmpty()) {
             return;
         }
-        List<String> blocked = new ArrayList<>();
+        List<String> changed = new ArrayList<>();
         int enabledCount = 0;
         int disabledCount = 0;
         for (Row row : selected) {
             PluginCatalog.Installed installed = catalog.byId(row.getId()).orElseThrow();
             boolean enabling = !installed.enabled();
-            if (!enabling && liveNodeCount.applyAsInt(row.getId()) > 0) {
-                blocked.add(row.getId());
-                continue;
-            }
             catalog.setEnabled(row.getId(), enabling);
+            changed.add(row.getId());
             if (enabling) {
                 enabledCount++;
             } else {
                 disabledCount++;
             }
-        }
-        warnBlocked(blocked, "disabled");
-        if (enabledCount == 0 && disabledCount == 0) {
-            return;
         }
         catalog.save();
         StringBuilder message = new StringBuilder();
@@ -460,7 +472,7 @@ public final class PluginWindow {
         if (disabledCount > 0) {
             message.append("Disabled ").append(disabledCount).append(disabledCount == 1 ? " library." : " libraries.");
         }
-        librariesChanged(message.toString().trim());
+        librariesChanged(message.toString().trim(), changed);
     }
 
     private void removeSelected() {
@@ -468,61 +480,44 @@ public final class PluginWindow {
         if (selected.isEmpty()) {
             return;
         }
-        List<String> blocked = new ArrayList<>();
-        List<Row> removable = new ArrayList<>();
-        for (Row row : selected) {
-            if (liveNodeCount.applyAsInt(row.getId()) > 0) {
-                blocked.add(row.getId());
-            } else {
-                removable.add(row);
-            }
-        }
-        warnBlocked(blocked, "removed");
-        if (removable.isEmpty()) {
-            return;
-        }
-
-        boolean plural = removable.size() > 1;
+        boolean plural = selected.size() > 1;
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.initOwner(stage);
-        confirm.setHeaderText(plural ? "Remove " + removable.size() + " libraries?"
-                : "Remove \"" + removable.get(0).getId() + "\"?");
+        confirm.setHeaderText(plural ? "Remove " + selected.size() + " libraries?"
+                : "Remove \"" + selected.get(0).getId() + "\"?");
         confirm.setContentText("Graphs using " + (plural ? "their nodes" : "its nodes") + " will still open "
                 + "— those nodes are kept as placeholders and come back if you reinstall "
                 + (plural ? "them" : "it") + ".");
         if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
             return;
         }
-        for (Row row : removable) {
-            catalog.remove(row.getId());
+        List<String> ids = selected.stream().map(Row::getId).toList();
+        for (String id : ids) {
+            catalog.remove(id);
         }
         catalog.save();
-        librariesChanged("Removed " + removable.size() + (plural ? " libraries. Their jars are"
-                : " library. Its jar is") + " cleaned up at next startup.");
+        librariesChanged("Removed " + ids.size() + (plural ? " libraries. Their jars are"
+                : " library. Its jar is") + " cleaned up at next startup.", ids);
     }
 
     /**
-     * Shows one summary alert for every library a bulk action skipped because its nodes are on the
-     * canvas. You cannot unload a class while instances exist: those nodes stay bound to the old
-     * loader's {@code Class} objects, so the same type would exist twice and
-     * {@code NodeRegistry.duplicate} would clone the stale one. A no-op when nothing was blocked.
+     * Shows one summary alert the first time in a session that a change is left pending a restart.
+     * A no-op on every later deferral — the row's "Pending restart" state and the status line carry
+     * it from there, so the user isn't interrupted by a dialog for every subsequent bulk action.
      */
-    private void warnBlocked(List<String> blockedIds, String verb) {
-        if (blockedIds.isEmpty()) {
-            return;
-        }
-        boolean plural = blockedIds.size() > 1;
+    private void notePendingRestart() {
+        boolean plural = pendingRestart.size() > 1;
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(stage);
-        alert.setHeaderText((plural ? blockedIds.size() + " libraries can't be " + verb
-                : "\"" + blockedIds.get(0) + "\" can't be " + verb) + " while in use");
-        alert.setContentText("Java can't unload a class while instances of it exist, so this takes "
-                + "effect after a restart. Remove those nodes from the canvas first, or restart "
-                + "HouseGraph.\n\n" + String.join(", ", blockedIds));
+        alert.setHeaderText((plural ? pendingRestart.size() + " libraries changed"
+                : "\"" + pendingRestart.iterator().next() + "\" changed") + " — restart to apply");
+        alert.setContentText("A node from a node library is on the canvas right now, and Java can't "
+                + "reload " + (plural ? "their" : "its") + " classes while it's there — that would "
+                + "leave it bound to a discarded class. The change is already saved and will take "
+                + "effect the next time you start HouseGraph. Further changes made before then will "
+                + "wait too.\n\n" + String.join(", ", pendingRestart));
         alert.getDialogPane().setMinWidth(460);
         alert.showAndWait();
-        status.setText((plural ? blockedIds.size() + " libraries are" : "\"" + blockedIds.get(0) + "\" is")
-                + " in use; restart to change " + (plural ? "them" : "it") + ".");
     }
 
     private List<Row> selectedRows() {
@@ -533,10 +528,26 @@ public final class PluginWindow {
         return selected;
     }
 
-    private void librariesChanged(String message) {
-        onLibrariesChanged.run();
+    /**
+     * Called after a catalog/disk mutation has already happened, to try to bring the running session
+     * in line with it. Attempts the hot reload; if it can't run (a node-library node is live on the
+     * canvas), the affected ids are recorded as pending instead of being lost. A successful reload
+     * always rebuilds from the whole current catalog, so it clears every pending id, not just the
+     * ones from this particular action.
+     */
+    private void librariesChanged(String message, List<String> affectedIds) {
+        boolean reloaded = tryReloadLibraries.getAsBoolean();
+        if (reloaded) {
+            pendingRestart.clear();
+        } else {
+            boolean firstThisSession = pendingRestart.isEmpty();
+            pendingRestart.addAll(affectedIds);
+            if (firstThisSession) {
+                notePendingRestart();
+            }
+        }
         refresh();
-        status.setText(message);
+        status.setText(message + (reloaded ? "" : " Pending restart."));
     }
 
     // --- Off-thread plumbing ---------------------------------------------------------------------
