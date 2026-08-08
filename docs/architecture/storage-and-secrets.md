@@ -68,8 +68,11 @@ A key/value store encrypted at rest with **AES-256-GCM**.
 - API: `open()`, `keys()` (names only, never values), `get`/`put`/`remove`,
   `save()` (explicit). Not thread-safe — open, use, and save on one thread.
 - Edited via the `SecretsEditor` modal (`ui/`); consumed by nodes like the Secret
-  Loader and Discord bot, which store the secret's **key** and resolve the value
-  at runtime.
+  Loader, which store the secret's **key** and resolve the value at runtime. An
+  out-of-tree node library resolves a secret the same way through the published
+  `sdk.Secrets` facade rather than this class directly — see
+  [plugins.md](plugins.md) — the Discord bot node (`housegraph-discord`) is an
+  example.
 
 ### How secrets flow through the app
 

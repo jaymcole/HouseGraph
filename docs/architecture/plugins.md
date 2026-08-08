@@ -1,19 +1,13 @@
 # Plugins — out-of-tree node libraries
 
-> **Status: in progress.** The refactor that makes this real is landing in phases.
-> Sections marked *(not yet built)* describe the agreed design, not shipped code.
-> Phases 0–7 are done — everything on the host side. The build is split, the node-facing
-> extension points are in the published API, that API is configured for publication,
-> `NodeRegistry` scans multiple roots and tracks which library owns each node type, the
-> save format records and preserves them, the runtime loads libraries from jars, and the
-> app has a library window and a load-time dependency check.
->
-> **No tag has been pushed yet**, so no JitPack coordinate resolves in the real world. The
-> publish was verified end-to-end against `mavenLocal` by compiling a node in a scratch
-> project; jar loading by compiling a node at test time into a jar it can only be reached
-> through; and the whole path by building a real library jar and watching the app load it
-> at startup. What remains is the template repository and moving the integration node
-> categories out.
+> **Status: complete.** The host side is done and proven end-to-end. The build is
+> split, `housegraph-api` is published (`com.github.jaymcole:HouseGraph`, via JitPack —
+> see the coordinate note below), `NodeRegistry` scans multiple roots and tracks which
+> library owns each node type, the save format records and preserves them, the runtime
+> loads libraries from jars, the app has a library window and a load-time dependency
+> check, and all five integrations (`iot`, `discord`, `camera`, `web`, `ml`) have been
+> extracted, with old saves verified to keep working against a real installed jar each
+> time. `app/build.gradle` now depends on nothing but `:housegraph-api`.
 
 Node implementations live in **their own GitHub repositories**. HouseGraph fetches
 them at runtime from a repo URL the user supplies and loads them into the running
@@ -270,18 +264,43 @@ is also why a release carries several jars, and why the asset naming convention
 | Category | Status |
 | --- | --- |
 | `iot` | **Extracted** → `housegraph-iot`. Its Arduino firmware moved with it — firmware and the node driving it are no use apart |
-| `discord`, `camera`, `web`, `ml` | Still in `app`. Each drops a dependency from `app/build.gradle` when it goes |
+| `discord` | **Extracted** → `housegraph-discord`. The hardest case, done second on purpose — see below |
+| `camera` | **Extracted** → `housegraph-camera`. No third-party dependency at all, so the SLF4J-exclude lesson didn't apply; the `Node`-import collision did (three of its nodes have an inline UI) |
+| `web` | **Extracted** → `housegraph-web`. Bundles jmdns, which — like JDA — transitively depends on `slf4j-api`; the exclude lesson from `discord` applied again, this time applied proactively before the build rather than discovered from a failed jar check. The `Node`-import collision applied too (both of its nodes have an inline UI) |
+| `ml` | **Extracted** → `housegraph-ml`. Fifth and last, saved for last because DJL's shading and native-library size are the messiest of the five. `ai.djl:api` transitively depends on `slf4j-api` too, but `pytorch-model-zoo` and `pytorch-engine` each pull their own path to it, so the exclude is applied on all three DJL coordinates, not just the one declared directly. `AnimalClassifierNode` doesn't implement `NodeContentProvider`, so the `Node`-import collision didn't apply here |
 
-**Extracting a category keeps old saves working**, and the `iot` extraction proved it: a
-graph saved while the node shipped in the app recorded it by its bare class name with no
-plugin key, and that still resolves — the registry indexes a node's simple name alongside
-its declared `@Node.Type` id. New saves use the prefixed id plus the owning library. The
-Add-Node menu entry is unchanged too, because the library's `categoryPrefix` reproduces the
-old category name.
+**Extracting a category keeps old saves working**, verified for all five extractions
+against a real installed jar, not only in unit tests: a graph saved while a node shipped
+in the app recorded it by its bare class name with no plugin key, and that still resolves
+— the registry indexes a node's simple name alongside its declared `@Node.Type` id. New
+saves use the prefixed id plus the owning library. The Add-Node menu is unchanged too,
+because a library's `categoryPrefix` reproduces the old category name.
+
+**`discord` was deliberately the hardest case, done second.** It carries a sibling client
+package, `SecretsStore`/`sdk.Secrets` access, `ResourceRegistry` + `Subscription`, both
+`AutoStartable` and `NodeContentProvider` on the same node, dynamic ports via
+`rebuildPorts`, a `saveState` map, and a third-party dependency (JDA) with its own
+transitive dependencies. Doing it once `iot` had proven the pipeline meant any gap it
+exposed was found while only one other library existed to fix up. Two things it exposed,
+worth knowing before extracting anything else that bundles a library depending on SLF4J:
+
+- **A bundled library's own SLF4J dependency leaks into the shaded jar unless excluded.**
+  JDA depends on `slf4j-api`; left alone, that transitive dependency ends up bundled too —
+  which the host's install-time validation rejects a jar for, because a bundled
+  `slf4j-api` means a second, silently-swallowing logging binding. Fix:
+  `exclude group: 'org.slf4j', module: 'slf4j-api'` on the dependency declaration.
+  `housegraph-api` already supplies the real one, `compileOnly`.
+- **`@Node.Type` (from `annotations.Node`) collides with `NodeContentProvider`'s
+  `javafx.scene.Node` return type** — both are simply named `Node`, and no in-repo node
+  had ever combined the two before this extraction. Fix: don't import `javafx.scene.Node`;
+  write it fully qualified at each use. The template's `HelloWorldNode` already does this.
 
 ## Still to come
 
-- Extracting `discord`, `camera`, `web` and `ml`.
+Nothing on the node-extraction front — all five built-in integration categories are
+out-of-tree. Future work here is host-side hardening: per-plugin secret ACLs beyond
+the `sdk.Secrets` seam described in [Security](#security--the-honest-threat-model)
+above, and revisiting that seam now that several plugins exist to use it.
 
 ---
 

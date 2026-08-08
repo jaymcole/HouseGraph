@@ -115,8 +115,9 @@ override `BaseNode.onExecuted()` to push fresh values into whatever you built.
 Both arrive on the FX thread — `onExecuted` is dispatched through `NodeGraph`'s
 callback executor, which the app sets to `Platform::runLater` — so a node's own
 UI code needs no `Platform.runLater`; only work it starts itself does.
-`DiscordBotNode` is a full example (Connect/Disconnect buttons, status label);
-the interface Javadoc has a minimal one.
+`DiscordBotNode` in the out-of-tree `housegraph-discord` library is a full example
+(Connect/Disconnect buttons, status label); the interface Javadoc has a minimal one,
+and the template repository's `HelloWorldNode` is a complete minimal one to copy.
 
 This interface is the sole reason the `housegraph-api` module depends on JavaFX
 at all, and it is declared on the `api` configuration so node authors get

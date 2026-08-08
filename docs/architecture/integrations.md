@@ -1,37 +1,50 @@
 # External Integrations
 
-HouseGraph talks to several external worlds: Discord (chat bots), IP cameras
-(ONVIF/Reolink), an Arduino "squirrel alarm" sign, and the local network itself
-(hosting a website on a `.local` name). Each integration keeps its client code in
-a dedicated package and surfaces to the graph through nodes under
-`graph/nodes/<category>/`. None of the engine depends on these — they depend on
-the engine.
+Every integration that once lived in this repository has moved to an
+out-of-tree node library — see the notes below and [plugins.md](plugins.md).
+This file is kept as a record of what each one does and the extraction
+lessons each one surfaced, for anyone extending a library or writing a new
+one.
 
-## Discord (`discord/`, nodes in `graph/nodes/discord/`)
+## Discord — **extracted**
 
-- **`DiscordBot`** — a thin wrapper around a JDA gateway connection (the long-lived
-  resource behind a Discord bot node). JDA keeps the connection alive
-  (heartbeats/reconnects) while held. `connect(token)` logs in and blocks until
-  ready (call it off the UI thread); `disconnect()` shuts down. Incoming non-bot
-  messages go to `setMessageHandler`; slash commands are registered via
-  `syncCommands` and their invocations forwarded to `setSlashHandler`, deferred so
-  a slow graph has ~15 min to answer via a `DiscordReply` handle; `sendMessage`
-  posts to a channel by id.
-  - **Reading message content requires the privileged `MESSAGE_CONTENT` intent**
-    enabled in Discord's developer portal; slash commands need no special intent.
-- **`SlashCommandRegistry`** — where slash-command nodes declare their commands by
-  bot name, independent of load order (see [resources.md](resources.md)). The bot
-  syncs the declared set to Discord on Connect.
-- **`CommandMatcher`** — matches an incoming message against a text trigger (e.g.
-  `!deploy`) with whitespace/end-of-message boundaries, and extracts the argument
-  text.
-- Value types: `DiscordMessage`, `DiscordSlashCommand`, `DiscordReply`,
-  `CommandOption`, `DiscordOptionType`, `SlashCommandSpec` describe events and
-  command declarations passed through the registry / handlers.
-- **Secrets:** the bot token comes from `SecretsStore` by key — never wired,
-  never saved. See `DiscordBotNode` and [storage-and-secrets.md](storage-and-secrets.md).
+> This integration no longer lives in this repository. It is the
+> `housegraph-discord` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. It was the hardest extraction — a sibling client
+> package, `SecretsStore` access (now `sdk.Secrets`), `ResourceRegistry`,
+> `Subscription`, both `AutoStartable` and `NodeContentProvider`, dynamic ports via
+> `rebuildPorts`, a `saveState` map — deliberately done second, once `iot` had
+> proven the pipeline, so any gap the hardest case exposed was found while only one
+> plugin existed to fix up. See [plugins.md](plugins.md).
+>
+> One build wrinkle worth knowing if you extract something else that bundles a
+> library depending on SLF4J: **JDA depends on `slf4j-api` itself**, and left
+> alone that transitive dependency ends up in the shaded jar too — which the
+> host's install-time validation rejects a jar for, because a bundled `slf4j-api`
+> means a second, silently-swallowing logging binding. The library's build
+> excludes it explicitly (`exclude group: 'org.slf4j', module: 'slf4j-api'`
+> on the JDA dependency); `housegraph-api` already supplies the real one.
+>
+> Also: a node combining `@Node.Type` (which needs
+> `io.github.jaymcole.housegraph.annotations.Node`) with `NodeContentProvider`
+> (which returns `javafx.scene.Node`) hits an import collision — both are named
+> `Node`. None of this repository's own nodes had ever combined the two. Fix:
+> don't import `javafx.scene.Node`; write `javafx.scene.Node` fully qualified at
+> each use. See the discord nodes for the pattern, or `HelloWorldNode` in the
+> template, which already used this to avoid the same collision.
 
-## Cameras (`camera/`, nodes in `graph/nodes/camera/`)
+## Cameras — **extracted**
+
+> This integration no longer lives in this repository. It is the
+> `housegraph-camera` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. Third extraction, and — unlike Discord — an easy
+> one: no third-party dependency at all (ONVIF/Reolink are plain HTTP/SOAP over
+> `java.net.http.HttpClient`, discovery is plain JDK sockets), so nothing here
+> needed the SLF4J-exclude or asset-naming lessons Discord surfaced. The
+> `@Node.Type`-vs-`NodeContentProvider` `Node` import collision still applied,
+> since three of these nodes have an inline UI. See [plugins.md](plugins.md).
 
 A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
 
@@ -59,11 +72,11 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
     a JSON body). The package stays JavaFX-free; the node wraps the bytes in an
     `Image`.
 - **`CameraConfigStore`** — reads/merges/writes the camera registry
-  (`cameras.json` under `config()`), keyed by MAC, each entry `{ name, model,
-  lastKnownIp }`. Merging is non-destructive; a malformed file is refused rather
-  than clobbered. **This file is not encrypted and deliberately holds no
-  credentials** — a camera password is a secret (store it in `SecretsStore`, feed
-  it to a camera node's Password input via a Secret Loader).
+  (`cameras.json` under the library's own config location), keyed by MAC, each
+  entry `{ name, model, lastKnownIp }`. Merging is non-destructive; a malformed
+  file is refused rather than clobbered. **This file is not encrypted and
+  deliberately holds no credentials** — a camera password is a secret, resolved
+  via `sdk.Secrets` and fed to a camera node's Password input via a Secret Loader.
 - **`DiscoveredCamera`** — the value model produced by discovery/enrichment.
 
 ## Arduino IoT — **extracted**
@@ -95,15 +108,27 @@ A Java port of the AnimalNotifier discovery tooling. Pure JDK, no camera SDK.
   > Note: `extras/` here now holds only the sample website for the web-server node. It is
   > not Java, so it lives at the repository root rather than inside a source set.
 
-## Local web hosting (`web/`, nodes in `graph/nodes/web/`)
+## Local web hosting — **extracted**
+
+> This integration no longer lives in this repository. It is the
+> `housegraph-web` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. Fourth extraction. Like Discord, it bundles a
+> library that transitively depends on `slf4j-api` — **jmdns**, here, not JDA —
+> so the same `exclude group: 'org.slf4j', module: 'slf4j-api'` fix on the
+> dependency block applies again (confirmed proactively this time via
+> `gradlew :app:dependencies` before writing the build, rather than discovered
+> after a failed jar-content check). The `@Node.Type`-vs-`NodeContentProvider`
+> `Node` import collision also applied, since both nodes have an inline UI. See
+> [plugins.md](plugins.md).
 
 Hosts a website reachable on the LAN at `http://<name>.local:<port>/`, either by
 serving a directory of static files from the JVM (`WebServerNode`) or by launching an
 external Node.js server as a child process (`NodeServerNode`). Like the other
-integrations, a JavaFX-free client package (`web/`) holds the machinery and
-`graph.nodes.web` holds the nodes.
+extracted integrations, a JavaFX-free client package (`plugins.web` in
+housegraph-nodes) holds the machinery and `plugins.web.nodes` holds the nodes.
 
-- **`LocalWebServer`** (`web/`) — the long-lived resource behind the web-server
+- **`LocalWebServer`** — the long-lived resource behind the web-server
   node, pairing two pieces:
   - the JDK's built-in `com.sun.net.httpserver.HttpServer` (no dependency) serving
     a base directory, with a directory-index (`index.html`) fallback,
@@ -117,14 +142,14 @@ integrations, a JavaFX-free client package (`web/`) holds the machinery and
   `start(root, name, port)` binds the socket and joins the multicast group (call it
   off the UI thread); `stop()` tears both halves down and is idempotent. If mDNS
   fails, `start` unwinds the HTTP server so it's all-or-nothing.
-- **`WebServerNode`** (`graph/nodes/web/`) — the node. Website name, directory
+- **`WebServerNode`** — the node. Website name, directory
   (chosen with a Browse… button), and port are authored inline and persisted via
   `saveState` — a **directory path, never the files** (the site is served live from
   disk). Liveness is user-driven (Start/Stop, off the UI thread), and it registers
   its `LocalWebServer` in `ResourceRegistry` under the site name; torn down in
   `onRemoved()`. It also has a **`Store` data input** — see below.
 
-Both server classes share **`LanAddress`** (`web/`) for picking the non-loopback
+Both server classes share **`LanAddress`** for picking the non-loopback
 site-local IPv4 to advertise over mDNS, so the choice is made one way.
 
 ### Hosting a Node.js server instead (`NodeProcessServer` / `NodeServerNode`)
@@ -133,7 +158,7 @@ For apps that aren't just static files — an Express server, a Vite dev server,
 anything `npm start` runs — the **Node-server node** hosts by launching an external
 Node.js process rather than serving from the JVM.
 
-- **`NodeProcessServer`** (`web/`) — the JavaFX-free resource. `start(dir, command,
+- **`NodeProcessServer`** — the JavaFX-free resource. `start(dir, command,
   name, port)` spawns the command through the platform shell (`cmd /c` on Windows,
   `sh -c` elsewhere, so PATH-resolved launchers like `npm`/`npx` work as typed) in
   the chosen project directory, pumps the child's merged stdout/stderr into the log
@@ -145,7 +170,7 @@ Node.js process rather than serving from the JVM.
   declared port as `PORT` into the child's environment and advertises it, but the
   Node app must actually listen on it (e.g. `app.listen(process.env.PORT)`); if they
   disagree, the advertisement points nowhere.
-- **`NodeServerNode`** (`graph/nodes/web/`) — the node. Server name, project directory
+- **`NodeServerNode`** — the node. Server name, project directory
   (Browse…), **start command** (default `npm start`), and port are authored inline and
   persisted via `saveState` — a directory path and command string, **never the project
   files**. Same user-driven Start/Stop-off-the-UI-thread lifecycle as `WebServerNode`,
@@ -196,24 +221,46 @@ beside the files so the page can read/write server-side, shared-across-devices d
 on the LAN while running; the traversal guard keeps file requests inside the served
 directory.
 
-## Local ML inference (`ml/`, nodes in `graph/nodes/ml/`)
+## Local ML inference — **extracted**
+
+> This integration no longer lives in this repository. It is the
+> `housegraph-ml` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. Fifth and last extraction, deliberately done
+> last: DJL's shading and native-library footprint are the messiest of the
+> five categories, so every lesson the earlier four surfaced (the SLF4J
+> exclude, the `@Node.Type`/`javafx.scene.Node` collision, the asset-naming
+> convention) was already proven before tackling the biggest one. `app/build.gradle`
+> now depends on nothing but `:housegraph-api`. See [plugins.md](plugins.md).
+>
+> `ai.djl:api` depends on `slf4j-api` itself, same as JDA and jmdns before it —
+> but `ai.djl.pytorch:pytorch-model-zoo` and `ai.djl.pytorch:pytorch-engine` each
+> pull their own transitive path to `ai.djl:api`, so an exclude on one declared
+> DJL dependency doesn't cover another's path to the same transitive module. The
+> library's build applies `exclude group: 'org.slf4j', module: 'slf4j-api'` on
+> all three DJL coordinates, not just the one declared directly.
+>
+> `AnimalClassifierNode` doesn't implement `NodeContentProvider`, so the
+> `@Node.Type`-vs-`javafx.scene.Node` import collision that hit discord/camera/web
+> doesn't apply here — a reminder that the collision is about implementing
+> `NodeContentProvider`, not about using JavaFX at all.
 
 Vision/ML models run **in-JVM**, locally, through
 [Deep Java Library](https://djl.ai) (DJL) on its PyTorch engine — no Python, no
-external service. This mirrors how `camera`/`discord` split a headless client
-package from its UI nodes: the `ml` package holds JavaFX-free inference clients;
-`graph.nodes.ml` holds the nodes that drive them.
+external service. Like the other extracted integrations, a JavaFX-free client
+package (`plugins.ml` in housegraph-nodes) holds the inference clients;
+`plugins.ml.nodes` holds the nodes that drive them.
 
-- **`ImageNetClassifier`** (`ml/`) — a shared, lazily-loaded ResNet-50 / ImageNet
+- **`ImageNetClassifier`** — a shared, lazily-loaded ResNet-50 / ImageNet
   classifier. The DJL `ZooModel` is loaded once on first use and reused
   process-wide (a singleton), so multiple classifier nodes don't each pay the
   load cost; a fresh `Predictor` is created per call because `Predictor` isn't
   thread-safe (the model is), which suits the engine's concurrent execution.
   Label-agnostic on purpose — it returns raw ImageNet classes; deciding what they
   *mean* is the caller's job.
-- **`AnimalVerdict`** (`ml/`) — the pure, headless-testable policy that collapses
+- **`AnimalVerdict`** — the pure, headless-testable policy that collapses
   ImageNet's 1000 labels into `squirrel` / `bird` / `other` / `none`.
-- **`AnimalClassifierNode`** (`graph/nodes/ml/`) — converts its JavaFX `Image`
+- **`AnimalClassifierNode`** — converts its JavaFX `Image`
   input to a `BufferedImage` (via `SwingFXUtils`, hence the `javafx.swing`
   module), classifies it, and emits `Category`/`Confidence` plus `Is Squirrel` /
   `Is Bird` gates (1/0) that wire straight into an `If`. It also emits `Objects`
@@ -224,19 +271,22 @@ package from its UI nodes: the `ml` package holds JavaFX-free inference clients;
 **Runtime download, not a bundled model.** The first classification after launch
 downloads the PyTorch native library and the model weights into DJL's on-disk
 cache (under the user's home); later runs are fast and offline. First use
-therefore needs network access, like the camera/Discord integrations.
+therefore needs network access.
 
 **No secrets, no credentials** — models are public and fetched by DJL; nothing
 here touches `SecretsStore`.
 
-**Roadmap.** This is the classifier-first step toward feature parity with the
+**Roadmap.** This was the classifier-first step toward feature parity with the
 Python sibling project (AnimalNotifier). Detectors (YOLO/MegaDetector-style),
-more classifiers, and a local LLM (via Jlama) are expected to land in `ml/` next;
-factor shared model lifecycle/loading into `ml/` rather than duplicating per node.
+more classifiers, and a local LLM (via Jlama) are expected to land in
+housegraph-ml next; factor shared model lifecycle/loading into `plugins.ml`
+rather than duplicating per node.
 
 ---
 
-**When you change this, update…** this file whenever you add/modify an
-integration (a new Discord capability, a new camera protocol, a new IoT device or
-device command, a new local model / inference engine, a change to the web-server
-hosting or mDNS behavior) or change how an integration handles credentials.
+**When you change this, update…** this file only if the extraction story
+itself changes — for instance, if a new integration is added to this
+repository before it too is extracted, or if one of the lessons an extraction
+surfaced turns out to be wrong or incomplete. All five extracted integrations
+(Discord, IoT, Camera, Web, ML) are otherwise documented in the
+housegraph-nodes repository.

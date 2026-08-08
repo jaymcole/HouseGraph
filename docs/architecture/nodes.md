@@ -51,9 +51,8 @@ flag. Persistence rules (enforced by `GraphFileIO`):
 `markSecret()`, `transientValue()`, and `required()` are all fluent, for field initialization.
 Many library nodes already ship with author-required inputs where a missing value makes the node
 meaningless — e.g. the string converters' `in`, the viewers' displayed value, the `If` nodes'
-condition, the object decomposer's `Object`, and the Discord Send/Reply message + target. Nodes
-with a sensible default for a missing input (e.g. `Add`, whose operands default to 0) leave them
-optional.
+condition, the object decomposer's `Object`. Nodes with a sensible default for a missing input
+(e.g. `Add`, whose operands default to 0) leave them optional.
 
 **Anchor type & hidden converters.** A `NodeVariable`'s `type` (a `Class<?>`) governs which
 outputs may feed it. An edge is allowed when the input type is assignable from the output type
@@ -104,8 +103,8 @@ only on a pure data node with no flow ports):
 - **At an execution entry point** — a node `execute()` is called on directly (a trigger button, a
   timer, an inbound event) — it gates the **whole run** started by a re-trigger.
   `BaseNode.isExecutionEntryPoint()` marks these (default: "has a flow-out but no flow-in"; a node
-  that self-triggers *and* has a flow-in, like `DiscoverCamerasNode`'s Discover button, overrides it
-  to `true`).
+  that self-triggers *and* has a flow-in — like the `housegraph-camera` library's Discover Cameras
+  node, whose button calls `execute()` directly — overrides it to `true`).
 - **At a mid-cascade node** — one reached along a flow edge — it gates re-entry of that node's own
   `process()` when a *second* run overlaps it. This lets two branches of one trigger differ (a slow
   branch that `DROP`s overlaps, a fast branch that `QUEUE`s them). A consequence of the `QUEUE`
@@ -154,20 +153,13 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 
 ## Node categories (current folders under `graph/nodes/`)
 
-`camera`, `constants`, `control`, `converters`, `debug`, `discord`,
-`loader`, `math`, `ml`, `object`, `resource`, `viewers`, `web`.
+`constants`, `control`, `converters`, `debug`, `loader`, `math`, `object`,
+`resource`, `viewers`.
 
-`web` holds nodes for hosting on the local network — currently the web-server
-resource node, which serves a directory of static files as `<name>.local` and
-drives the `web` package's `LocalWebServer` (mirroring how `camera`/`discord`
-nodes drive their client packages). See [integrations.md](integrations.md).
-
-`ml` holds nodes backed by locally-run machine-learning models. They drive the
-JVM-native inference clients in the `ml` package (models run through Deep Java
-Library — no Python), the same way `camera` nodes drive the `camera` clients. The
-first is `ml/AnimalClassifierNode` (a squirrel/bird/other/none image classifier);
-detectors and other model-backed nodes will join it. See
-[integrations.md](integrations.md) for the model-inference story.
+This is the **built-in** library — dependency-free primitives only. Every
+integration category that once lived here (`discord`, `iot`, `camera`, `web`,
+`ml`) has been extracted into an out-of-tree node library — see
+[plugins.md](plugins.md).
 
 Add a new folder only when a node genuinely doesn't fit an existing category; if
 you do, note it here.

@@ -52,14 +52,18 @@ A resource node is a `BaseNode` that owns a long-lived object. The contract:
   the whole graph loads (so `onActivated()` and any input edges are already in
   place). See [ui.md](ui.md#resuming-running-nodes-on-load-sdkautostartable).
 
-`DiscordBotNode` is the canonical implementation — read it alongside this doc. It
+`EchoResourceNode` (`graph/nodes/resource/`) is the in-repo canonical implementation
+— read it alongside this doc for the minimal version of the pattern. The fuller,
+real-world version is `DiscordBotNode` in the out-of-tree `housegraph-discord`
+library ([housegraph-nodes](https://github.com/jaymcole/housegraph-nodes)): it
 registers a `DiscordBot` under a chosen name, forwards incoming messages/slash
-commands into the registry as events, resolves its token from `SecretsStore` (so
+commands into the registry as events, resolves its token via `sdk.Secrets` (so
 the token is never wired or saved), and connects/disconnects on user action.
 
 Action and trigger nodes on the other side use `find(name, …)` to call the
 resource, or `subscribe(name, …)` to react to its events — see the
-`graph/nodes/discord/` and `graph/nodes/resource/` nodes.
+`graph/nodes/resource/` nodes in this repository, or the discord library's nodes
+for the fuller pattern.
 
 > **Not everything long-lived is a registry resource.** Where a connection is genuinely
 > point-to-point, a plain **data edge** is clearer than a name lookup — the wire shows the
@@ -69,14 +73,17 @@ resource, or `subscribe(name, …)` to react to its events — see the
 > resource is *broadcast* — referenced from many places, or by trigger nodes that may not
 > exist yet — not merely because it's long-lived.
 
-## Related: `SlashCommandRegistry` (declaration before connection)
+## A related pattern: declaration before connection
 
-`SlashCommandRegistry` is a separate name-keyed registry showing the same
-"declare independently of order" idea: slash-command nodes *declare* the commands
-they provide (keyed by bot name) whenever they like; the bot node reads the full
-declared set for its name when it connects and syncs it to Discord then. Declaring
-doesn't talk to Discord — connecting does. The natural rule: set up command nodes,
-then Connect; changing a command afterward means a reconnect to apply it.
+The `housegraph-discord` library's `SlashCommandRegistry` is a separate name-keyed
+registry (not part of this repository, but worth knowing as a second use of the same
+idea) showing "declare independently of order": slash-command nodes *declare* the
+commands they provide (keyed by bot name) whenever they like; the bot node reads the
+full declared set for its name when it connects and syncs it to Discord then.
+Declaring doesn't talk to Discord — connecting does. The natural rule: set up command
+nodes, then Connect; changing a command afterward means a reconnect to apply it.
+Reach for this shape whenever several independent things need to register a
+declaration ahead of a single node that acts on all of them at once.
 
 ---
 

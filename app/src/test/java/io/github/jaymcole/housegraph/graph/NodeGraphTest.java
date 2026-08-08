@@ -1,6 +1,5 @@
 package io.github.jaymcole.housegraph.graph;
 
-import io.github.jaymcole.housegraph.graph.nodes.camera.DiscoverCamerasNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.IfNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.JoinNode;
 import io.github.jaymcole.housegraph.graph.nodes.control.TriggerNode;
@@ -596,8 +595,10 @@ class NodeGraphTest {
         assertFalse(new AddNode().isExecutionEntryPoint(), "a mid-cascade node is not an entry point");
         // No flow ports at all: pulled as a data dependency, never executed.
         assertFalse(new ConstantFloatNode().isExecutionEntryPoint(), "a pure data node is not an entry point");
-        // Self-triggers via its Discover button despite also having a flow-in; declared explicitly.
-        assertTrue(new DiscoverCamerasNode().isExecutionEntryPoint(), "a self-triggering node overrides to true");
+        // A node with a button that calls execute() directly (e.g. the out-of-tree Discover
+        // Cameras node) has a flow-in but must still count as an entry point; the structural
+        // default would miss that, so the override exists for exactly this case.
+        assertTrue(new SelfTriggeringNode().isExecutionEntryPoint(), "a self-triggering node overrides to true");
     }
 
     @Test
@@ -781,6 +782,31 @@ class NodeGraphTest {
         // still quiesce rather than hang waiting for the branch that will never come.
         assertDoesNotThrow(graph::awaitIdle);
         assertEquals(0, sink.processCount.get(), "an AND-join with a pruned branch does not fire");
+    }
+
+    /** Has a flow-in (so the structural default says "not an entry point") but overrides to true anyway. */
+    private static final class SelfTriggeringNode extends BaseNode {
+        @Override
+        public void process(ProcessContext ctx) {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
+        }
+
+        @Override
+        public boolean isExecutionEntryPoint() {
+            return true;
+        }
     }
 
     /** A flow sink that counts its runs and signals a latch, for asserting when (and whether) it fired. */
