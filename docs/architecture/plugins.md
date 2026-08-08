@@ -1,13 +1,13 @@
 # Plugins — out-of-tree node libraries
 
-> **Status: in progress.** The host side is done and proven end-to-end. The build is
+> **Status: complete.** The host side is done and proven end-to-end. The build is
 > split, `housegraph-api` is published (`com.github.jaymcole:HouseGraph`, via JitPack —
 > see the coordinate note below), `NodeRegistry` scans multiple roots and tracks which
 > library owns each node type, the save format records and preserves them, the runtime
 > loads libraries from jars, the app has a library window and a load-time dependency
-> check, and four integrations have been extracted (`iot`, `discord`, `camera`, `web`) with
-> old saves verified to keep working against a real installed jar each time. Remaining:
-> extracting `ml`.
+> check, and all five integrations (`iot`, `discord`, `camera`, `web`, `ml`) have been
+> extracted, with old saves verified to keep working against a real installed jar each
+> time. `app/build.gradle` now depends on nothing but `:housegraph-api`.
 
 Node implementations live in **their own GitHub repositories**. HouseGraph fetches
 them at runtime from a repo URL the user supplies and loads them into the running
@@ -267,9 +267,9 @@ is also why a release carries several jars, and why the asset naming convention
 | `discord` | **Extracted** → `housegraph-discord`. The hardest case, done second on purpose — see below |
 | `camera` | **Extracted** → `housegraph-camera`. No third-party dependency at all, so the SLF4J-exclude lesson didn't apply; the `Node`-import collision did (three of its nodes have an inline UI) |
 | `web` | **Extracted** → `housegraph-web`. Bundles jmdns, which — like JDA — transitively depends on `slf4j-api`; the exclude lesson from `discord` applied again, this time applied proactively before the build rather than discovered from a failed jar check. The `Node`-import collision applied too (both of its nodes have an inline UI) |
-| `ml` | Still in `app`. The last one; drops the DJL BOM and `javafx.swing` from `app/build.gradle` when it goes |
+| `ml` | **Extracted** → `housegraph-ml`. Fifth and last, saved for last because DJL's shading and native-library size are the messiest of the five. `ai.djl:api` transitively depends on `slf4j-api` too, but `pytorch-model-zoo` and `pytorch-engine` each pull their own path to it, so the exclude is applied on all three DJL coordinates, not just the one declared directly. `AnimalClassifierNode` doesn't implement `NodeContentProvider`, so the `Node`-import collision didn't apply here |
 
-**Extracting a category keeps old saves working**, verified for all four extractions
+**Extracting a category keeps old saves working**, verified for all five extractions
 against a real installed jar, not only in unit tests: a graph saved while a node shipped
 in the app recorded it by its bare class name with no plugin key, and that still resolves
 — the registry indexes a node's simple name alongside its declared `@Node.Type` id. New
@@ -297,8 +297,10 @@ worth knowing before extracting anything else that bundles a library depending o
 
 ## Still to come
 
-- Extracting `ml` — the last category, saved for last because its shading and native-library
-  size are the messiest of the five.
+Nothing on the node-extraction front — all five built-in integration categories are
+out-of-tree. Future work here is host-side hardening: per-plugin secret ACLs beyond
+the `sdk.Secrets` seam described in [Security](#security--the-honest-threat-model)
+above, and revisiting that seam now that several plugins exist to use it.
 
 ---
 

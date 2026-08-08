@@ -153,19 +153,13 @@ displayName)` for each. The UI builds the Add-Node menu from this, grouped by th
 
 ## Node categories (current folders under `graph/nodes/`)
 
-`constants`, `control`, `converters`, `debug`, `loader`, `math`, `ml`, `object`,
+`constants`, `control`, `converters`, `debug`, `loader`, `math`, `object`,
 `resource`, `viewers`.
 
-This is the **built-in** library. Integrations that have been extracted into
-out-of-tree node libraries (`discord`, `iot`, `camera`, `web`) no longer have a
-folder here — see [plugins.md](plugins.md).
-
-`ml` holds nodes backed by locally-run machine-learning models. They drive the
-JVM-native inference clients in the `ml` package (models run through Deep Java
-Library — no Python), with that same split. The first is `ml/AnimalClassifierNode`
-(a squirrel/bird/other/none image classifier);
-detectors and other model-backed nodes will join it. See
-[integrations.md](integrations.md) for the model-inference story.
+This is the **built-in** library — dependency-free primitives only. Every
+integration category that once lived here (`discord`, `iot`, `camera`, `web`,
+`ml`) has been extracted into an out-of-tree node library — see
+[plugins.md](plugins.md).
 
 Add a new folder only when a node genuinely doesn't fit an existing category; if
 you do, note it here.

@@ -34,7 +34,6 @@ Use this map of change → what to update:
 | Resource registry / pub-sub semantics | `ResourceRegistry` Javadoc **and** [`docs/architecture/resources.md`](docs/architecture/resources.md) |
 | Secret storage / crypto / on-disk locations | `SecretsStore` / `AppDirectories` Javadoc **and** [`docs/architecture/storage-and-secrets.md`](docs/architecture/storage-and-secrets.md) |
 | Logging levels / sinks / bootstrap / the log window | `LogManager` / `Logging` / `LogWindow` Javadoc **and** [`docs/architecture/logging.md`](docs/architecture/logging.md) |
-| An integration still built into this repo (local ML) | [`docs/architecture/integrations.md`](docs/architecture/integrations.md) |
 | Out-of-tree node libraries (fetching, loading, extraction status) | [`docs/architecture/plugins.md`](docs/architecture/plugins.md) |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
@@ -71,13 +70,14 @@ central design idea (see [Core standards](#core-architectural-standards)):
     out-of-tree node library compiles against, so **a breaking change here breaks
     every plugin**.
   - **`app/`** — the JavaFX program nobody compiles against: `ui/`, `App`/`Launcher`,
-    the built-in node library `graph/nodes/`, and the integration clients.
+    the built-in node library `graph/nodes/` (dependency-free primitives only — every
+    integration category has been extracted into an out-of-tree node library), and
+    `plugin/`, the host side of loading them.
 - **Java 21** toolchain (set via Gradle; you don't need it installed globally if
   Gradle can provision it).
 - **JavaFX 21** via the `org.openjfx.javafxplugin` Gradle plugin (`javafx.controls`
-  in both modules, plus `javafx.swing` in `app` for the ML node's `SwingFXUtils`
-  bridge). The api module declares it on the `api` configuration, because a node
-  supplies its inline UI by returning a `javafx.scene.Node`.
+  in both modules). The api module declares it on the `api` configuration, because a
+  node supplies its inline UI by returning a `javafx.scene.Node`.
 
 ```bash
 ./gradlew run           # launch the app (delegates to :app:run)
@@ -90,12 +90,12 @@ central design idea (see [Core standards](#core-architectural-standards)):
   plain classpath jar — do not move `main` into `App`.
 - **Key dependencies:** `org.json` (save files, config, secrets blob) and
   `slf4j-api`, which third-party libraries bundled inside out-of-tree node
-  libraries (JDA in `housegraph-discord`, jmdns in `housegraph-web`) log
-  through. HouseGraph's own code logs through the in-house `logging/` package; a
-  bundled SLF4J provider (`logging/slf4j/`) routes those SLF4J logs into that
-  same pipeline, so there is no separate console binding — see
-  [`docs/architecture/logging.md`](docs/architecture/logging.md). A node library
-  loaded at runtime brings its own third-party dependencies; see
+  libraries (JDA in `housegraph-discord`, jmdns in `housegraph-web`, DJL in
+  `housegraph-ml`) log through. HouseGraph's own code logs through the in-house
+  `logging/` package; a bundled SLF4J provider (`logging/slf4j/`) routes those
+  SLF4J logs into that same pipeline, so there is no separate console binding —
+  see [`docs/architecture/logging.md`](docs/architecture/logging.md). A node
+  library loaded at runtime brings its own third-party dependencies; see
   [`docs/architecture/plugins.md`](docs/architecture/plugins.md).
 
 ---
@@ -115,7 +115,6 @@ across the middle of this picture — everything below the line is published.
    │    └────────────────────┬────────────────────────┘         │
    │    ┌────────────────────▼────────────────────────┐         │
    │    │  graph/nodes/  the built-in node library     │         │
-   │    │  ml/  integration clients                     │         │
    │    │  plugin/  host side of out-of-tree libraries  │         │
    │    └────────────────────┬────────────────────────┘         │
    └─────────────────────────┼───────────────────────────────────┘
@@ -149,9 +148,7 @@ looking for a class.
 | Named resources & event pub/sub | api | `resource` | [resources.md](docs/architecture/resources.md) |
 | On-disk locations, secrets, preferences | api | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
 | Logging (levels, sinks, the log window) | api / app | `logging`, `ui.log` | [logging.md](docs/architecture/logging.md) |
-| Cameras | app | `camera` | [integrations.md](docs/architecture/integrations.md) |
 | Out-of-tree node libraries | app | `plugin`, `ui.plugin` | [plugins.md](docs/architecture/plugins.md) |
-| Local ML inference (DJL, no Python) | app | `ml` (`ImageNetClassifier`, `AnimalVerdict`) | [integrations.md](docs/architecture/integrations.md) |
 | Tests | both | `<module>/src/test/...` | [testing.md](docs/architecture/testing.md) |
 
 ---

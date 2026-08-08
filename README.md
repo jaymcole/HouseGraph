@@ -27,15 +27,15 @@ design idea:
 - First-party node libraries, in [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes):
   a **Discord** bot with modular text/slash commands (via JDA), an **IoT**
   library driving an Arduino UNO R4 WiFi LED-matrix sign, a **Camera** library
-  for ONVIF/Reolink IP-camera discovery and motion detection, and a **Web**
+  for ONVIF/Reolink IP-camera discovery and motion detection, a **Web**
   library with a **Web Server** node that hosts a directory of static files on
   the LAN as `<name>.local` (via jmdns multicast DNS) — optionally with a
   **Data Store** node giving the hosted site shared, server-side persistence
   over a `/api/data` endpoint — and a **Node Server** node for launching an
-  external Node.js server the same way.
-- Built-in: local, JVM-native ML inference (via Deep Java Library — no
-  Python): an **Animal Classifier** node tells a squirrel from a bird from a
-  frame, with weights downloaded on first use and run locally thereafter.
+  external Node.js server the same way, and an **ML** library with local,
+  JVM-native image classification (via Deep Java Library — no Python): an
+  **Animal Classifier** node tells a squirrel from a bird from a frame, with
+  weights downloaded on first use and run locally thereafter.
 - Concurrent, thread-safe execution engine with branch fan-out, for-each loops
   (a **For Each** node runs its body once per list item), and data-cycle detection.
 - Encrypted secret store (AES-256-GCM) so tokens and passwords never touch save
@@ -73,7 +73,7 @@ in sync**. Subsystem deep-dives live in
 | [resources.md](docs/architecture/resources.md) | named resources & event pub/sub |
 | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) | on-disk layout, encrypted secrets |
 | [logging.md](docs/architecture/logging.md) | log levels, sinks, and the log window |
-| [integrations.md](docs/architecture/integrations.md) | local ML and other integrations still built into this repository |
+| [integrations.md](docs/architecture/integrations.md) | a record of every integration that used to live in this repository, now all out-of-tree node libraries |
 | [plugins.md](docs/architecture/plugins.md) | out-of-tree node libraries: fetching, loading, and writing your own |
 | [testing.md](docs/architecture/testing.md) | test conventions |
 

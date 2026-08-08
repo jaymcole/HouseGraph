@@ -1,10 +1,10 @@
 # External Integrations
 
-This repository still hosts local ML inference; it keeps its client code in a
-dedicated package and surfaces to the graph through nodes under
-`graph/nodes/<category>/`. None of the engine depends on it — it depends on
-the engine. Everything else has moved to out-of-tree node libraries — see the
-notes below and [plugins.md](plugins.md).
+Every integration that once lived in this repository has moved to an
+out-of-tree node library — see the notes below and [plugins.md](plugins.md).
+This file is kept as a record of what each one does and the extraction
+lessons each one surfaced, for anyone extending a library or writing a new
+one.
 
 ## Discord — **extracted**
 
@@ -221,26 +221,46 @@ beside the files so the page can read/write server-side, shared-across-devices d
 on the LAN while running; the traversal guard keeps file requests inside the served
 directory.
 
-## Local ML inference (`ml/`, nodes in `graph/nodes/ml/`)
+## Local ML inference — **extracted**
+
+> This integration no longer lives in this repository. It is the
+> `housegraph-ml` library in
+> [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes), installed
+> through **Node Libraries…**. Fifth and last extraction, deliberately done
+> last: DJL's shading and native-library footprint are the messiest of the
+> five categories, so every lesson the earlier four surfaced (the SLF4J
+> exclude, the `@Node.Type`/`javafx.scene.Node` collision, the asset-naming
+> convention) was already proven before tackling the biggest one. `app/build.gradle`
+> now depends on nothing but `:housegraph-api`. See [plugins.md](plugins.md).
+>
+> `ai.djl:api` depends on `slf4j-api` itself, same as JDA and jmdns before it —
+> but `ai.djl.pytorch:pytorch-model-zoo` and `ai.djl.pytorch:pytorch-engine` each
+> pull their own transitive path to `ai.djl:api`, so an exclude on one declared
+> DJL dependency doesn't cover another's path to the same transitive module. The
+> library's build applies `exclude group: 'org.slf4j', module: 'slf4j-api'` on
+> all three DJL coordinates, not just the one declared directly.
+>
+> `AnimalClassifierNode` doesn't implement `NodeContentProvider`, so the
+> `@Node.Type`-vs-`javafx.scene.Node` import collision that hit discord/camera/web
+> doesn't apply here — a reminder that the collision is about implementing
+> `NodeContentProvider`, not about using JavaFX at all.
 
 Vision/ML models run **in-JVM**, locally, through
 [Deep Java Library](https://djl.ai) (DJL) on its PyTorch engine — no Python, no
-external service. This mirrors the split every extracted integration also used —
-`camera`, `discord`, `web` — a headless client package from its UI nodes: the `ml`
-package holds JavaFX-free inference clients; `graph.nodes.ml` holds the nodes
-that drive them. `ml` is the last remaining candidate for extraction (see
-[plugins.md](plugins.md)).
+external service. Like the other extracted integrations, a JavaFX-free client
+package (`plugins.ml` in housegraph-nodes) holds the inference clients;
+`plugins.ml.nodes` holds the nodes that drive them.
 
-- **`ImageNetClassifier`** (`ml/`) — a shared, lazily-loaded ResNet-50 / ImageNet
+- **`ImageNetClassifier`** — a shared, lazily-loaded ResNet-50 / ImageNet
   classifier. The DJL `ZooModel` is loaded once on first use and reused
   process-wide (a singleton), so multiple classifier nodes don't each pay the
   load cost; a fresh `Predictor` is created per call because `Predictor` isn't
   thread-safe (the model is), which suits the engine's concurrent execution.
   Label-agnostic on purpose — it returns raw ImageNet classes; deciding what they
   *mean* is the caller's job.
-- **`AnimalVerdict`** (`ml/`) — the pure, headless-testable policy that collapses
+- **`AnimalVerdict`** — the pure, headless-testable policy that collapses
   ImageNet's 1000 labels into `squirrel` / `bird` / `other` / `none`.
-- **`AnimalClassifierNode`** (`graph/nodes/ml/`) — converts its JavaFX `Image`
+- **`AnimalClassifierNode`** — converts its JavaFX `Image`
   input to a `BufferedImage` (via `SwingFXUtils`, hence the `javafx.swing`
   module), classifies it, and emits `Category`/`Confidence` plus `Is Squirrel` /
   `Is Bird` gates (1/0) that wire straight into an `If`. It also emits `Objects`
@@ -256,16 +276,17 @@ therefore needs network access.
 **No secrets, no credentials** — models are public and fetched by DJL; nothing
 here touches `SecretsStore`.
 
-**Roadmap.** This is the classifier-first step toward feature parity with the
+**Roadmap.** This was the classifier-first step toward feature parity with the
 Python sibling project (AnimalNotifier). Detectors (YOLO/MegaDetector-style),
-more classifiers, and a local LLM (via Jlama) are expected to land in `ml/` next;
-factor shared model lifecycle/loading into `ml/` rather than duplicating per node.
+more classifiers, and a local LLM (via Jlama) are expected to land in
+housegraph-ml next; factor shared model lifecycle/loading into `plugins.ml`
+rather than duplicating per node.
 
 ---
 
-**When you change this, update…** this file whenever you add/modify an
-integration that still lives in this repository (a new local model / inference
-engine) or change how an integration handles credentials. Extracted
-integrations (Discord, IoT, Camera, Web) are documented in the housegraph-nodes
-repository; update this file's "extracted" note only if the extraction story
-itself changes.
+**When you change this, update…** this file only if the extraction story
+itself changes — for instance, if a new integration is added to this
+repository before it too is extracted, or if one of the lessons an extraction
+surfaced turns out to be wrong or incomplete. All five extracted integrations
+(Discord, IoT, Camera, Web, ML) are otherwise documented in the
+housegraph-nodes repository.
