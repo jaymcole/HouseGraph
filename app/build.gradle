@@ -7,11 +7,9 @@ description = 'The HouseGraph desktop application.'
 
 javafx {
     version = '21.0.4'
-    // javafx.swing supplies SwingFXUtils, the bridge from a JavaFX Image to the java.awt
-    // BufferedImage that DJL's ImageFactory consumes. Only the ml node needs it, so it leaves
-    // when ml is extracted. javafx.controls arrives transitively from :housegraph-api, but is
-    // named here too so this module states its own requirements.
-    modules = ['javafx.controls', 'javafx.swing']
+    // javafx.controls arrives transitively from :housegraph-api, but is named here too so this
+    // module states its own requirements.
+    modules = ['javafx.controls']
 }
 
 application {
@@ -21,18 +19,8 @@ application {
 }
 
 dependencies {
-    // Brings JavaFX, org.json and slf4j-api transitively (all declared `api` over there).
+    // Brings JavaFX, org.json and slf4j-api transitively (all declared `api` over there). Every
+    // integration node category has been extracted into out-of-tree node libraries — see
+    // docs/architecture/plugins.md — so this is the only dependency app/ has left.
     implementation project(':housegraph-api')
-
-    // --- Everything below belongs to a node category that is being extracted into its own
-    // --- repository; each line leaves with its category. See docs/architecture/plugins.md.
-
-    // Deep Java Library: JVM-native ML inference (see the ml package). The BOM pins all DJL
-    // artifacts to one version. The PyTorch engine downloads the matching native library (and
-    // models download their weights) on first use, cached under the user's home — no Python,
-    // no manual native jars.
-    implementation platform('ai.djl:bom:0.36.0')
-    implementation 'ai.djl:api'
-    implementation 'ai.djl.pytorch:pytorch-model-zoo'
-    runtimeOnly 'ai.djl.pytorch:pytorch-engine'
 }
