@@ -143,6 +143,31 @@ public final class AppDirectories {
     }
 
     /**
+     * Root of the local clones of graph repositories synced from git; see {@link #remoteRepo(String)}.
+     * <p>
+     * Distinct from {@link #saves()}, which holds graphs the user authored on this machine.
+     * Everything under here is a <b>mirror</b> and is overwritten on every sync — nothing written
+     * into it by hand survives.
+     *
+     * @return the remotes root, created if needed
+     */
+    public Path remotes() {
+        return ensure(root.resolve("remotes"));
+    }
+
+    /**
+     * The clone directory for one synced graph repository, under {@link #remotes()}, keyed by a
+     * caller-chosen string (conventionally {@code owner-repo}). The key is sanitised so a hostile
+     * repository URL cannot climb out of the remotes directory.
+     *
+     * @param key a caller-chosen repository key (sanitised to a single safe path segment)
+     * @return the clone directory for {@code key}, created if needed
+     */
+    public Path remoteRepo(String key) {
+        return ensure(remotes().resolve(sanitize(key)));
+    }
+
+    /**
      * Root of the persistent per-store documents; see {@link #dataStore(String)}.
      *
      * @return the data-stores root, created if needed

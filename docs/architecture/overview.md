@@ -27,6 +27,8 @@ linked below.
   out-of-tree node libraries.
 - [plugins.md](plugins.md) — the module split, out-of-tree node libraries, how
   they're fetched and loaded, and the extraction status of each integration.
+- [deployment.md](deployment.md) — running unattended: the CLI, syncing graphs
+  from a git repository, and supervising them.
 - [testing.md](testing.md) — test conventions and the headless-testability rule.
 
 ## Modules, layering, and dependency direction
@@ -38,7 +40,8 @@ within each; nothing in a lower layer knows about a higher one.
 
 ```
 app/            ui/  ──────────────►  graph/nodes/ (built-in library)
-                                              │
+                cli/ remote/                  │
+                (headless; no JavaFX)         │
                                               ▼ depends on
 housegraph-api/ graph/ (engine + node model)  ──────►  resource/
                              ▲                          storage/ store/
@@ -60,6 +63,12 @@ housegraph-api/ graph/ (engine + node model)  ──────►  resource/
 - **`app/plugin/`** is the host side of loading out-of-tree libraries (manifest
   reading, cataloguing, fetching, class loading). It is not published; a node
   library never sees it. See [plugins.md](plugins.md).
+- **`app/cli/` and `app/remote/`** sit beside `ui/`, not under it: the command
+  line, the git sync loop and the process supervisor for running graphs
+  unattended. Both are **headless** — same rule as `plugin/`, since this
+  repository has no way to test a window, so nothing worth testing may live in
+  one. `remote/` supervises the JavaFX app as a *child process* rather than
+  running graphs itself. See [deployment.md](deployment.md).
 
 ## The main objects at a glance
 
@@ -87,7 +96,12 @@ housegraph-api/ graph/ (engine + node model)  ──────►  resource/
    `PluginLoader` and installs it as the thread's context class loader, then
    builds a `NodeGraph` and a `NodeRegistry` scanning the built-in library plus
    every installed one. It wires the toolbar (Save / Load / Secrets / Logs /
-   Node Libraries) and reopens the last file recorded in `AppPreferences`.
+   Node Libraries) and reopens the last file recorded in `AppPreferences` — or
+   the one named by `--graph`, which a supervised instance is started with and
+   which is deliberately *not* remembered. It also installs a shutdown hook, so a
+   signalled JVM tears down through `App.stop` rather than skipping it — JavaFX
+   calls `stop()` on a platform exit but not on a signal. See
+   [deployment.md](deployment.md).
 2. **Edit.** The user adds nodes (from the Add-Node menu, discovered across the
    built-in library and installed node libraries), drags data edges between
    ports and flow edges between the triangular anchors, types values into

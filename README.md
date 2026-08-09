@@ -71,6 +71,39 @@ Out-of-tree node libraries are unaffected — they're still fetched/loaded at
 runtime, not bundled into this jar. See
 [docs/architecture/plugins.md](docs/architecture/plugins.md).
 
+## Running unattended
+
+The same jar is also a command-line tool, for running graphs continuously on a
+dedicated machine. Point it at a GitHub repository holding your graphs; when you
+push, it pulls and restarts them.
+
+```bash
+java -jar app/build/libs/app-<version>.jar doctor   # is this machine ready?
+java -jar app/build/libs/app-<version>.jar sync     # pull now, report what changed
+java -jar app/build/libs/app-<version>.jar daemon   # poll and keep the graphs running
+```
+
+| Command | Does |
+| --- | --- |
+| *(none)* | opens the editor on the last graph, exactly as before |
+| `run <graph> [--minimized]` | opens the editor on one graph |
+| `daemon [--once]` | sync loop plus process supervision |
+| `sync [--force]` | pull the configured repositories now; starts nothing |
+| `plugins list \| install <url> \| update [id...]` | node libraries from the terminal |
+| `check <graph.json>` | which libraries a graph needs, and whether you have them |
+| `doctor` | check git, the data directory, config and installed libraries |
+
+Configure it in `config/remote.json` under the data directory (`doctor` prints
+where). Graphs are listed in a `housegraph.json` at the root of the repository
+being tracked. A macOS LaunchAgent template is in
+[`extras/launchd/`](extras/launchd/).
+
+**Graphs still run in the normal windowed app**, supervised as child processes, so
+the machine needs a logged-in GUI session — automatic login on a Mac mini is the
+intended setup. The full design, including why it isn't headless yet and what it
+would take, is in
+[docs/architecture/deployment.md](docs/architecture/deployment.md).
+
 ## Documentation
 
 Start with **[`CLAUDE.md`](CLAUDE.md)** — the architecture map, the standards the
@@ -89,6 +122,7 @@ in sync**. Subsystem deep-dives live in
 | [logging.md](docs/architecture/logging.md) | log levels, sinks, and the log window |
 | [integrations.md](docs/architecture/integrations.md) | a record of every integration that used to live in this repository, now all out-of-tree node libraries |
 | [plugins.md](docs/architecture/plugins.md) | out-of-tree node libraries: fetching, loading, and writing your own |
+| [deployment.md](docs/architecture/deployment.md) | running unattended: the CLI, git sync, and process supervision |
 | [testing.md](docs/architecture/testing.md) | test conventions |
 
 High-traffic packages (`graph/`, `graph/nodes/`, `ui/`) also carry their own
@@ -99,6 +133,7 @@ High-traffic packages (`graph/`, `graph/nodes/`, `ui/`) also carry their own
 - `.env` (gitignored; see [`.env.example`](.env.example)) seeds the Secret Loader
   node's dropdown.
 - App data lives in an OS-appropriate directory (e.g. `~/.local/share/HouseGraph`
-  on Linux); override the root with the `HOUSEGRAPH_HOME` environment variable or
-  the `housegraph.home` system property. Installed node libraries live under
-  `plugins/` inside that same directory.
+  on Linux); override the root with the `HOUSEGRAPH_HOME` environment variable,
+  the `housegraph.home` system property, or `--home` on any CLI command. Installed
+  node libraries live under `plugins/` inside that same directory, and synced graph
+  repositories under `remotes/`.

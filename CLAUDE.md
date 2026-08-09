@@ -35,6 +35,7 @@ Use this map of change → what to update:
 | Secret storage / crypto / on-disk locations | `SecretsStore` / `AppDirectories` Javadoc **and** [`docs/architecture/storage-and-secrets.md`](docs/architecture/storage-and-secrets.md) |
 | Logging levels / sinks / bootstrap / the log window | `LogManager` / `Logging` / `LogWindow` Javadoc **and** [`docs/architecture/logging.md`](docs/architecture/logging.md) |
 | Out-of-tree node libraries (fetching, loading, extraction status) | [`docs/architecture/plugins.md`](docs/architecture/plugins.md) |
+| CLI commands, git sync, process supervision, exit codes, unattended trust model | [`docs/architecture/deployment.md`](docs/architecture/deployment.md) |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
 
@@ -71,8 +72,9 @@ central design idea (see [Core standards](#core-architectural-standards)):
     every plugin**.
   - **`app/`** — the JavaFX program nobody compiles against: `ui/`, `App`/`Launcher`,
     the built-in node library `graph/nodes/` (dependency-free primitives only — every
-    integration category has been extracted into an out-of-tree node library), and
-    `plugin/`, the host side of loading them.
+    integration category has been extracted into an out-of-tree node library),
+    `plugin/`, the host side of loading them, and `cli/` + `remote/`, the headless
+    command line and the git-sync/supervisor for running graphs unattended.
 - **Java 21** toolchain (set via Gradle; you don't need it installed globally if
   Gradle can provision it).
 - **JavaFX 21** via the `org.openjfx.javafxplugin` Gradle plugin (`javafx.controls`
@@ -83,11 +85,15 @@ central design idea (see [Core standards](#core-architectural-standards)):
 ./gradlew run           # launch the app (delegates to :app:run)
 ./gradlew test          # run the JUnit 5 test suite in both modules
 ./gradlew compileJava   # compile only (fast sanity check for doc/Javadoc edits)
+./gradlew :app:shadowJar   # the self-contained jar; also the CLI (see deployment.md)
 ```
 
 - **Entry points:** `Launcher` (the `main` you actually run) delegates to
   `App extends Application`. The split exists so JavaFX launches cleanly from a
-  plain classpath jar — do not move `main` into `App`.
+  plain classpath jar — do not move `main` into `App`. `Launcher` also forks on the
+  first argument: a bare word means a CLI command and never touches JavaFX (`run` is
+  the one exception, since opening a graph *is* the GUI); anything else, including
+  no arguments, launches the window exactly as before.
 - **Key dependencies:** `org.json` (save files, config, secrets blob) and
   `slf4j-api`, which third-party libraries bundled inside out-of-tree node
   libraries (JDA in `housegraph-discord`, jmdns in `housegraph-web`, DJL in
@@ -116,6 +122,8 @@ across the middle of this picture — everything below the line is published.
    │    ┌────────────────────▼────────────────────────┐         │
    │    │  graph/nodes/  the built-in node library     │         │
    │    │  plugin/  host side of out-of-tree libraries  │         │
+   │    │  cli/ remote/  headless CLI, git sync,        │         │
+   │    │                process supervision            │         │
    │    └────────────────────┬────────────────────────┘         │
    └─────────────────────────┼───────────────────────────────────┘
                              │ depends on
@@ -149,6 +157,7 @@ looking for a class.
 | On-disk locations, secrets, preferences | api | `storage` | [storage-and-secrets.md](docs/architecture/storage-and-secrets.md) |
 | Logging (levels, sinks, the log window) | api / app | `logging`, `ui.log` | [logging.md](docs/architecture/logging.md) |
 | Out-of-tree node libraries | app | `plugin`, `ui.plugin` | [plugins.md](docs/architecture/plugins.md) |
+| CLI, git sync, unattended supervision | app | `cli`, `cli.commands`, `remote` | [deployment.md](docs/architecture/deployment.md) |
 | Tests | both | `<module>/src/test/...` | [testing.md](docs/architecture/testing.md) |
 
 ---

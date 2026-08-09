@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    HouseGraph daemon, as a macOS LaunchAgent.
+
+    A LaunchAgent (~/Library/LaunchAgents), NOT a LaunchDaemon (/Library/LaunchDaemons).
+    Graph execution still runs in the JavaFX app, which needs the logged-in GUI session — a
+    LaunchDaemon runs before login with no window server and would fail on every start.
+    See docs/architecture/deployment.md.
+
+    Install:
+        cp extras/launchd/com.jaymcole.housegraph.plist ~/Library/LaunchAgents/
+        # edit the two paths below, then:
+        launchctl load ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+
+    Stop:
+        launchctl unload ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+
+    The machine also needs automatic login enabled, and to stay awake:
+        sudo pmset -a sleep 0 disablesleep 1
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jaymcole.housegraph</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- EDIT: the java binary to run under (java -version to check it's 21+). -->
+        <string>/usr/bin/java</string>
+        <!-- EDIT: the shaded jar built by ./gradlew :app:shadowJar. -->
+        <string>-jar</string>
+        <string>/Users/CHANGEME/HouseGraph/app-0.2.0.jar</string>
+        <string>daemon</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart the daemon itself if it ever exits. The daemon restarts individual graphs;
+         this is the layer above, for the daemon process. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Anything written before the logging pipeline is up (a JVM error, a missing jar) would
+         otherwise be lost. HouseGraph's own log is separate, under its data directory —
+         run `housegraph doctor` to see where. -->
+    <key>StandardOutPath</key>
+    <string>/Users/CHANGEME/Library/Logs/housegraph-daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/CHANGEME/Library/Logs/housegraph-daemon.log</string>
+
+    <!-- Give a machine that has just booted a moment before the first sync: the network may not
+         be up yet, and a failed first poll would just wait out the whole poll interval. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+</dict>
+</plist>

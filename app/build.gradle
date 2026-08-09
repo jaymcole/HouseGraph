@@ -32,4 +32,10 @@ shadowJar {
     // housegraph-api ships an SLF4J provider registered via META-INF/services; merge rather
     // than let one copy silently win if another provider ever ends up on the runtime classpath.
     mergeServiceFiles()
+    manifest {
+        // What `housegraph --version` reports. On a machine running graphs unattended this is the
+        // only way to tell which build is actually deployed, so it has to be in the jar itself
+        // rather than inferred from a filename someone may have changed.
+        attributes 'Implementation-Version': project.version
+    }
 }

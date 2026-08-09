@@ -14,6 +14,8 @@ import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import io.github.jaymcole.housegraph.graph.nodes.loader.SecretLoaderNode;
 import io.github.jaymcole.housegraph.graph.nodes.object.ObjectDecomposerNode;
+import io.github.jaymcole.housegraph.plugin.PluginCatalog;
+import io.github.jaymcole.housegraph.plugin.PluginDirectory;
 import javafx.geometry.Point2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -689,6 +692,92 @@ class GraphFileIOTest {
     private static GraphSnapshot roundTrip(GraphSnapshot snapshot) {
         String text = toJson(snapshot).toString();
         return fromJson(new JSONObject(new JSONTokener(text)));
+    }
+
+    // --- The plugins table: rows have to carry where the library came from ---------------------
+    //
+    // These use PLUGIN_REGISTRY rather than REGISTRY. REGISTRY is core-only, so under it every node
+    // is a built-in and no plugin row is ever written — which is precisely why the missing
+    // repository/version/name went unnoticed: nothing here had ever saved a plugin-owned node.
+
+    /**
+     * A registry that claims the math package for an out-of-tree library, so {@code AddNode} reads
+     * as plugin-owned. Cheaper and clearer than a fixture package: the point under test is what
+     * {@code toJson} writes for a non-core owner, not discovery itself.
+     */
+    private static final NodeRegistry PLUGIN_REGISTRY = new NodeRegistry(List.of(
+            new NodeRegistry.ScanRoot("io.github.jaymcole.housegraph.graph.nodes.math",
+                    GraphFileIOTest.class.getClassLoader(), "housegraph-widgets", "Widgets", null)));
+
+    private static final PluginCatalog.Installed WIDGETS = new PluginCatalog.Installed(
+            "housegraph-widgets", "Widgets", "1.2.3",
+            "https://github.com/example/housegraph-widgets", "0.2.0",
+            List.of("io.github.jaymcole.housegraph.graph.nodes.math"), "Widgets", "abc123", true);
+
+    private static JSONObject pluginsTableFor(PluginDirectory directory) {
+        GraphSnapshot snapshot = new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0.0, 0.0)), List.of(), List.of());
+        return GraphFileIO.toJson(snapshot, PLUGIN_REGISTRY, directory)
+                .getJSONArray("plugins").getJSONObject(0);
+    }
+
+    @Test
+    void aPluginRowRecordsWhereTheLibraryCanBeInstalledFrom() {
+        JSONObject row = pluginsTableFor(id -> Optional.of(WIDGETS));
+
+        // The whole reason the table exists. Without this a graph opened on another machine can be
+        // told a library is missing but not where to get it, so GraphDependencyCheck's
+        // RequiredPlugin.isInstallable() is false and no install can ever be offered.
+        assertEquals("https://github.com/example/housegraph-widgets", row.getString("repository"));
+        assertEquals("housegraph-widgets", row.getString("id"));
+        assertEquals("Widgets", row.getString("name"));
+        assertEquals("1.2.3", row.getString("version"));
+    }
+
+    @Test
+    void aPluginRowDegradesToABareIdWhenTheLibraryIsNotInTheDirectory() {
+        // A library uninstalled since the graph was built, or a save made with no catalog to hand.
+        // Writing the id alone is the old behaviour and stays correct; writing JSON nulls would not.
+        JSONObject row = pluginsTableFor(PluginDirectory.EMPTY);
+
+        assertEquals("housegraph-widgets", row.getString("id"));
+        assertFalse(row.has("repository"), "an unknown library must not produce a null repository");
+        assertFalse(row.has("version"));
+        assertFalse(row.has("name"));
+    }
+
+    @Test
+    void aBuiltInNodeStillWritesNoPluginsTableAtAll() {
+        // The core-only case has to keep producing a file that differs from its v1 form by exactly
+        // the version number, so adding library metadata can't churn every existing save.
+        GraphSnapshot snapshot = new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0.0, 0.0)), List.of(), List.of());
+
+        JSONObject root = GraphFileIO.toJson(snapshot, REGISTRY, id -> Optional.of(WIDGETS));
+
+        assertFalse(root.has("plugins"));
+        assertFalse(root.getJSONArray("nodes").getJSONObject(0).has("plugin"));
+    }
+
+    @Test
+    void aPreservedRowFromTheFileBeatsOneRegeneratedFromTheCatalog() {
+        // A MissingNode's row came from a file that may know more than this build does — a version
+        // that is not installed here, or a key a future format added. Regenerating it from the local
+        // catalog would quietly rewrite that to whatever happens to be installed.
+        JSONObject original = unknownNodeJson(1.0, 2.0);
+        original.put("plugin", "housegraph-widgets");
+        JSONObject root = rootWith(List.of(original), List.of(), List.of());
+        root.put("plugins", List.of(new JSONObject()
+                .put("id", "housegraph-widgets")
+                .put("version", "9.9.9")
+                .put("repository", "https://github.com/example/somewhere-else")));
+
+        JSONObject rewritten = GraphFileIO.toJson(
+                GraphFileIO.fromJson(root, PLUGIN_REGISTRY), PLUGIN_REGISTRY, id -> Optional.of(WIDGETS));
+
+        JSONObject row = rewritten.getJSONArray("plugins").getJSONObject(0);
+        assertEquals("9.9.9", row.getString("version"), "the file's own row wins over the catalog's");
+        assertEquals("https://github.com/example/somewhere-else", row.getString("repository"));
     }
 
     /** A node with one authored and one authored-secret output, for checking secrets don't get serialised. */

@@ -26,6 +26,18 @@ import io.github.jaymcole.housegraph.graph.BaseNode;
  * runs), so any off-UI-thread work (a gateway login, a socket bind) stays off the FX thread just as
  * it does on a button press.
  *
+ * <h2>This is also the "on startup" hook</h2>
+ * The timing above — once, after every node and edge is in place, with the state map already
+ * loaded — is exactly what an <em>on-startup trigger</em> node needs, and using it that way is
+ * intended rather than a workaround: such a node simply calls {@link BaseNode#execute()} from
+ * {@link #autoStartIfWasRunning()}. That matters most for a graph running unattended, where nobody
+ * is present to press Start (see {@code docs/architecture/deployment.md}).
+ *
+ * <p><b>Do not add a second interface for it.</b> {@code BaseNode}'s abstract method set is frozen
+ * and this module is published API, so a near-duplicate of this contract would be permanent surface
+ * bought for nothing. The copy/paste rule even falls out for free: a duplicated node carries no
+ * state map, so a pasted startup trigger never fires.
+ *
  * @see NodeContentProvider
  */
 public interface AutoStartable {

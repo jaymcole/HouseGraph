@@ -35,6 +35,21 @@ against it. If new logic *must* touch the UI, factor the testable part out.
   `AppDirectoriesTest`, `AppPreferencesTest`.
 - **Node tests** exercise a single node's `process()`/dynamic-port behavior;
   `ObjectDecomposerNodeTest` covers the reflective/dynamic case.
+- **Git tests** build a real repository in a `@TempDir` and serve it over a
+  `file://` URL — `GraphRepositoryTest` does `git init --bare`, commits, pushes,
+  and asserts the sync picks it up. Real git, no network, deterministic. Mocking
+  git would only assert that the arguments were spelled the way the test expected.
+  Guard the class with `assumeTrue(GitCommand.isAvailable())`.
+- **Process tests** inject a fake launcher and a fake clock rather than spawning
+  JVMs (`SupervisorTest`). What is worth pinning down is the decision-making —
+  when to restart, how long to back off, when to give up — and none of it needs a
+  real process. The injected clock lets a sixty-second backoff be asserted in
+  microseconds.
+- **Save-format tests need the right registry.** `GraphFileIOTest`'s default
+  registry is core-only, under which every node is a built-in and no `plugins` row
+  is ever written. Anything about library-owned nodes must use a registry whose
+  `ScanRoot` declares a non-core plugin id — a gap in exactly this spot let the
+  save file's missing repository URL go unnoticed.
 
 ## Expectation for new work
 

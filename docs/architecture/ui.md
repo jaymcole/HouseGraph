@@ -147,6 +147,16 @@ reloaded.** Two halves:
   a no-op unless the node was running at save time. This fires **only on load** —
   paste and undo/redo never auto-start a copied resource.
 
+**This is also the "on startup" hook, and that use is intended.** Called once, after
+the whole graph is in place, on the FX thread, with the state map already loaded — a
+node that wants to fire when a graph comes up simply calls `execute()` from
+`autoStartIfWasRunning()`. Nothing host-side is needed, and no second lifecycle
+interface should be added for it: `BaseNode`'s abstract set is frozen, `housegraph-api`
+is published, and a near-duplicate of this contract would be permanent API surface
+bought for nothing. The paste rule falls out for free — a duplicated startup node
+carries no `state`, so it never fires. This matters most for a supervised instance,
+where nobody is there to press Start; see [deployment.md](deployment.md).
+
 ## Inline value editing: `sdk.ValueEditors`
 
 `ValueEditors` maps a type to a parse/format pair. A `NodeVariable` gets an inline
@@ -210,7 +220,8 @@ JSON shape:
   "plugins": [                     // the node libraries this graph depends on; omitted when only core is used
     { "id": "housegraph-discord", "name": "Discord", "version": "0.3.1",
       "repository": "https://github.com/jaymcole/housegraph-discord" }
-  ],
+  ],                               // name/version/repository come from the installed catalog; a
+                                   // library it doesn't know degrades to a bare { "id": ... }
   "nodes": [
     { "type": "<stable type id>",  // NodeRegistry.persistentTypeId: simple class name, or a @Node.Type id
       "plugin": "housegraph-discord", // which library above provides it; absent for a built-in node
@@ -252,6 +263,13 @@ Key rules to preserve when editing this format:
   the **repository it can be installed from**. That table is what the load-time dependency
   check reads in a single pass before any node is built or any class is loaded, and it is
   what lets `resolveClass` disambiguate a type id claimed by two libraries.
+  <br>Those three extra fields come from the `PluginDirectory` passed to `save` —
+  `PluginCatalog` implements it, and `App` hands it over. Without one (the two-argument
+  overload, or a library since removed from the catalog) a row degrades to a bare `id`,
+  which is what earlier builds wrote: enough to name the missing library, not enough to
+  offer to install it. Re-saving on a machine that has the library repairs such a file.
+  A `MissingNode`'s row is re-emitted **verbatim** and is never regenerated, because the
+  file it came from may know a version or a key this build does not.
 - **Ports are persisted by name, not position.** Values are `{name, value}` objects
   matched to inputs by name on load; a data/flow edge references its variable/port by
   **name** when that name is non-blank and unique on the node, else by positional

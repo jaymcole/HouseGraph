@@ -22,6 +22,7 @@ import io.github.jaymcole.housegraph.ui.editor.SecretsEditor;
 import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
 import io.github.jaymcole.housegraph.ui.log.LogWindow;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
@@ -33,15 +34,56 @@ import javafx.stage.Stage;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * JavaFX application entry point for HouseGraph.
+ *
+ * <h2>Arguments</h2>
+ * Launched bare, the app behaves as it always has: it reopens whatever
+ * {@link AppPreferences#LAST_FILE} holds. Two named parameters exist for running it under a
+ * supervisor (see {@code remote/} and {@code docs/architecture/deployment.md}):
+ * <ul>
+ *   <li>{@code --graph=<path>} — open this file instead of the last one, and <b>do not</b> record it
+ *       as the last file. A daemon-opened graph must not overwrite what the person at the keyboard
+ *       had open, and on a machine running several graphs at once "last" is meaningless anyway.</li>
+ *   <li>{@code --minimized} — start iconified. The window is still created and shown first: node
+ *       views are what run {@code NodeContentProvider.createNodeContent()}, and several nodes keep
+ *       their running state in those controls, so a graph with no window would be a graph with
+ *       half-initialised nodes.</li>
+ * </ul>
+ *
+ * <h2>Shutdown</h2>
+ * JavaFX calls {@link #stop()} when the platform exits, but <b>not</b> when the JVM is signalled.
+ * Without a hook, a {@code kill} — which is exactly how a supervisor restarts a graph — would skip
+ * {@code NodeGraph.dispose()}, so no node's {@code onRemoved()} would run: connections, child
+ * processes and timers would all be left to the OS, and the tail of the log would never reach disk.
+ * {@link #installShutdownHook} closes that gap.
  */
 public class App extends Application {
 
     private static final Logger log = Log.get(App.class);
 
+    /** Open this file instead of {@link AppPreferences#LAST_FILE}, without becoming the last file. */
+    static final String GRAPH_PARAMETER = "graph";
+
+    /** Start the window iconified. */
+    static final String MINIMIZED_PARAMETER = "minimized";
+
+    /**
+     * How long the shutdown hook waits for {@link #stop()} to finish before giving up and letting the
+     * JVM die anyway. Long enough for an orderly teardown (a bot logging out, a child process being
+     * killed), short enough that one wedged node can't hang the machine's restart cycle.
+     */
+    private static final long SHUTDOWN_TIMEOUT_SECONDS = 15;
+
     private final AppPreferences preferences = AppPreferences.load();
+
+    /** Counted down at the end of {@link #stop()}, so the shutdown hook knows teardown finished. */
+    private final CountDownLatch stopped = new CountDownLatch(1);
     private NodeGraph graph;
     private NodeRegistry nodeRegistry;
     private PluginCatalog pluginCatalog;
@@ -60,6 +102,13 @@ public class App extends Application {
 
     /** The file most recently saved to or loaded from; the target for Quick Save. Null until chosen. */
     private File currentFile;
+
+    /**
+     * Whether this run may write {@link AppPreferences#LAST_FILE}. False when a graph was named with
+     * {@code --graph}: a supervised instance must not overwrite what the person at the keyboard had
+     * open, and on a machine running several graphs at once there is no single "last" file to record.
+     */
+    private boolean trackLastFile = true;
 
     @Override
     public void start(Stage stage) {
@@ -139,12 +188,63 @@ public class App extends Application {
         stage.setTitle("HouseGraph");
         stage.setScene(new Scene(root, 1100, 750));
         stage.show();
+        if (isMinimizedRequested()) {
+            // After show(), not instead of it: the scene graph — and so every node's inline UI —
+            // is only built for a shown stage, and nodes keep runtime state in those controls.
+            stage.setIconified(true);
+        }
 
-        // Reopen the last graph. Non-interactive on purpose — see openGraph.
-        preferences.get(AppPreferences.LAST_FILE)
-                .map(File::new)
+        installShutdownHook();
+
+        // A graph named on the command line wins over the remembered one. Non-interactive either
+        // way — see openGraph.
+        Optional<File> requested = requestedGraph();
+        trackLastFile = requested.isEmpty();
+        requested.filter(file -> !file.isFile())
+                .ifPresent(file -> log.error("No graph file at {}", file.getAbsolutePath()));
+        requested.or(() -> preferences.get(AppPreferences.LAST_FILE).map(File::new))
                 .filter(File::isFile)
                 .ifPresent(file -> openGraph(stage, file, false));
+    }
+
+    /** The {@code --graph=<path>} argument, if one was given. */
+    private Optional<File> requestedGraph() {
+        Map<String, String> named = getParameters() == null ? Map.of() : getParameters().getNamed();
+        String path = named.get(GRAPH_PARAMETER);
+        return path == null || path.isBlank() ? Optional.empty() : Optional.of(new File(path.trim()));
+    }
+
+    /** Whether {@code --minimized} was passed, in either its flag or {@code --minimized=true} form. */
+    private boolean isMinimizedRequested() {
+        if (getParameters() == null) {
+            return false;
+        }
+        return getParameters().getUnnamed().contains("--" + MINIMIZED_PARAMETER)
+                || Boolean.parseBoolean(getParameters().getNamed().getOrDefault(MINIMIZED_PARAMETER, "false"));
+    }
+
+    /**
+     * Makes a signalled JVM shut down the same way a closed window does.
+     *
+     * <p>{@code Platform.exit()} is what triggers {@link #stop()}, and it runs teardown on the FX
+     * thread — so the hook has to hand off and then <em>wait</em>, or the JVM would exit out from
+     * under the very cleanup it just asked for. The latch is counted down at the end of
+     * {@code stop()}; the timeout means a node that refuses to shut down delays the restart rather
+     * than blocking it forever.
+     */
+    private void installShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            Platform.exit();
+            try {
+                if (!stopped.await(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    // Can't rely on the log here: its file sink may already be closing.
+                    System.err.println("HouseGraph: shutdown timed out after "
+                            + SHUTDOWN_TIMEOUT_SECONDS + "s; exiting anyway");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "housegraph-shutdown"));
     }
 
     private void openPluginWindow() {
@@ -153,18 +253,24 @@ public class App extends Application {
 
     @Override
     public void stop() {
-        // App is closing: dispose the graph so any long-lived node resources (timers,
-        // connections) are shut down cleanly rather than leaked.
-        if (graph != null) {
-            graph.dispose();
+        try {
+            // App is closing: dispose the graph so any long-lived node resources (timers,
+            // connections) are shut down cleanly rather than leaked.
+            if (graph != null) {
+                graph.dispose();
+            }
+            // Release the handles held on installed node-library jars, so the next run can prune or
+            // replace them (on Windows an open jar can be neither deleted nor overwritten).
+            if (pluginLoader != null) {
+                pluginLoader.close();
+            }
+            // Flush and close the log file so the last lines reach disk.
+            Logging.shutdown();
+        } finally {
+            // In a finally block because a node throwing on teardown must not leave the shutdown
+            // hook waiting out its whole timeout for a stop() that has already given up.
+            stopped.countDown();
         }
-        // Release the handles held on installed node-library jars, so the next run can prune or
-        // replace them (on Windows an open jar can be neither deleted nor overwritten).
-        if (pluginLoader != null) {
-            pluginLoader.close();
-        }
-        // Flush and close the log file so the last lines reach disk.
-        Logging.shutdown();
     }
 
     /**
@@ -208,16 +314,26 @@ public class App extends Application {
     /** Saves the graph to {@code file} and records it as the current/last file. */
     private void saveTo(GraphCanvas canvas, File file) {
         try {
-            GraphFileIO.save(canvas, file);
+            // The catalog goes along so each node library this graph uses is recorded with the
+            // repository it can be installed from, not just its id — that's what lets another
+            // machine offer to fetch what's missing rather than only name it.
+            GraphFileIO.save(canvas, file, pluginCatalog);
             rememberLastFile(file);
         } catch (IOException ex) {
             new Alert(Alert.AlertType.ERROR, "Failed to save graph: " + ex.getMessage()).showAndWait();
         }
     }
 
-    /** Records the just-saved/opened file as the current file and the one to reopen on the next launch. */
+    /**
+     * Records the just-saved/opened file as the current file and, unless this run was pointed at a
+     * graph with {@code --graph}, as the one to reopen on the next launch. Quick Save still targets
+     * it either way — {@link #trackLastFile} governs only what is persisted for the next launch.
+     */
     private void rememberLastFile(File file) {
         currentFile = file;
+        if (!trackLastFile) {
+            return;
+        }
         preferences.put(AppPreferences.LAST_FILE, file.getAbsolutePath());
         preferences.save();
     }
