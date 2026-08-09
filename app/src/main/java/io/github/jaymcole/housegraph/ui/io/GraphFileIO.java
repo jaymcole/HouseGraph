@@ -14,6 +14,8 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.plugin.PluginCatalog;
+import io.github.jaymcole.housegraph.plugin.PluginDirectory;
 import javafx.geometry.Point2D;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -43,6 +45,16 @@ import java.util.Map;
  * {@link ExecutionPolicy}), its {@code maxConcurrency} and {@code timeoutMillis} (both written only
  * when non-zero), its persistable input/output values, a {@code requiredInputs} entry, and any
  * node-specific {@code state}.
+ * <p>
+ * The root also carries a {@code plugins} table (written only when the graph uses a node type from
+ * an out-of-tree library) naming each library this graph depends on: its {@code id}, and — from the
+ * {@link PluginDirectory} handed to {@link #save(GraphCanvas, File, PluginDirectory)} — its
+ * {@code name}, {@code version} and {@code repository}. The repository URL is the field that matters:
+ * without it a machine opening this graph can be told a library is missing but not where to get it,
+ * so {@code GraphDependencyCheck} has nothing to offer. A library the directory doesn't know (removed
+ * from the catalog since, or saved with {@link PluginDirectory#EMPTY}) degrades to a bare {@code id},
+ * which is what every save wrote before this was recorded — such a file repairs itself on the next
+ * save made with a catalog to hand.
  * <p>
  * <b>Ports are persisted by name, not position.</b> A node's {@code inputs}/{@code outputs} are
  * written as {@code {name, value}} objects (computed and secret values are omitted — see
@@ -82,8 +94,26 @@ public final class GraphFileIO {
     private GraphFileIO() {
     }
 
+    /**
+     * Saves the canvas without any library metadata, so every {@code plugins} row is a bare id.
+     *
+     * <p>Kept for a caller that genuinely has no catalog to hand; prefer
+     * {@link #save(GraphCanvas, File, PluginDirectory)}, because a row without a repository URL
+     * can't be turned into an install offer when the graph is opened somewhere else.
+     */
     public static void save(GraphCanvas canvas, File file) throws IOException {
-        JSONObject root = toJson(canvas.snapshotAll(), canvas.getNodeRegistry());
+        save(canvas, file, PluginDirectory.EMPTY);
+    }
+
+    /**
+     * Saves the canvas, recording each node library this graph depends on along with where it can be
+     * installed from.
+     *
+     * @param plugins consulted for the name/version/repository of each library in use; pass the
+     *                app's {@code PluginCatalog}
+     */
+    public static void save(GraphCanvas canvas, File file, PluginDirectory plugins) throws IOException {
+        JSONObject root = toJson(canvas.snapshotAll(), canvas.getNodeRegistry(), plugins);
         try (FileWriter writer = new FileWriter(file)) {
             writer.write(root.toString(2));
         }
@@ -126,6 +156,10 @@ public final class GraphFileIO {
     // injectable: a test can now hand in a registry scanning a fixture package instead of asserting
     // against whatever node types happen to ship in the app.
     static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry) {
+        return toJson(snapshot, registry, PluginDirectory.EMPTY);
+    }
+
+    static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry, PluginDirectory plugins) {
         List<ClipboardNode> snapshotNodes = snapshot.nodes();
         JSONArray nodesJson = new JSONArray();
         // Keyed by library id, insertion-ordered so the written table is stable between saves.
@@ -158,7 +192,7 @@ public final class GraphFileIO {
             // file that differs from its v1 form by exactly the version number.
             if (!NodeRegistry.CORE_PLUGIN_ID.equals(pluginId)) {
                 nodeJson.put("plugin", pluginId);
-                pluginRows.computeIfAbsent(pluginId, id -> new JSONObject().put("id", id));
+                pluginRows.computeIfAbsent(pluginId, id -> pluginRow(id, plugins));
             }
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
@@ -220,6 +254,34 @@ public final class GraphFileIO {
         root.put("dataEdges", dataEdgesJson);
         root.put("flowEdges", flowEdgesJson);
         return root;
+    }
+
+    /**
+     * One row of the root {@code plugins} table: the library's id, plus whatever the directory can
+     * add about it.
+     *
+     * <p><b>The {@code repository} is the load-bearing field.</b> An id alone tells a machine opening
+     * this graph <em>that</em> a library is missing but not where to get it, which is the difference
+     * between {@code GraphDependencyCheck} being able to offer an install and only being able to name
+     * a problem. The id is written unconditionally because it is what identifies the node's owner; the
+     * other three are written only when known, so a library that has since been removed from the
+     * catalog degrades to a bare id rather than to a row full of nulls.
+     */
+    private static JSONObject pluginRow(String pluginId, PluginDirectory plugins) {
+        JSONObject row = new JSONObject().put("id", pluginId);
+        plugins.byId(pluginId).ifPresent(installed -> {
+            putIfPresent(row, "name", installed.name());
+            putIfPresent(row, "version", installed.version());
+            putIfPresent(row, "repository", installed.repository());
+        });
+        return row;
+    }
+
+    /** Writes {@code key} only when {@code value} says something, mirroring {@link PluginCatalog}. */
+    private static void putIfPresent(JSONObject json, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            json.put(key, value);
+        }
     }
 
     static GraphSnapshot fromJson(JSONObject root, NodeRegistry registry) {

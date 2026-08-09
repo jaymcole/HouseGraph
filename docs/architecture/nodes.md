@@ -186,6 +186,14 @@ that state automatically when the graph is reloaded. The persistence is a plain
 node's Start path once the whole graph has loaded) and lives in
 [ui.md](ui.md#resuming-running-nodes-on-load-sdkautostartable).
 
+The same hook is how you write an **"on startup" trigger**: `autoStartIfWasRunning()`
+runs once, after every node and edge is in place, so a node that calls `execute()`
+there fires the graph as it comes up. No new host API is needed or wanted — see
+[ui.md](ui.md#resuming-running-nodes-on-load-sdkautostartable) for why a second
+lifecycle interface would be the wrong answer. That is the piece a graph running
+unattended needs, since nobody is there to press Start
+([deployment.md](deployment.md)).
+
 ## Dynamic-port nodes
 
 Some nodes' ports depend on runtime wiring or settings:

@@ -33,8 +33,12 @@ import java.util.Optional;
  * yields an empty catalog and a log line. The consequence is bounded and recoverable: the user's
  * libraries show as not installed and can be reinstalled, whereas throwing would stop the app
  * starting at all.
+ *
+ * <p>It implements {@link PluginDirectory} so a caller that only needs to <em>ask about</em> a
+ * library id — {@code GraphFileIO} writing a save file's {@code plugins} table — can take that
+ * one-method view instead of the whole mutable catalog.
  */
-public final class PluginCatalog {
+public final class PluginCatalog implements PluginDirectory {
 
     private static final Logger log = Log.get(PluginCatalog.class);
 
@@ -43,8 +47,10 @@ public final class PluginCatalog {
     /**
      * One installed library.
      *
-     * @param sha256  the hash recorded at install, re-checked on load so a swapped cached jar is
-     *                noticed rather than silently loaded
+     * @param sha256  the hash of the jar as installed. Recorded so a swapped cached jar <em>can</em>
+     *                be noticed — but nothing verifies it on load yet; see
+     *                {@link PluginInstaller#matchesRecordedHash} and the Security section of
+     *                {@code docs/architecture/plugins.md}
      * @param enabled false keeps the jar on disk but out of the class loader
      */
     public record Installed(String id,
@@ -170,6 +176,7 @@ public final class PluginCatalog {
         return byId.values().stream().filter(Installed::enabled).toList();
     }
 
+    @Override
     public Optional<Installed> byId(String id) {
         return id == null ? Optional.empty() : Optional.ofNullable(byId.get(id));
     }

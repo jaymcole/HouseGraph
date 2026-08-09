@@ -20,9 +20,17 @@ The single source of truth for on-disk locations. One root per platform:
 Under it, a subdirectory per purpose, each created on demand: `secrets()`,
 `nodes()` (+ `nodeStorage(key)` for per-node private storage, with the key
 sanitized so it can't escape the folder), `plugins()` (+ `pluginJar(id, version)`),
-`saves()`, `dataStores()` (+ `dataStore(name)` for a named store's folder),
-`config()`, `cache()`, `logs()` (the `housegraph.log` file — see
-[logging.md](logging.md)).
+`saves()`, `remotes()` (+ `remoteRepo(key)`), `dataStores()` (+ `dataStore(name)`
+for a named store's folder), `config()`, `cache()`, `logs()` (the `housegraph.log`
+file — see [logging.md](logging.md)).
+
+`saves()` and `remotes()` are the third easily-confused pair: `saves()` holds graphs
+authored on this machine, while everything under `remotes()` is a **git mirror**,
+overwritten wholesale on every sync (`reset --hard` + `clean -fd`), so nothing put
+there by hand survives. The key is derived from the repository URL rather than chosen,
+so the same remote always maps to the same directory across restarts, and it is
+sanitized like every other — a hostile URL can't climb out. See
+[deployment.md](deployment.md).
 
 `nodes()` and `plugins()` are easy to confuse and mean opposite things: `nodes()` is
 a node's **private runtime storage**, while `plugins()` holds **installed node-library
@@ -90,6 +98,27 @@ room for window size, recent files, etc. **Reading is forgiving**: a missing or
 corrupt file yields empty preferences rather than failing, so a bad prefs file can
 never stop the app from starting. Writing is explicit via `save()`.
 
+An instance launched with `--graph` (a supervised one) **does not write `LAST_FILE`**.
+It would otherwise overwrite whatever the person at the keyboard had open, and on a
+machine running several graphs at once there is no single "last" file to record.
+
+## What else lives under `config()`
+
+`AppPreferences` is string-values-only, so anything structured gets its own file
+beside it, each written atomically and read forgivingly:
+
+| File | Holds | Owner |
+| --- | --- | --- |
+| `preferences.json` | flat string preferences | `AppPreferences` |
+| `plugins.json` | installed node libraries | `PluginCatalog` |
+| `remote.json` | tracked git repositories, and what may be auto-installed | `RemoteConfig` |
+| `remote-state.json` | last commit deployed per repository | `RemoteState` |
+
+`remote.json` is the one file here a user is expected to **write by hand**, and it is
+the trust boundary for unattended installs — see [deployment.md](deployment.md). A git
+token for a private repository is named there by its `SecretsStore` key, never written
+into it: the same rule as everywhere else.
+
 ## `SecretsException`
 
 Unchecked exception for crypto/secret-store failures (bad key, corrupt/tampered
@@ -99,5 +128,5 @@ file). Distinct from `UncheckedIOException` used for plain I/O failures.
 
 **When you change this, update…** this file (and the relevant Javadoc) whenever
 you change the on-disk directory layout, the secrets encryption scheme or threat
-model, the preferences format, or the rule about what may/may not be written in
-plaintext.
+model, the preferences format, the set of files under `config()`, or the rule about
+what may/may not be written in plaintext.

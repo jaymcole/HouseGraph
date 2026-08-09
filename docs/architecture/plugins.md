@@ -123,13 +123,25 @@ boundary that does not exist.
 
 What is worth building anyway, in value order:
 
-1. **Explicit install confirmation per repository**, naming owner/repo/asset/size,
-   recorded as trust-on-first-use. This matters most for the load-time dependency
-   check, where an *untrusted save file* proposes a code download via its recorded
-   repository URL. Never auto-install from a save file. *(not yet built)*
+1. **Explicit install confirmation per repository**, naming owner/repo/asset/size.
+   This matters most for the load-time dependency check, where an *untrusted save
+   file* proposes a code download via its recorded repository URL. Never
+   auto-install from a save file. *(built — `PluginWindow.confirmThenInstall` shows
+   repository, asset, release and size before anything is fetched. The
+   trust-on-first-use half, remembering a repository the user already accepted, is
+   **not** built: every install is confirmed afresh.)*
 2. **Restrict fetch origins** to `github.com`, `api.github.com`,
-   `objects.githubusercontent.com`. *(not yet built)*
-3. **Pin the asset by SHA-256** on install; re-verify on load. *(not yet built)*
+   `objects.githubusercontent.com`. *(built — `GitHubReleases.ALLOWED_HOSTS`,
+   re-checked in `PluginInstaller.download` so neither a lookup nor a download can
+   leave GitHub.)*
+3. **Pin the asset by SHA-256** on install; re-verify on load. *(half built — the
+   hash is computed and recorded at install, and `PluginInstaller.matchesRecordedHash`
+   exists, but **nothing calls it outside its test**. `PluginLoader` loads whatever
+   jar is on disk, so a swapped cached jar is not noticed. Wiring that check into the
+   loader is the remaining work.)*
+
+Item 3 is the honest gap. The recorded hash makes the fix cheap — it is a call site,
+not a design — but until it exists, do not describe the cached jars as verified.
 4. **`sdk.Secrets`** — done. Nothing it does today differs from calling
    `SecretsStore.open()`; the point is the *seam*. A per-library grant checked inside
    `Secrets.get` is a host-side change, whereas retrofitting one after twenty
@@ -155,9 +167,18 @@ disambiguate a type id claimed by two independently-written libraries.
 
 Version 2 records which library each node came from, and preserves a node whose type
 isn't installed **verbatim**, so opening a graph without a library and re-saving no
-longer destroys it. The root `plugins` table also carries each library's repository URL,
-which is what makes an "install the missing library" offer possible at all. See
+longer destroys it. The root `plugins` table also carries each library's name, version
+and repository URL, which is what makes an "install the missing library" offer possible
+at all. `GraphFileIO.save` takes a `PluginDirectory` (the `PluginCatalog` implements it)
+to fill those in; a library the catalog doesn't know degrades to a bare `id`. See
 [ui.md](ui.md#save--load-graphfileio).
+
+> **Files written before this was wired up carry a bare `id` and nothing else.** For a
+> while the writer emitted `{"id": …}` while this document and `ui.md` described the
+> full row, so a graph moved to another machine could name a missing library but not say
+> where to get it — `RequiredPlugin.isInstallable()` was false and no install could be
+> offered. Re-saving such a graph on a machine that has the library installed repairs it
+> permanently, exactly like the v1→v2 case below.
 
 ## The plugin runtime — done
 
@@ -191,9 +212,16 @@ jars. Everything network-shaped is user-initiated. A library whose jar has gone 
 is skipped with a warning; its nodes become placeholders and the graph still opens.
 
 **Rate limits shape `GitHubReleases`:** unauthenticated `api.github.com` allows 60
-requests/hour/IP. So updates are never checked automatically, and the stored `ETag` is
-sent back as `If-None-Match` — a 304 doesn't count against the limit, making a repeat
-check free.
+requests/hour/IP. So updates are never checked automatically — every lookup is a user
+action. `GitHubReleases.latest` takes an `ETag` to send back as `If-None-Match`, because
+a 304 doesn't count against the limit and would make a repeat check free; **that is not
+yet used.** `PluginCatalog.Installed` has no etag field, so every call site passes null
+and no lookup is ever conditional. Persisting it is the obvious next saving.
+
+Note this budget is specific to the REST API. The unattended sync in
+[deployment.md](deployment.md) polls with `git ls-remote`, which speaks the git protocol
+and is not rate limited that way — which is why it can afford to run on a timer and this
+cannot.
 
 **One repository may publish several libraries.** A monorepo releases every library at
 once, attaching a jar each, so a `Release` carries *all* of them and the user picks which
@@ -221,6 +249,15 @@ asked:
 An install offered from a save file still goes through the same per-repository
 confirmation as any other: a save file is untrusted input proposing a code download, so it
 never installs silently.
+
+**Unattended, there is nobody to confirm.** The daemon in [deployment.md](deployment.md)
+therefore does not read dependencies from save files at all. It installs only what a
+repository's `housegraph.json` manifest declares, and only when the operator has both set
+`allowPluginInstall` and listed that repository in `trustedPluginRepositories` in their own
+`config/remote.json`. A library outside that set is skipped with a log line and its nodes
+load as placeholders — the same safe outcome as opening a graph without its library. The
+rule is unchanged, just enforced differently: the human decision moves from a dialog to a
+file they wrote by hand.
 
 A library installed at an *older* version than the graph was saved against is reported but
 does not block — its nodes still resolve, they may just lack a newer feature.
