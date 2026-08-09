@@ -74,8 +74,11 @@ runtime, not bundled into this jar. See
 ## Running unattended
 
 The same jar is also a command-line tool, for running graphs continuously on a
-dedicated machine. Point it at a GitHub repository holding your graphs; when you
-push, it pulls and restarts them.
+dedicated machine (a Mac mini in a cupboard). Keep your graphs in a GitHub
+repository; when you push, the machine pulls and restarts them.
+
+**→ [Setting up a HouseGraph server](docs/remote-server-setup.md)** — the
+step-by-step guide, about 30 minutes.
 
 ```bash
 java -jar app/build/libs/app-<version>.jar doctor   # is this machine ready?
@@ -98,6 +101,15 @@ where). Graphs are listed in a `housegraph.json` at the root of the repository
 being tracked. A macOS LaunchAgent template is in
 [`extras/launchd/`](extras/launchd/).
 
+Two things worth knowing before you start:
+
+- **Build the jar on the machine that will run it.** It bundles JavaFX's native
+  libraries for the platform it was built on, so a jar copied between platforms
+  won't launch.
+- **A trigger only resumes if it was running when you saved the graph.** The
+  server opens your graph; it doesn't press Start. This is the usual reason a
+  deployed graph sits there doing nothing.
+
 **Graphs still run in the normal windowed app**, supervised as child processes, so
 the machine needs a logged-in GUI session — automatic login on a Mac mini is the
 intended setup. The full design, including why it isn't headless yet and what it
@@ -108,8 +120,15 @@ would take, is in
 
 Start with **[`CLAUDE.md`](CLAUDE.md)** — the architecture map, the standards the
 code holds itself to, and (importantly) the rule that **changes must keep the docs
-in sync**. Subsystem deep-dives live in
-**[`docs/architecture/`](docs/architecture/)**:
+in sync**.
+
+Task guides:
+
+| Guide | Covers |
+| --- | --- |
+| [remote-server-setup.md](docs/remote-server-setup.md) | setting up a machine to run your graphs 24/7 from a git repository |
+
+Subsystem deep-dives live in **[`docs/architecture/`](docs/architecture/)**:
 
 | Doc | Covers |
 | --- | --- |

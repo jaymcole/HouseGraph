@@ -28,7 +28,8 @@ linked below.
 - [plugins.md](plugins.md) — the module split, out-of-tree node libraries, how
   they're fetched and loaded, and the extraction status of each integration.
 - [deployment.md](deployment.md) — running unattended: the CLI, syncing graphs
-  from a git repository, and supervising them.
+  from a git repository, and supervising them. The setup runbook that goes with
+  it is [remote-server-setup.md](../remote-server-setup.md).
 - [testing.md](testing.md) — test conventions and the headless-testability rule.
 
 ## Modules, layering, and dependency direction

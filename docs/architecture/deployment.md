@@ -226,25 +226,25 @@ automatic login, and keep it awake:
 sudo pmset -a sleep 0 disablesleep 1
 ```
 
-## Setting it up on a Mac mini
+## Setting one up
 
-```bash
-# 1. Build the jar
-./gradlew :app:shadowJar
+The step-by-step runbook is a separate document, because it's a task rather than a
+design: **[remote-server-setup.md](../remote-server-setup.md)**. In outline —
+build the jar *on the server*, write `config/remote.json`, work up through
+`doctor` → `sync` → `daemon --once` → `daemon`, then install
+`extras/launchd/com.jaymcole.housegraph.plist` as a LaunchAgent.
 
-# 2. Check the machine
-java -jar app/build/libs/app-<version>.jar doctor
+Two consequences of the design above bite hardest in practice, and both are called
+out there:
 
-# 3. Write config/remote.json (doctor prints where), then dry-run the sync
-java -jar app/build/libs/app-<version>.jar sync
-
-# 4. Start everything once, without committing to a daemon
-java -jar app/build/libs/app-<version>.jar daemon --once
-```
-
-Then install `extras/launchd/com.jaymcole.housegraph.plist` (a template — edit the
-paths) into `~/Library/LaunchAgents/` and `launchctl load` it. A **LaunchAgent**,
-not a LaunchDaemon: it must run in the logged-in GUI session, for the reason above.
+- **The jar bundles JavaFX's platform natives**, so it must be built on the machine
+  that will run it. Nothing in this design could fix that short of dropping the
+  window, which is the headless work below.
+- **`AutoStartable` resumes a node only if it was running when the graph was saved.**
+  The supervisor opens a graph; it never presses Start. That is the correct
+  semantics — liveness is user-driven, per [resources.md](resources.md) — but it
+  means a graph saved with its trigger stopped deploys successfully and then does
+  nothing at all.
 
 ## Commands
 

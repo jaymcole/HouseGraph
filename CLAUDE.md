@@ -5,9 +5,11 @@ first. It is the map: it tells you what the app is, where each concern lives, th
 standards the code holds itself to, and — critically — **the rule that changes
 must keep documentation in sync**.
 
-Deep-dive documentation lives under [`docs/architecture/`](docs/architecture/).
-High-traffic packages also carry their own nested `CLAUDE.md`, which Claude Code
-loads automatically when you edit files there.
+Deep-dive documentation lives under [`docs/architecture/`](docs/architecture/), and
+task-shaped guides directly under [`docs/`](docs/) — currently
+[`remote-server-setup.md`](docs/remote-server-setup.md), for running graphs 24/7 on a
+dedicated machine. High-traffic packages also carry their own nested `CLAUDE.md`,
+which Claude Code loads automatically when you edit files there.
 
 ---
 
@@ -36,6 +38,7 @@ Use this map of change → what to update:
 | Logging levels / sinks / bootstrap / the log window | `LogManager` / `Logging` / `LogWindow` Javadoc **and** [`docs/architecture/logging.md`](docs/architecture/logging.md) |
 | Out-of-tree node libraries (fetching, loading, extraction status) | [`docs/architecture/plugins.md`](docs/architecture/plugins.md) |
 | CLI commands, git sync, process supervision, exit codes, unattended trust model | [`docs/architecture/deployment.md`](docs/architecture/deployment.md) |
+| Anything that changes how a server is set up (config shape, manifest, prerequisites, launchd) | [`docs/remote-server-setup.md`](docs/remote-server-setup.md) — the user-facing runbook |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
 

@@ -64,7 +64,7 @@ public final class DaemonCommand implements Command {
         return "  daemon [--once]\n\n"
                 + "--once syncs, starts everything, and returns — for checking the setup works.\n"
                 + "Reads config/remote.json. Runs until stopped; install it as a LaunchAgent to\n"
-                + "start at login. See docs/architecture/deployment.md.";
+                + "start at login. See docs/remote-server-setup.md.";
     }
 
     @Override

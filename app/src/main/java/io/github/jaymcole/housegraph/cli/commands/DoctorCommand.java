@@ -65,7 +65,7 @@ public final class DoctorCommand implements Command {
         out.println("remote.json:     " + configFile);
         if (config.repositories().isEmpty()) {
             out.println("                 No repositories configured — the daemon would have nothing to do.");
-            out.println("                 See docs/architecture/deployment.md for the file's shape.");
+            out.println("                 See docs/remote-server-setup.md for the file's shape.");
             healthy = false;
         } else {
             config.repositories().forEach(repository ->
