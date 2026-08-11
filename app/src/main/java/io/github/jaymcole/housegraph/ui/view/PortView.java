@@ -23,6 +23,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.StrokeType;
+import javafx.scene.text.Font;
+import javafx.scene.text.Text;
 
 /**
  * Visual connection point for a single {@link NodeVariable} on a {@link NodeView}.
@@ -60,6 +62,18 @@ public class PortView extends HBox implements EdgeAnchor {
             Color.TRANSPARENT, BorderStrokeStyle.SOLID, new CornerRadii(3), new BorderWidths(1)));
     private static final Border MISSING_REQUIRED_BORDER = new Border(new BorderStroke(
             Color.web("#e06c75"), BorderStrokeStyle.SOLID, new CornerRadii(3), new BorderWidths(1)));
+
+    // An inline value field grows to fit its text (e.g. a long string constant) rather than
+    // staying a fixed width regardless of content, clamped so one very long value can't blow
+    // up the whole node. Off-scene Text used purely to measure string width in the field's font.
+    private static final double MIN_FIELD_WIDTH = 50;
+    private static final double MAX_FIELD_WIDTH = 300;
+    private static final double FIELD_WIDTH_PADDING = 14;
+    private static final Text WIDTH_MEASURER = new Text();
+
+    static {
+        WIDTH_MEASURER.setFont(Font.font(10));
+    }
 
     private final NodeView owner;
     private final NodeVariable<?> variable;
@@ -132,11 +146,12 @@ public class PortView extends HBox implements EdgeAnchor {
 
     private TextField createValueField() {
         TextField field = new TextField();
-        field.setPrefWidth(50);
+        field.setPrefWidth(MIN_FIELD_WIDTH);
         field.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(field, Priority.ALWAYS);
         field.setPromptText("0.0");
         field.setStyle("-fx-font-size: 10px; -fx-padding: 1 3 1 3;");
+        field.textProperty().addListener((obs, oldText, newText) -> resizeToContent(field, newText));
 
         Object currentValue = variable.getValue();
         if (currentValue != null) {
@@ -187,6 +202,17 @@ public class PortView extends HBox implements EdgeAnchor {
             Object currentValue = variable.getValue();
             valueField.setText(currentValue == null ? "" : formatValue(currentValue));
         }
+    }
+
+    /**
+     * Grows (or shrinks) the field's preferred width to fit {@code text}, clamped to
+     * {@link #MIN_FIELD_WIDTH}/{@link #MAX_FIELD_WIDTH} so a long value stays readable without
+     * letting one node balloon across the canvas.
+     */
+    private static void resizeToContent(TextField field, String text) {
+        WIDTH_MEASURER.setText((text == null || text.isEmpty()) ? field.getPromptText() : text);
+        double width = WIDTH_MEASURER.getLayoutBounds().getWidth() + FIELD_WIDTH_PADDING;
+        field.setPrefWidth(Math.max(MIN_FIELD_WIDTH, Math.min(MAX_FIELD_WIDTH, width)));
     }
 
     @SuppressWarnings("unchecked")
