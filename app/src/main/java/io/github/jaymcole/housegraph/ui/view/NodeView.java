@@ -130,15 +130,37 @@ public class NodeView extends BorderPane {
         title.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
         HBox.setHgrow(title, Priority.ALWAYS);
 
-        // The title bar carries only the label-less "default" flow anchors (the common
-        // one-per-side case) at its corners. Named ports - e.g. a decider's True/False -
-        // are laid out down the port columns below instead, where there's room for a label.
-        HBox titleBar = new HBox(6);
+        // All flow anchors - named or not - live in the title bar, not the data-port
+        // columns below: flow is a different kind of connection (pushed control, not
+        // pulled data - see the class Javadoc) and keeping it in the header visually
+        // separates it from the data ports in the body. Each side gets its own column
+        // so several anchors on the same side (a decider's branches, or the numbered
+        // ports on a Join) stack vertically instead of widening the header - a single
+        // anchor (the common case) still reads as one triangle at the corner. A
+        // label-less anchor sits bare; a named one is wrapped with its label via
+        // labeledFlowAnchor.
+        VBox flowInColumn = new VBox(4);
+        flowInColumn.setAlignment(Pos.CENTER_LEFT);
         for (FlowPortView flowInPort : flowInPorts) {
             if (flowInPort.getFlowPort().name.isBlank()) {
-                titleBar.getChildren().add(flowInPort);
+                flowInColumn.getChildren().add(flowInPort);
+            } else {
+                flowInColumn.getChildren().add(labeledFlowAnchor(flowInPort, false));
             }
         }
+
+        VBox flowOutColumn = new VBox(4);
+        flowOutColumn.setAlignment(Pos.CENTER_RIGHT);
+        for (FlowPortView flowOutPort : flowOutPorts) {
+            if (flowOutPort.getFlowPort().name.isBlank()) {
+                flowOutColumn.getChildren().add(flowOutPort);
+            } else {
+                flowOutColumn.getChildren().add(labeledFlowAnchor(flowOutPort, true));
+            }
+        }
+
+        HBox titleRow = new HBox(6);
+        titleRow.setAlignment(Pos.CENTER);
         // A small glyph for the execution policy, tucked just left of the title — for any node the
         // policy applies to, i.e. any that participates in flow. That's an execution entry point
         // (where the policy gates the whole run) or a mid-cascade flow node (where it gates that
@@ -149,13 +171,18 @@ public class NodeView extends BorderPane {
         if (showsPolicy) {
             Tooltip.install(policyIcon, policyTooltip);
             refreshPolicyIcon();
-            titleBar.getChildren().add(policyIcon);
+            titleRow.getChildren().add(policyIcon);
         }
-        titleBar.getChildren().add(title);
-        for (FlowPortView flowOutPort : flowOutPorts) {
-            if (flowOutPort.getFlowPort().name.isBlank()) {
-                titleBar.getChildren().add(flowOutPort);
-            }
+        titleRow.getChildren().add(title);
+        HBox.setHgrow(titleRow, Priority.ALWAYS);
+
+        HBox titleBar = new HBox(6);
+        if (!flowInColumn.getChildren().isEmpty()) {
+            titleBar.getChildren().add(flowInColumn);
+        }
+        titleBar.getChildren().add(titleRow);
+        if (!flowOutColumn.getChildren().isEmpty()) {
+            titleBar.getChildren().add(flowOutColumn);
         }
         titleBar.setAlignment(Pos.CENTER);
         titleBar.setPadding(new Insets(6, 8, 6, 8));
@@ -189,21 +216,6 @@ public class NodeView extends BorderPane {
             }
         }
 
-        // Named flow ports sit in the port columns below any data ports on the same
-        // side: flow-in on the left, flow-out (a decider's branches) on the right.
-        for (FlowPortView flowInPort : flowInPorts) {
-            if (!flowInPort.getFlowPort().name.isBlank()) {
-                inputsBox.getChildren().add(labeledFlowAnchor(flowInPort, false));
-            }
-        }
-        for (FlowPortView flowOutPort : flowOutPorts) {
-            if (!flowOutPort.getFlowPort().name.isBlank()) {
-                outputsBox.getChildren().add(labeledFlowAnchor(flowOutPort, true));
-            }
-        }
-
-        // Based on actual column contents (which now include named flow ports), not
-        // just the data ports, so a node with only flow-out branches still gets a column.
         boolean hasInputs = !inputsBox.getChildren().isEmpty();
         boolean hasOutputs = !outputsBox.getChildren().isEmpty();
 
@@ -320,7 +332,7 @@ public class NodeView extends BorderPane {
     }
 
     /**
-     * Wraps a named flow anchor with its label for the port columns, matching a
+     * Wraps a named flow anchor with its label for the title bar, matching a
      * {@link PortView}'s look: label beside the anchor, anchor on the outer edge
      * ({@code outputSide} puts it on the right). The anchor itself stays the drag
      * target — the label is just decoration.
