@@ -171,7 +171,7 @@ public final class CommandLine {
         out.println("With no command, the graph editor opens on the last graph you had open.");
         out.println();
         out.println("Commands:");
-        out.printf("  %-10s %s%n", RUN_COMMAND, "Open the editor on one graph (add --minimized for a daemon)");
+        out.printf("  %-10s %s%n", RUN_COMMAND, "Open the editor on one graph");
         commands.values().forEach(command ->
                 out.printf("  %-10s %s%n", command.name(), command.summary()));
         out.println();

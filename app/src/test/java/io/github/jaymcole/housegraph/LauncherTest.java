@@ -24,20 +24,20 @@ class LauncherTest {
 
     @Test
     void keepsTheOptionsThatFollow() {
-        assertArrayEquals(new String[]{"--graph=/graphs/porch.json", "--minimized"},
-                Launcher.forApplication(new String[]{"run", "/graphs/porch.json", "--minimized"}));
+        assertArrayEquals(new String[]{"--graph=/graphs/porch.json", "--verbose"},
+                Launcher.forApplication(new String[]{"run", "/graphs/porch.json", "--verbose"}));
     }
 
     @Test
     void keepsOptionsThatComeFirst() {
-        assertArrayEquals(new String[]{"--minimized", "--graph=porch.json"},
-                Launcher.forApplication(new String[]{"run", "--minimized", "porch.json"}));
+        assertArrayEquals(new String[]{"--verbose", "--graph=porch.json"},
+                Launcher.forApplication(new String[]{"run", "--verbose", "porch.json"}));
     }
 
     @Test
     void leavesAnExplicitGraphOptionExactlyAsWritten() {
-        assertArrayEquals(new String[]{"--graph=porch.json", "--minimized"},
-                Launcher.forApplication(new String[]{"run", "--graph=porch.json", "--minimized"}));
+        assertArrayEquals(new String[]{"--graph=porch.json", "--verbose"},
+                Launcher.forApplication(new String[]{"run", "--graph=porch.json", "--verbose"}));
     }
 
     @Test

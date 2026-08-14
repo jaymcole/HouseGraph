@@ -44,16 +44,12 @@ import java.util.concurrent.TimeUnit;
  *
  * <h2>Arguments</h2>
  * Launched bare, the app behaves as it always has: it reopens whatever
- * {@link AppPreferences#LAST_FILE} holds. Two named parameters exist for running it under a
+ * {@link AppPreferences#LAST_FILE} holds. One named parameter exists for running it under a
  * supervisor (see {@code remote/} and {@code docs/architecture/deployment.md}):
  * <ul>
  *   <li>{@code --graph=<path>} — open this file instead of the last one, and <b>do not</b> record it
  *       as the last file. A daemon-opened graph must not overwrite what the person at the keyboard
  *       had open, and on a machine running several graphs at once "last" is meaningless anyway.</li>
- *   <li>{@code --minimized} — start iconified. The window is still created and shown first: node
- *       views are what run {@code NodeContentProvider.createNodeContent()}, and several nodes keep
- *       their running state in those controls, so a graph with no window would be a graph with
- *       half-initialised nodes.</li>
  * </ul>
  *
  * <h2>Shutdown</h2>
@@ -69,9 +65,6 @@ public class App extends Application {
 
     /** Open this file instead of {@link AppPreferences#LAST_FILE}, without becoming the last file. */
     static final String GRAPH_PARAMETER = "graph";
-
-    /** Start the window iconified. */
-    static final String MINIMIZED_PARAMETER = "minimized";
 
     /**
      * How long the shutdown hook waits for {@link #stop()} to finish before giving up and letting the
@@ -188,11 +181,6 @@ public class App extends Application {
         stage.setTitle("HouseGraph");
         stage.setScene(new Scene(root, 1100, 750));
         stage.show();
-        if (isMinimizedRequested()) {
-            // After show(), not instead of it: the scene graph — and so every node's inline UI —
-            // is only built for a shown stage, and nodes keep runtime state in those controls.
-            stage.setIconified(true);
-        }
 
         installShutdownHook();
 
@@ -212,15 +200,6 @@ public class App extends Application {
         Map<String, String> named = getParameters() == null ? Map.of() : getParameters().getNamed();
         String path = named.get(GRAPH_PARAMETER);
         return path == null || path.isBlank() ? Optional.empty() : Optional.of(new File(path.trim()));
-    }
-
-    /** Whether {@code --minimized} was passed, in either its flag or {@code --minimized=true} form. */
-    private boolean isMinimizedRequested() {
-        if (getParameters() == null) {
-            return false;
-        }
-        return getParameters().getUnnamed().contains("--" + MINIMIZED_PARAMETER)
-                || Boolean.parseBoolean(getParameters().getNamed().getOrDefault(MINIMIZED_PARAMETER, "false"));
     }
 
     /**

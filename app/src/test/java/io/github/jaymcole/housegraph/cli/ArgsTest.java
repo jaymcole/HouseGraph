@@ -49,10 +49,10 @@ class ArgsTest {
     @Test
     void aBareFlagDoesNotSwallowTheOptionAfterIt() {
         // The regression this guards: consuming the next token unconditionally would make
-        // --minimized's "value" be "--graph", and the graph path would vanish into a positional.
-        Args args = Args.parse("run", "--minimized", "--graph", "porch.json");
+        // --verbose's "value" be "--graph", and the graph path would vanish into a positional.
+        Args args = Args.parse("run", "--verbose", "--graph", "porch.json");
 
-        assertTrue(args.isEnabled("minimized"));
+        assertTrue(args.isEnabled("verbose"));
         assertEquals(Optional.of("porch.json"), args.option("graph"));
         assertEquals(List.of(), args.positionals());
     }
@@ -67,12 +67,12 @@ class ArgsTest {
 
     @Test
     void anExplicitlyFalseFlagIsSetButNotEnabled() {
-        // So `--minimized=false` can turn off something a wrapper script switched on, rather than
+        // So `--verbose=false` can turn off something a wrapper script switched on, rather than
         // reading as "mentioned, therefore true".
-        Args args = Args.parse("run", "--minimized=false");
+        Args args = Args.parse("run", "--verbose=false");
 
-        assertTrue(args.isSet("minimized"));
-        assertFalse(args.isEnabled("minimized"));
+        assertTrue(args.isSet("verbose"));
+        assertFalse(args.isEnabled("verbose"));
     }
 
     @Test

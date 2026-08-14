@@ -51,8 +51,7 @@ public final class GraphProcess {
     }
 
     /**
-     * The default launcher: this same jar, this same JVM, run on one graph with its window out of
-     * the way.
+     * The default launcher: this same jar, this same JVM, run on one graph.
      *
      * <p>The java binary comes from {@link ProcessHandle#info()} and the jar from where this class
      * was loaded, so a child always matches the parent — no {@code JAVA_HOME} to get wrong, and no
@@ -77,7 +76,7 @@ public final class GraphProcess {
                 command.add("-Dhousegraph.home=" + home);
             }
             command.addAll(List.of("-jar", jar.toString(),
-                    "run", graph.toString(), "--minimized"));
+                    "run", graph.toString()));
             log.info("Starting {}", graph.getFileName());
             return new ProcessBuilder(command)
                     // The child logs through the same LogManager into the same file; merging its

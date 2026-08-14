@@ -18,7 +18,7 @@ launchd (LaunchAgent, KeepAlive)
         │  on change: fetch + reset --hard + clean
         │  install declared libraries (if permitted)
         └── one child JVM per graph
-              java -jar app.jar run <graph> --minimized
+              java -jar app.jar run <graph>
                                             ← the ordinary JavaFX app
 ```
 
@@ -209,9 +209,9 @@ ways that matter:
    `createNodeContent()` ran. `EchoResourceNode` is the same, as are the Discord bot
    and web server nodes out of tree. `autoStartIfWasRunning()` would throw.
 
-So the child is the real app, shown and then iconified (`--minimized`). Node views
-are what run `createNodeContent()`, so a window that was never shown would be a
-graph with half-initialised nodes.
+So the child is the real app, window and all, exactly as it would be run by hand.
+Node views are what run `createNodeContent()`, so a window that was never shown
+would be a graph with half-initialised nodes.
 
 **A true headless runner needs both gaps closed** — a canvas-free loader, and a
 lifecycle seam that keeps a node's running state in the node — and the second is a
@@ -251,7 +251,7 @@ out there:
 | Command | Does |
 | --- | --- |
 | `housegraph` | opens the editor on the last graph, exactly as before |
-| `housegraph run <graph> [--minimized]` | opens the editor on one graph; what the supervisor starts |
+| `housegraph run <graph>` | opens the editor on one graph; what the supervisor starts |
 | `housegraph daemon [--once]` | sync loop plus supervision |
 | `housegraph sync [--force]` | pull now and report; starts nothing |
 | `housegraph plugins list \| install <url> \| update [id...]` | node libraries from the terminal |

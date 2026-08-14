@@ -89,7 +89,7 @@ java -jar app/build/libs/app-<version>.jar daemon   # poll and keep the graphs r
 | Command | Does |
 | --- | --- |
 | *(none)* | opens the editor on the last graph, exactly as before |
-| `run <graph> [--minimized]` | opens the editor on one graph |
+| `run <graph>` | opens the editor on one graph |
 | `daemon [--once]` | sync loop plus process supervision |
 | `sync [--force]` | pull the configured repositories now; starts nothing |
 | `plugins list \| install <url> \| update [id...]` | node libraries from the terminal |

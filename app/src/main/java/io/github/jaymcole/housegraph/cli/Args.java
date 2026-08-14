@@ -21,7 +21,7 @@ import java.util.Optional;
  *   <li>anything else — a positional argument, in order</li>
  * </ul>
  * A {@code --name} immediately followed by another {@code --something} is treated as a flag, not as
- * a value: {@code --minimized --graph x.json} means what it looks like.
+ * a value: {@code --verbose --graph x.json} means what it looks like.
  */
 public final class Args {
 

@@ -36,7 +36,7 @@ class CommandLineTest {
         // `run` opens the editor, so it must fall through to Application.launch. If handles()
         // claimed it, launching a graph would silently do nothing instead of showing a window.
         assertFalse(commandLine.handles(CommandLine.RUN_COMMAND));
-        assertFalse(commandLine.handles("--minimized"));
+        assertFalse(commandLine.handles("--verbose"));
         assertFalse(commandLine.handles(null));
     }
 
@@ -65,7 +65,7 @@ class CommandLineTest {
         assertFalse(commandLine.handlesArguments(CommandLine.RUN_COMMAND, "porch.json"),
                 "run IS the editor");
         assertFalse(commandLine.handlesArguments("--graph=porch.json"));
-        assertFalse(commandLine.handlesArguments("--minimized"));
+        assertFalse(commandLine.handlesArguments("--verbose"));
     }
 
     @Test
