@@ -654,7 +654,11 @@ public class NodeGraph {
             if (cancelledNotTimedOut) {
                 log.debug("Node \"{}\" processing was cancelled", node.getName());
             } else {
-                log.error("Node \"{}\" failed to process: {}", node.getName(), error);
+                // Attached as the record's throwable, not formatted into the text: toString() gives
+                // only the outermost message, which for a node that wraps a lower-level failure
+                // ("start failed for bridge") names the symptom and hides the reason. Attaching it
+                // gets the stack trace and the whole cause chain to the sinks.
+                log.error("Node \"{}\" failed to process", node.getName(), error);
             }
         } finally {
             if (watchdog != null) {
