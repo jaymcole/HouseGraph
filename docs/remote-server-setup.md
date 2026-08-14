@@ -10,6 +10,21 @@ why sync resets instead of pulling, why the window is still there — see
 
 **Roughly 30 minutes**, most of it waiting for a Gradle build.
 
+> ### Want this automated?
+>
+> [`extras/setup-server.sh`](../extras/setup-server.sh) drives Parts 3–9 of this guide
+> for you on a Mac — clones and builds the jar, sets up the deploy key, writes
+> `remote.json`, installs node libraries, runs the `doctor`/`sync`/`daemon --once`
+> checks, and installs the LaunchAgent. It pauses at the two steps only a human can
+> do (pasting the deploy key into GitHub, flipping System Settings toggles) and is
+> safe to re-run. Read on if you'd rather do it by hand, or to understand what the
+> script is doing:
+>
+> ```bash
+> git clone https://github.com/jaymcole/HouseGraph.git ~/HouseGraph-source
+> ~/HouseGraph-source/extras/setup-server.sh --graphs-repo git@github.com:YOU/my-graphs.git
+> ```
+
 ---
 
 ## Before you start
