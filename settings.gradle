@@ -2,6 +2,6 @@ rootProject.name = 'HouseGraph'
 
 // Two modules, and the split is the whole point: `housegraph-api` is published so that
 // out-of-tree node libraries can compile against the engine and node model, while `app`
-// is the JavaFX program nobody compiles against. See docs/architecture/plugins.md.
+// is the JavaFX program nobody compiles against. See docs/engine/plugin-runtime.md.
 include 'housegraph-api'
 include 'app'

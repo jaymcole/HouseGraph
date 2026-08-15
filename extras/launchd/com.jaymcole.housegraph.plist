@@ -5,7 +5,7 @@
     A LaunchAgent (~/Library/LaunchAgents), NOT a LaunchDaemon (/Library/LaunchDaemons).
     Graph execution still runs in the JavaFX app, which needs the logged-in GUI session — a
     LaunchDaemon runs before login with no window server and would fail on every start.
-    See docs/architecture/deployment.md.
+    See docs/engine/remote-runtime.md.
 
     Install:
         cp extras/launchd/com.jaymcole.housegraph.plist ~/Library/LaunchAgents/

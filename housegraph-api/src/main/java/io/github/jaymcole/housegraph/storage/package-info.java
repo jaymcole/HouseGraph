@@ -9,6 +9,6 @@
  * state. Credentials live only in the secret store, never in save files or plaintext
  * config.
  * <p>
- * See {@code docs/architecture/storage-and-secrets.md}.
+ * See {@code docs/engine/storage.md}.
  */
 package io.github.jaymcole.housegraph.storage;

@@ -12,7 +12,7 @@ import java.util.function.BooleanSupplier;
  * Per-run execution state, isolated from every other concurrent run.
  * <p>
  * <b>Status: Stage-A (in progress).</b> This is the foundation of the concurrent-runs design
- * in {@code docs/design/per-node-execution-policy.md}. It now carries the run's
+ * in {@code docs/engine/execution-policy.md}. It now carries the run's
  * <em>node statuses</em> and <em>flow-visited set</em> (previously mutable fields on the shared
  * node/graph objects) as well as the <em>computed-value overlay</em> (the linchpin de-risked by
  * the Stage-A spike). Still to move here in a later increment: activated flow-ports, join

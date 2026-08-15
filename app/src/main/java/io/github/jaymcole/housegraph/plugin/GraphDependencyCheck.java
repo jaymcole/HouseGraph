@@ -20,7 +20,7 @@ import java.util.Set;
  *
  * <p><b>A save file is untrusted input.</b> The repository URLs it carries are a suggestion to
  * download and execute code, so a caller may offer to install from one but must never do it
- * silently. See {@code docs/architecture/plugins.md}.
+ * silently. See {@code docs/engine/plugin-runtime.md}.
  */
 public final class GraphDependencyCheck {
 

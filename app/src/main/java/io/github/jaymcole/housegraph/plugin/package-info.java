@@ -35,7 +35,7 @@
  * unattended daemon calls it — where the operator hand-wrote the graph repository's URL into
  * {@code remote.json}, which is the decision that stands in for the click.
  *
- * <p>See {@code docs/architecture/plugins.md}, including the honest threat model: a node library is
+ * <p>See {@code docs/engine/plugin-runtime.md}, including the honest threat model: a node library is
  * arbitrary code with the user's full privileges, and nothing here is a sandbox.
  */
 package io.github.jaymcole.housegraph.plugin;

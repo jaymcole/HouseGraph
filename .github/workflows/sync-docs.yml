@@ -1,7 +1,7 @@
 name: Sync shared docs to companion repos
 
 # Mirrors docs/shared/ into housegraph-nodes and housegraph-plugin-template
-# on every push to main. See docs/architecture/doc-sync.md for the design.
+# on every push to main. See docs/doc-sync.md for the design.
 
 on:
   push:

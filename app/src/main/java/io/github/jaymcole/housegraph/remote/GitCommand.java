@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
  * remote URL leaks to any local user. Environment variables set here reach only the child, which is
  * why {@link #withEnvironment} exists and why the HTTPS path passes a token through
  * {@code GIT_ASKPASS} rather than through the URL. An SSH deploy key avoids the question entirely
- * and is the documented default — see {@code docs/remote-server-setup.md}.
+ * and is the documented default — see {@code docs/guides/server-setup.md}.
  */
 public final class GitCommand {
 

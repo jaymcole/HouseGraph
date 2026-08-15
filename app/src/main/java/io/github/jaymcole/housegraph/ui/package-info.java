@@ -18,7 +18,7 @@
  *   <li>{@link io.github.jaymcole.housegraph.ui.io} — save/load ({@code GraphFileIO}).</li>
  * </ul>
  * All code here runs on the JavaFX Application Thread; the engine marshals its callbacks
- * onto it. See {@code docs/architecture/ui.md}.
+ * onto it. See {@code docs/engine/ui-layer.md}.
  * <p>
  * The node-facing extension points this layer <em>dispatches</em> —
  * {@link io.github.jaymcole.housegraph.sdk.NodeContentProvider},

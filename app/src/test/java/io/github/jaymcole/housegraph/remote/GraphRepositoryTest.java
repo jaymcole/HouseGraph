@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Exercises the sync against a <b>real git repository on disk</b>, served over a {@code file://}
- * URL. No network, no GitHub, deterministic — which {@code docs/architecture/testing.md} requires —
+ * URL. No network, no GitHub, deterministic — which {@code docs/engine/testing.md} requires —
  * while still running the actual clone/fetch/reset commands rather than a mock of them. Mocking git
  * here would test only that the arguments were spelled the way the test expected.
  */

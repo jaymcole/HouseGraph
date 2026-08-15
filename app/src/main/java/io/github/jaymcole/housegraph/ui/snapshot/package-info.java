@@ -9,6 +9,6 @@
  * {@code GraphCanvas}'s internals, so all three consumers build on the same shape:
  * {@code GraphCanvas} (copy/paste), {@link io.github.jaymcole.housegraph.ui.command} (the
  * paste command), and {@link io.github.jaymcole.housegraph.ui.io} (save/load).
- * See {@code docs/architecture/ui.md}.
+ * See {@code docs/engine/ui-layer.md}.
  */
 package io.github.jaymcole.housegraph.ui.snapshot;

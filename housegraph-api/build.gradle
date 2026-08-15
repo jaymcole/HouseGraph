@@ -22,7 +22,7 @@ dependencies {
     //   - org.json: this project's universal serialization format; pinning one copy beats
     //     every plugin shading its own.
     //   - slf4j-api: the bundled provider in logging/slf4j implements SLF4JServiceProvider,
-    //     and it must be the single binding in the process (see docs/architecture/plugins.md).
+    //     and it must be the single binding in the process (see docs/engine/plugin-runtime.md).
     api 'org.json:json:20231013'
     api 'org.slf4j:slf4j-api:2.0.13'
 }

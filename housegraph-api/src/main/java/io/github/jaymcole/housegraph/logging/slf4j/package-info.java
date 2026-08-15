@@ -11,6 +11,6 @@
  * LogLevel} mapping.
  * <p>
  * This adapter — unlike the dependency-free logging core — depends on the SLF4J API. It is
- * kept in its own subpackage so the core stays clean. See {@code docs/architecture/logging.md}.
+ * kept in its own subpackage so the core stays clean. See {@code docs/engine/logging.md}.
  */
 package io.github.jaymcole.housegraph.logging.slf4j;
