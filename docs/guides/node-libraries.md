@@ -31,11 +31,17 @@ https://github.com/jaymcole/housegraph-nodes
 
 | Library | Provides |
 | --- | --- |
-| `housegraph-camera` | ONVIF/Reolink IP-camera discovery, motion detection, snapshots |
-| `housegraph-discord` | A Discord bot with text and slash commands |
-| `housegraph-web` | A LAN web server on `<name>.local`, plus a Node.js process host |
-| `housegraph-iot` | An Arduino UNO R4 WiFi LED-matrix sign |
-| `housegraph-ml` | Local JVM image classification, no Python |
+| `housegraph-discord` | Discord Bot, Command, Slash Command, Reply, Send Message |
+| `housegraph-reolink` | Discover Cameras, Camera Motion Status, Camera Snapshot |
+| `housegraph-web` | Web Server, Node Server — LAN hosting on `<name>.local` |
+| `housegraph-ml` | Animal Classifier — local JVM image classification, no Python |
+| `housegraph-github` | Git Sync |
+| `housegraph-squirrel` | Squirrel Alarm — an Arduino UNO R4 WiFi LED-matrix sign |
+| `housegraph-filesystem` | Create Folder |
+| `housegraph-experimental` | Lightbulb |
+
+One release publishes all of them at the same version, so you pick which to
+install.
 
 From the command line:
 

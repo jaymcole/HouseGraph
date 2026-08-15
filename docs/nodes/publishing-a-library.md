@@ -61,6 +61,29 @@ graph.
 The consequence is that the unclassified artifacts OpenJFX publishes are ~300-byte
 stubs. Without the plugin you get `package javafx.scene does not exist`.
 
+### Relocate everything you bundle
+
+**All installed libraries share one class loader** (see
+[`../engine/plugin-runtime.md`](../engine/plugin-runtime.md)). Two libraries
+bundling different versions of the same dependency would fight over it.
+
+Anything you declare `implementation` ends up in the shaded jar and needs a
+`relocate` line in `shadowJar`:
+
+```groovy
+shadowJar {
+    relocate 'com.example.whatever', 'io.github.you.yourlib.shaded.whatever'
+    mergeServiceFiles()
+}
+```
+
+### Keep `mergeServiceFiles()`
+
+Any bundled library using `ServiceLoader` — DJL's engine discovery, JDBC drivers —
+breaks without it, at runtime, with a confusing "no provider found". The
+`housegraph-node-library` convention plugin in `housegraph-nodes` already does
+both; if you are working from the template, do not remove them.
+
 ## Exclude `slf4j-api` from every dependency that pulls it
 
 A bundled library's own SLF4J dependency ends up in your shaded jar unless
@@ -81,6 +104,31 @@ another's.
 
 Check with `gradlew :yourlib:dependencies` before you build, rather than
 discovering it from a failed jar-content check.
+
+## Always `@Node.Type`, prefixed with your library id
+
+```java
+@Node.Type("housegraph-yourthing.DoTheThing")
+```
+
+**In an out-of-tree library this is a rule, not an optimisation.** In-repo nodes can
+rely on the simple class name as their save-file id, because nothing else claims it.
+Your library shares an id space with every other installed library, so an unprefixed
+`SendMessage` is one collision away from resolving to somebody else's node.
+
+`@Node.Type` also pins the id independently of the class name, so renaming or moving
+the class does not strand every graph anyone saved using it. You cannot fix that
+after the fact without asking users to hand-edit their save files.
+
+## Registering types from a static block
+
+`ValueEditors.register(...)` and `TypeConverters.register(...)` are usually called
+from a static block. Node discovery loads classes with `initialize = false`, so that
+block runs at first **instantiation**, not at scan time.
+
+The symptom of assuming otherwise is "my custom type isn't editable until I place
+the node twice." Registering from the constructor instead avoids the question
+entirely.
 
 ## The `Node` import collision
 
@@ -138,7 +186,9 @@ need. See [`../engine/security-model.md`](../engine/security-model.md).
 
 - [ ] `compileOnly` on `housegraph-api`
 - [ ] `org.openjfx.javafxplugin` applied
+- [ ] Every bundled dependency has a `relocate` line; `mergeServiceFiles()` kept
 - [ ] `slf4j-api` excluded from every dependency with a path to it
+- [ ] Every node has `@Node.Type`, prefixed with the library id
 - [ ] `javafx.scene.Node` never imported
 - [ ] `META-INF/housegraph-plugin.json` manifest present
 - [ ] Single jar, or assets named `<pluginId>-<version>-all.jar`

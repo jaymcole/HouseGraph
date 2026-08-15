@@ -39,7 +39,7 @@ set of places one may come from. The trust reasoning is in
     { "file": "graphs/winter-only.json", "enabled": false }
   ],
   "plugins": [
-    { "id": "housegraph-camera",
+    { "id": "housegraph-reolink",
       "repository": "https://github.com/jaymcole/housegraph-nodes",
       "version": "0.4.0" }
   ]

@@ -61,6 +61,9 @@ Then, as needed:
 - A save identifies a node by its **simple class name** by default, so moving it
   between category folders is safe. **Renaming** the class strands old saves unless
   you pin the old id with `@Node.Type("OldName")` or list it in `aliases`.
+  (Built-in nodes can rely on the simple name because nothing else claims it. An
+  out-of-tree library shares an id space with every other installed library, so
+  there `@Node.Type` is mandatory and prefixed with the library id.)
 - Split teardown: fast and thread-affine in `onRemoved()`, anything that blocks in
   `releaseResources()`.
 - Poll `ctx.checkCancelled()` in anything slow.

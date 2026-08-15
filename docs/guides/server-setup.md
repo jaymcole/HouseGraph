@@ -273,7 +273,7 @@ moves one *forward*:
   "manifestVersion": 1,
   "graphs": [ { "file": "graphs/porch-light.json" } ],
   "plugins": [
-    { "id": "housegraph-camera",
+    { "id": "housegraph-reolink",
       "repository": "https://github.com/jaymcole/housegraph-nodes",
       "version": "0.4.0" }
   ]

@@ -35,11 +35,13 @@ design idea:
   dedicated machine, pulling them from a git repository.
 
 First-party node libraries live in
-[housegraph-nodes](https://github.com/jaymcole/housegraph-nodes): **Discord**
-(a bot with text and slash commands), **Camera** (ONVIF/Reolink discovery and
-motion detection), **Web** (a LAN web server on `<name>.local`, plus a Node.js
-process host), **IoT** (an Arduino UNO R4 WiFi LED-matrix sign), and **ML**
-(local JVM image classification, no Python).
+[housegraph-nodes](https://github.com/jaymcole/housegraph-nodes):
+`housegraph-discord` (a bot with text and slash commands), `housegraph-reolink`
+(ONVIF/Reolink camera discovery and motion detection), `housegraph-web` (a LAN
+web server on `<name>.local`, plus a Node.js process host), `housegraph-ml`
+(local JVM image classification, no Python), `housegraph-github` (git sync),
+`housegraph-squirrel` (an Arduino UNO R4 WiFi LED-matrix sign),
+`housegraph-filesystem` and `housegraph-experimental`.
 
 ## Build & run
 

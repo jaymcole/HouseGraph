@@ -11,20 +11,26 @@ Writing a node for your own hardware meant forking the app.
 Split the build into `housegraph-api` (published) and `app` (not), and move every
 integration category into its own repository, fetched at runtime.
 
-All five were extracted: `iot`, `discord`, `camera`, `web`, `ml`.
-`app/build.gradle` now depends on nothing but `:housegraph-api`. Old saves were
-verified to keep working against a real installed jar at each step, not only in
-unit tests.
+All five in-tree categories were extracted. `app/build.gradle` now depends on
+nothing but `:housegraph-api`. Old saves were verified to keep working against a
+real installed jar at each step, not only in unit tests.
 
 The order was chosen deliberately:
 
-| Order | Category | Why then |
-| --- | --- | --- |
-| 1 | `iot` | Depends on nothing but the JDK and the node model, so it exercised the whole pipeline with nothing else that could fail |
-| 2 | `discord` | The hardest case, done early on purpose — a sibling client package, secrets access, `ResourceRegistry`, both `AutoStartable` and `NodeContentProvider` on one node, dynamic ports, a `saveState` map, and JDA's transitive dependencies. Any gap it exposed was found while only one other library existed to fix up |
-| 3 | `camera` | No third-party dependency at all |
-| 4 | `web` | jmdns, applying the SLF4J lesson proactively this time |
-| 5 | `ml` | DJL's shading and native-library footprint are the messiest, so every earlier lesson was proven first |
+| Order | Category | Shipped as | Why then |
+| --- | --- | --- | --- |
+| 1 | `iot` | `housegraph-squirrel` | Depends on nothing but the JDK and the node model, so it exercised the whole pipeline with nothing else that could fail |
+| 2 | `discord` | `housegraph-discord` | The hardest case, done early on purpose — a sibling client package, secrets access, `ResourceRegistry`, both `AutoStartable` and `NodeContentProvider` on one node, dynamic ports, a `saveState` map, and JDA's transitive dependencies. Any gap it exposed was found while only one other library existed to fix up |
+| 3 | `camera` | `housegraph-reolink` | No third-party dependency at all |
+| 4 | `web` | `housegraph-web` | jmdns, applying the SLF4J lesson proactively this time |
+| 5 | `ml` | `housegraph-ml` | DJL's shading and native-library footprint are the messiest, so every earlier lesson was proven first |
+
+**The in-tree category names are not the published library ids.** `iot` shipped as
+`housegraph-squirrel` and `camera` as `housegraph-reolink`, because each library is
+named for what it actually drives rather than for the folder it came from. Libraries
+written after the extraction — `housegraph-github`, `housegraph-filesystem`,
+`housegraph-experimental` — never had an in-tree category at all. The current list
+is in [`../guides/node-libraries.md`](../guides/node-libraries.md).
 
 ## Consequences
 

@@ -12,6 +12,28 @@ the right size.
 Prefer several small nodes over one configurable one. The graph is the place
 composition happens.
 
+## Be control-oriented or action-oriented, not both
+
+- **Control nodes** shape *when* and *how often* flow moves: a trigger, a timer, a
+  branch, a loop, a join. Their job is deciding whether something downstream runs,
+  not doing that something. The built-in library already ships the common ones.
+- **Action nodes** *do* something: call an API, read a sensor, write a file,
+  transform data. Their flow outputs report that the node ran and, at most, which
+  of a few known outcomes happened **for that one invocation** — not points on a
+  schedule the node manages itself.
+
+A node that owns its own timer *and* performs an external action cannot be reused
+on a different schedule, is harder to test because the two are welded together, and
+duplicates a repeating-trigger node that already exists. Split it: the control
+node's flow-out wires into the action node's flow-in. The action node's branches
+then describe outcomes, which is what branches are for.
+
+**The exception is a resource node that owns a real connection lifecycle** — a bot,
+a web server. There Start/Stop and state genuinely belong to the same node, because
+the connection *is* what is being managed. Treat that as a named exception, not as
+precedent for fusing scheduling into an ordinary action node. See
+[long-lived-resources.md](long-lived-resources.md).
+
 ## Never persist a computed or secret value
 
 Only manually-authored, non-secret, non-transient values reach a save file.
@@ -100,6 +122,7 @@ New nodes ship with a test mirroring the nearest existing one. See
 ## Review checklist
 
 - [ ] Does one thing; no mode dropdown that changes its identity
+- [ ] Control-oriented or action-oriented, not both (unless it owns a connection)
 - [ ] `@Display.Name` set; port names readable, with units
 - [ ] No computed or secret value persisted; secrets marked `markSecret()`
 - [ ] Inputs that must have a value are `required()`; the rest have defaults
