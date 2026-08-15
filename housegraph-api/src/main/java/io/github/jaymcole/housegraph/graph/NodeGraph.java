@@ -65,7 +65,7 @@ import java.util.function.BooleanSupplier;
  * data cycle into a clean {@link IllegalStateException} rather than a stack overflow). Because
  * reconvergence no longer waits for all incoming branches, joining is an explicit concern handled by
  * a flow-join node (see {@link BaseNode#isFlowJoin()}); the design doc
- * {@code docs/design/per-node-execution-policy.md} covers the whole concurrent-runs model.
+ * {@code docs/engine/execution-policy.md} covers the whole concurrent-runs model.
  * <p>
  * Structural methods (adding/removing nodes and edges, reading the topology) stay
  * {@code synchronized} on this instance for their own brief critical section, but that

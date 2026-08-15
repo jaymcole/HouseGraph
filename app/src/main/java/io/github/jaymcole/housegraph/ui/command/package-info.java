@@ -6,6 +6,6 @@
  * re-route waypoints) is a {@code Command} with {@code execute()}/{@code undo()}, so it
  * participates in undo rather than mutating the canvas ad hoc. Commands run on the JavaFX
  * Application Thread and call back into {@link io.github.jaymcole.housegraph.ui.GraphCanvas}.
- * See {@code docs/architecture/ui.md}.
+ * See {@code docs/engine/ui-layer.md}.
  */
 package io.github.jaymcole.housegraph.ui.command;

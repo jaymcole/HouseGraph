@@ -8,6 +8,6 @@
  * is deliberately free of any JavaFX/{@code GraphCanvas} dependency so it can be unit-tested
  * headlessly; {@code save}/{@code load} are the thin wrappers that touch a real canvas. When you
  * change the JSON format, keep the forgiving-read/back-compat behavior and update the
- * {@code GraphFileIO} Javadoc and {@code docs/architecture/ui.md}.
+ * {@code GraphFileIO} Javadoc and {@code docs/engine/ui-layer.md}.
  */
 package io.github.jaymcole.housegraph.ui.io;

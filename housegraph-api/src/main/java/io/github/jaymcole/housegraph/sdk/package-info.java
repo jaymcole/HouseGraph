@@ -22,7 +22,9 @@
  * with {@code instanceof}, so implementing one is the entire opt-in — there is nothing to
  * register.
  *
- * <p><b>This package is published API.</b> A breaking change here breaks every node library
- * anyone has written. See {@code docs/architecture/plugins.md}.
+ * <p><b>This package is published API</b>, and the API is not stable yet. A breaking change here
+ * means rebuilding every library compiled against it — today the first-party libraries in
+ * {@code housegraph-nodes} and anything built from the plugin template — so make that change in
+ * the same pass. See {@code docs/engine/plugin-runtime.md}.
  */
 package io.github.jaymcole.housegraph.sdk;

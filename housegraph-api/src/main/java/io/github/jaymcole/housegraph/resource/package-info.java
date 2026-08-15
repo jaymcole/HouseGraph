@@ -6,6 +6,6 @@
  * both keyed by a user-chosen name so nodes reference a resource without being wired to
  * it. {@link io.github.jaymcole.housegraph.resource.Subscription} cancels a subscription.
  * <p>
- * See {@code docs/architecture/resources.md}.
+ * See {@code docs/nodes/long-lived-resources.md}.
  */
 package io.github.jaymcole.housegraph.resource;

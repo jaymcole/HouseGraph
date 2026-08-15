@@ -12,6 +12,6 @@
  * {@link io.github.jaymcole.housegraph.sdk.NodeContentProvider} is the extension point a
  * node implements to embed its own inline UI; {@link io.github.jaymcole.housegraph.ui.view.ExecutionPolicyIcons}
  * draws the per-node policy glyphs. All view code runs on the JavaFX Application Thread.
- * See {@code docs/architecture/ui.md}.
+ * See {@code docs/engine/ui-layer.md}.
  */
 package io.github.jaymcole.housegraph.ui.view;

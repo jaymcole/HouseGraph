@@ -17,6 +17,6 @@
  * {@link io.github.jaymcole.housegraph.logging.Logging} wires them up at startup.
  * <p>
  * This package imports nothing from the rest of the app (and never JavaFX), so any layer may
- * depend on it without creating a cycle. See {@code docs/architecture/logging.md}.
+ * depend on it without creating a cycle. See {@code docs/engine/logging.md}.
  */
 package io.github.jaymcole.housegraph.logging;

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
-# Automates as much of docs/remote-server-setup.md as can be automated on a
+# Automates as much of docs/guides/server-setup.md as can be automated on a
 # Mac (Parts 3-9). It still stops to ask you to do the two things only a human
 # can do: paste a deploy key into GitHub's UI, and flip switches in System
 # Settings. Safe to re-run — every step checks whether it already did its job.
 #
 # Usage:
-#   extras/setup-server.sh --graphs-repo git@github.com:you/my-graphs.git
+#   scripts/setup-server.sh --graphs-repo git@github.com:you/my-graphs.git
 #
-# See extras/setup-server.sh --help for every flag, or just run it with no
+# See scripts/setup-server.sh --help for every flag, or just run it with no
 # flags and answer the prompts.
 
 set -euo pipefail
 
-# --- Defaults (matches docs/remote-server-setup.md) --------------------------
+# --- Defaults (matches docs/guides/server-setup.md) --------------------------
 
 SOURCE_DIR="$HOME/HouseGraph-source"
 INSTALL_DIR="$HOME/HouseGraph"
@@ -57,7 +57,7 @@ pause_for_human() {
 
 usage() {
     cat <<EOF
-$(bold "extras/setup-server.sh") — automate docs/remote-server-setup.md
+$(bold "scripts/setup-server.sh") — automate docs/guides/server-setup.md
 
 Options:
   --graphs-repo URL        Git URL of your graphs repository (required)
@@ -74,7 +74,7 @@ Options:
   -h, --help                Show this help
 
 Example:
-  extras/setup-server.sh --graphs-repo git@github.com:you/my-graphs.git
+  scripts/setup-server.sh --graphs-repo git@github.com:you/my-graphs.git
 EOF
 }
 
@@ -161,7 +161,7 @@ info "Installed $(basename "$JAR_SRC") -> $INSTALL_DIR/housegraph.jar"
 HOUSEGRAPH_JAR="$INSTALL_DIR/housegraph.jar"
 housegraph() { java -jar "$HOUSEGRAPH_JAR" "$@"; }
 
-housegraph --version || fail "housegraph.jar does not run. See docs/remote-server-setup.md's native-library note."
+housegraph --version || fail "housegraph.jar does not run. See docs/guides/server-setup.md's native-library note."
 
 # Shell alias, for the human's own use afterwards — not needed by this script.
 SHELL_RC="$HOME/.zshrc"

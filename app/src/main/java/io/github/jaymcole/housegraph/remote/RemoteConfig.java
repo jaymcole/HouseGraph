@@ -21,7 +21,7 @@ import java.util.Locale;
  *
  * <h2>This file is the trust boundary</h2>
  * Everything the daemon will fetch and run traces back to a URL written here <em>by hand</em>. That
- * is deliberate. A save file is untrusted input — {@code docs/architecture/plugins.md} is explicit
+ * is deliberate. A save file is untrusted input — {@code docs/engine/plugin-runtime.md} is explicit
  * that a graph proposing a code download must never be acted on silently — so the daemon takes its
  * marching orders from this file, not from the graphs it syncs. A graph repository can say which
  * node libraries it wants; it cannot widen the set of places they may come from.

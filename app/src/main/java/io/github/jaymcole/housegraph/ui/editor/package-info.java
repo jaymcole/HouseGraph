@@ -7,6 +7,6 @@
  * when the variable is manually editable and its type is registered here. Adding a type is a
  * one-line change to the {@code ValueEditors} static block.
  * {@link io.github.jaymcole.housegraph.ui.editor.SecretsEditor} is the dialog for choosing or
- * entering a secret (which is stored by reference, never inlined). See {@code docs/architecture/ui.md}.
+ * entering a secret (which is stored by reference, never inlined). See {@code docs/engine/ui-layer.md}.
  */
 package io.github.jaymcole.housegraph.ui.editor;

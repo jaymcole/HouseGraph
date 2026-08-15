@@ -13,6 +13,6 @@
  * <p>
  * This package never imports JavaFX; UI notifications go through an injected
  * callback executor and {@link io.github.jaymcole.housegraph.graph.GraphExecutionListener}.
- * See {@code docs/architecture/graph-engine.md} and {@code nodes.md}.
+ * See {@code docs/engine/execution-model.md} and {@code nodes.md}.
  */
 package io.github.jaymcole.housegraph.graph;

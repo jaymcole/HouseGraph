@@ -16,6 +16,6 @@
  * falls through to the normal application launch and is handled by {@code App}'s {@code --graph}
  * argument. It appears in the usage text because that is where someone will look for it.
  *
- * <p>Full design: {@code docs/architecture/deployment.md}.
+ * <p>Full design: {@code docs/engine/remote-runtime.md}.
  */
 package io.github.jaymcole.housegraph.cli;

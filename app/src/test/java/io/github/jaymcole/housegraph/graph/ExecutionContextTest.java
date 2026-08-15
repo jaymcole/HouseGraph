@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * Stage-A spike for the concurrent-runs design (docs/design/per-node-execution-policy.md).
+ * Stage-A spike for the concurrent-runs design (docs/engine/execution-policy.md).
  * De-risks the linchpin: routing {@link NodeVariable} value access through a per-run
  * {@link ExecutionContext} gives concurrent runs isolated computed values while leaving node
  * {@code process()} code untouched (here, {@link AddNode} is used exactly as-is).

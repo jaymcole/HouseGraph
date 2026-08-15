@@ -22,7 +22,7 @@ application {
 dependencies {
     // Brings JavaFX, org.json and slf4j-api transitively (all declared `api` over there). Every
     // integration node category has been extracted into out-of-tree node libraries — see
-    // docs/architecture/plugins.md — so this is the only dependency app/ has left.
+    // docs/engine/plugin-runtime.md — so this is the only dependency app/ has left.
     implementation project(':housegraph-api')
 }
 

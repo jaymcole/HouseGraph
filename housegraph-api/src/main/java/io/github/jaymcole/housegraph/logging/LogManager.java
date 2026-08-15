@@ -25,7 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *
  * <p>The manager starts with a single {@link ConsoleSink} at {@link LogLevel#INFO} so that
  * logging works — and nothing is silently dropped — before {@link Logging#bootstrap(java.nio.file.Path) Logging.bootstrap(...)}
- * installs the app's full set of outputs. See {@code docs/architecture/logging.md}.
+ * installs the app's full set of outputs. See {@code docs/engine/logging.md}.
  */
 public final class LogManager {
 

@@ -23,6 +23,6 @@
  *   <li>{@link io.github.jaymcole.housegraph.remote.ExitCodes} — how a child asks for a restart.</li>
  * </ul>
  *
- * <p>Full design: {@code docs/architecture/deployment.md}.
+ * <p>Full design: {@code docs/engine/remote-runtime.md}.
  */
 package io.github.jaymcole.housegraph.remote;

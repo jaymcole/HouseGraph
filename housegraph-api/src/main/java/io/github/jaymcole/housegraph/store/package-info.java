@@ -7,6 +7,6 @@
  * integration client packages, it is JavaFX-free; the node in {@code graph.nodes.resource}
  * wraps it and publishes it under a name via {@code ResourceRegistry}.
  * <p>
- * See {@code docs/architecture/resources.md} and {@code docs/architecture/storage-and-secrets.md}.
+ * See {@code docs/engine/document-store.md}.
  */
 package io.github.jaymcole.housegraph.store;

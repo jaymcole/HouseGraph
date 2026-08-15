@@ -7,6 +7,6 @@
  * class into a category subpackage is enough for it to appear in the Add-Node menu,
  * under that subpackage's name.
  * <p>
- * See {@code docs/architecture/nodes.md} for the add-a-node recipe.
+ * See {@code docs/nodes/README.md} for the add-a-node recipe.
  */
 package io.github.jaymcole.housegraph.graph.nodes;

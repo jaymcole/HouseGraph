@@ -6,7 +6,7 @@
  * JavaFX {@code Application} that builds the graph, canvas, and toolbar. The split
  * lets JavaFX launch cleanly from a plain classpath jar.
  * <p>
- * See the repository {@code CLAUDE.md} and {@code docs/architecture/} for the full
- * architecture; start with {@code docs/architecture/overview.md}.
+ * See the repository {@code CLAUDE.md} and {@code docs/engine/} for the full
+ * architecture; start with {@code docs/engine/architecture.md}.
  */
 package io.github.jaymcole.housegraph;

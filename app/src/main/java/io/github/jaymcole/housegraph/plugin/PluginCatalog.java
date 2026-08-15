@@ -50,7 +50,7 @@ public final class PluginCatalog implements PluginDirectory {
      * @param sha256  the hash of the jar as installed. Recorded so a swapped cached jar <em>can</em>
      *                be noticed — but nothing verifies it on load yet; see
      *                {@link PluginInstaller#matchesRecordedHash} and the Security section of
-     *                {@code docs/architecture/plugins.md}
+     *                {@code docs/engine/plugin-runtime.md}
      * @param enabled false keeps the jar on disk but out of the class loader
      */
     public record Installed(String id,

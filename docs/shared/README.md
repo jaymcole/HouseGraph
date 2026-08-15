@@ -1,17 +1,18 @@
 # Shared documentation
 
-Files in this folder are the source of truth for documentation that also
-needs to live in HouseGraph's companion repositories —
+Files in this folder are mirrored verbatim into HouseGraph's companion
+repositories,
 [`housegraph-nodes`](https://github.com/jaymcole/housegraph-nodes) and
-[`housegraph-plugin-template`](https://github.com/jaymcole/housegraph-plugin-template).
+[`housegraph-plugin-template`](https://github.com/jaymcole/housegraph-plugin-template),
+on every push to `main` that touches it.
 
-On every push to `main` that touches this folder,
-[`.github/workflows/sync-docs.yml`](../../.github/workflows/sync-docs.yml)
-mirrors it into `docs/shared/` in each companion repo and merges the result
-automatically, without manual review on the receiving end. See
-[`docs/architecture/doc-sync.md`](../architecture/doc-sync.md) for how the
-sync works and what to do if it breaks.
+**This folder currently holds no synced content.** The candidates are HouseGraph's
+node-authoring pages, which the companion repositories both need; moving them here
+means rewriting their relative links first.
 
-Write anything placed here assuming it will be read from a companion repo,
-not just from HouseGraph — avoid relative links or context that only makes
-sense in this repo's own doc tree.
+Write anything placed here assuming it will be read from a companion repository,
+not from HouseGraph — no relative links into this repository's doc tree, and no
+context that only makes sense here.
+
+See [`docs/doc-sync.md`](../doc-sync.md) for how the sync works and what to do if
+it breaks.

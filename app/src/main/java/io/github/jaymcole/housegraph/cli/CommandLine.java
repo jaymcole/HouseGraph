@@ -179,6 +179,6 @@ public final class CommandLine {
         out.println("  --home <dir>   Use a different HouseGraph data directory");
         out.println("  --help         Show this, or a command's own usage");
         out.println();
-        out.println("Setting up a server: docs/remote-server-setup.md");
+        out.println("Setting up a server: docs/guides/server-setup.md");
     }
 }

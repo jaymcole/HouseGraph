@@ -45,7 +45,7 @@ import java.util.concurrent.TimeUnit;
  * <h2>Arguments</h2>
  * Launched bare, the app behaves as it always has: it reopens whatever
  * {@link AppPreferences#LAST_FILE} holds. One named parameter exists for running it under a
- * supervisor (see {@code remote/} and {@code docs/architecture/deployment.md}):
+ * supervisor (see {@code remote/} and {@code docs/engine/remote-runtime.md}):
  * <ul>
  *   <li>{@code --graph=<path>} — open this file instead of the last one, and <b>do not</b> record it
  *       as the last file. A daemon-opened graph must not overwrite what the person at the keyboard
@@ -344,7 +344,7 @@ public class App extends Application {
      * <p><b>There is deliberately no auto-install here.</b> Installing without asking exists only in
      * the unattended daemon, where the operator hand-wrote the repository URL the graphs come from
      * and that naming <em>is</em> the trust decision — see {@code RemoteDeployment} and
-     * {@code docs/architecture/plugins.md}. On the desktop the file may have arrived from anywhere,
+     * {@code docs/engine/plugin-runtime.md}. On the desktop the file may have arrived from anywhere,
      * so it can propose a code download but never cause one.
      *
      * <p>Opening with missing libraries is safe because their nodes are preserved verbatim (see
