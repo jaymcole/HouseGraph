@@ -17,6 +17,12 @@ runtime from a GitHub repo.
 
 ## Adding a node — there is no registration step
 
+Before shaping ports, pick the closest fit among the four node roles — Control,
+Action, Data, Resource — described in
+[`docs/architecture/nodes.md`](../../../../../../../../../../docs/architecture/nodes.md#node-roles-control-action-data-resource).
+They're guidelines, not an enforced taxonomy, but picking one keeps the port shape
+predictable for whoever wires the node next.
+
 Drop a concrete `BaseNode` subclass under `graph/nodes/<category>/` and it appears
 in the Add-Node menu automatically (`NodeRegistry` scans the classpath). The
 folder name is its menu category.

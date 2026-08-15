@@ -26,6 +26,45 @@ A `BaseNode` declares four kinds of port, each via a `configure*` hook:
 subclass field initializers have already run). `reconfigure()` / `rebuildPorts()`
 rebuild the lists for nodes whose ports depend on editable settings.
 
+### Node roles: Control, Action, Data, Resource
+
+These four are a **vocabulary for how a node's ports are typically shaped**, not an
+enforced taxonomy — `BaseNode` has no `role` field or subclass per category, and a
+node is free to shape its ports however its job actually needs. Treat them as a
+design checklist when adding a node: picking the closest one keeps the graph
+readable for whoever wires it next; if none fits, that's usually a sign the node is
+doing more than one job.
+
+- **Control** — directs flow state. It interprets its inputs and decides *where*
+  control goes next. Usually one flow-input; likely **multiple** flow-outputs.
+  Examples: `IfNode`/`IfBoolNode` (2-way branch), `JoinNode` (AND-barrier),
+  `ForEachNode` (loop), `TriggerNode`/`TriggerRepeatingNode` (entry points).
+- **Action** — does work but doesn't decide flow state; control passes straight
+  through. Always exactly one flow-input and one flow-output, unconditionally
+  activated, so more work can be chained after it. `SquirrelAlarmNode` (Arduino
+  IoT, extracted) is the canonical example of the shape — see
+  [integrations.md](integrations.md#arduino-iot--extracted).
+- **Data** — no flow at all: no flow-input, no flow-output. Exists to be
+  *pulled*: it always has one or more data outputs, read on demand by whatever
+  is wired to them. Examples: `ConstantFloatNode`/`ConstantIntegerNode`/
+  `ConstantStringNode`, `AddNode`, the `converters/` nodes, `ObjectDecomposerNode`.
+- **Resource** — fronts a long-lived object registered in `ResourceRegistry` (see
+  [resources.md](resources.md)). Likely **terminates** a flow branch rather than
+  continuing it, and may or may not have a flow-input at all: some have no flow
+  ports whatsoever, just a Start/Stop lifecycle and no `process()` work
+  (`EchoResourceNode`); others take a flow-in to act against the resource and
+  have no flow-out, ending the branch there (the shape the Discord library's
+  send-style action nodes follow). `EchoListenerNode` sits at the other edge of
+  the same pattern — no flow-in, one flow-out — since it's the event-source
+  counterpart that *starts* a branch when the resource publishes, rather than
+  the sink that ends one.
+
+All four are guidelines, not rules: a node is free to mix shapes (a control node
+that also does real work, an action node with a second flow-out for an error
+path) when the job genuinely doesn't fit one cleanly. Reach for the closest role
+by default so the graph stays predictable; deviate when the alternative is
+worse, not out of convenience.
+
 ### `NodeVariable<T>`
 
 A typed slot with a `name`, a stable `id`, a `type`, and a `manuallyEditable`
@@ -266,4 +305,5 @@ That's the whole thing — no registration. Checklist:
 
 **When you change this, update…** this file whenever you change the `BaseNode`
 port model, the `NodeRegistry` discovery mechanism, the persistence rules, the
-add-a-node recipe, or the set of node **categories**.
+add-a-node recipe, the set of node **categories**, or the Control/Action/Data/
+Resource role guidelines.
