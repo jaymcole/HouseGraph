@@ -42,6 +42,7 @@ Use this map of change → what to update:
 | Docs meant to be mirrored into `housegraph-nodes` / `housegraph-plugin-template`, or the sync mechanism itself | [`docs/shared/`](docs/shared/) for the content; [`docs/architecture/doc-sync.md`](docs/architecture/doc-sync.md) if the trigger, PAT scope, or merge behavior changes |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
+| Create new documentation, or rename/move/delete/restructure existing documentation anywhere in this repo | Check [`housegraph-nodes`](https://github.com/jaymcole/housegraph-nodes) and [`housegraph-plugin-template`](https://github.com/jaymcole/housegraph-plugin-template) for links pointing at the old path/anchor (their own docs and READMEs commonly link back into HouseGraph's docs) and update them in the same change |
 
 Every file under `docs/architecture/` ends with a **"When you change this,
 update…"** note. Honor it.
