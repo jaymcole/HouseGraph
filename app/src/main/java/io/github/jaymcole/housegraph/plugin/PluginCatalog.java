@@ -109,13 +109,17 @@ public final class PluginCatalog implements PluginDirectory {
     }
 
     /**
-     * Loads from an explicit location. The test seam, mirroring {@code AppPreferences.loadFrom}.
+     * Loads from an explicit location, mirroring {@code AppPreferences.loadFrom}.
+     *
+     * <p>Public so a test can build a catalog without touching the real profile — including from
+     * another package, since the daemon's install decision is exercised from {@code remote}. Nothing
+     * in production should call this: {@link #load()} is the one that knows where the catalog lives.
      *
      * @param file        the catalog JSON
      * @param pluginsRoot where installed jars live
      * @return the catalog; empty if the file is absent or unreadable
      */
-    static PluginCatalog loadFrom(Path file, Path pluginsRoot) {
+    public static PluginCatalog loadFrom(Path file, Path pluginsRoot) {
         PluginCatalog catalog = new PluginCatalog(file, pluginsRoot);
         if (!Files.isRegularFile(file)) {
             return catalog;

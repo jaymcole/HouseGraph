@@ -108,9 +108,22 @@ public final class RemoteConfig {
         this.trustedPluginRepositories = List.copyOf(trustedPluginRepositories);
     }
 
-    /** The config at {@code config/remote.json}, or defaults when there isn't one yet. */
+    /**
+     * The config at {@code config/remote.json}, or defaults when there isn't one yet.
+     *
+     * <p>Warns when installs are on with no allowlist, because that combination is much wider than it
+     * used to be — an empty {@code trustedPluginRepositories} once refused everything and now narrows
+     * nothing. Logged here rather than in {@link #fromJson} so the note fires once per process on the
+     * real config, not on every parse in a test.
+     */
     public static RemoteConfig load() {
-        return loadFrom(AppDirectories.get().config().resolve(FILE_NAME));
+        RemoteConfig config = loadFrom(AppDirectories.get().config().resolve(FILE_NAME));
+        if (config.allowPluginInstall() && config.trustedPluginRepositories().isEmpty()) {
+            log.warn("allowPluginInstall is on with an empty trustedPluginRepositories, so any GitHub "
+                    + "repository your graphs or manifests name may be installed from. List "
+                    + "repositories there to narrow that.");
+        }
+        return config;
     }
 
     /**
@@ -191,17 +204,35 @@ public final class RemoteConfig {
     /**
      * Whether a node library may be installed from {@code repositoryUrl} without a human present.
      *
-     * <p>Compared through {@link RepositoryUrls}, which normalises away a trailing {@code .git}, a
-     * trailing slash and case, so the operator writing the URL the way GitHub displays it still
-     * matches a manifest that wrote it the way git clones it. Anything not matched is refused — an
-     * allowlist that guesses is not an allowlist. That comparison is shared with the desktop's
-     * {@code PluginTrust} precisely so the two allowlists cannot drift apart on what counts as the
-     * same repository.
+     * <h4>An empty allowlist means "no narrowing", not "nothing"</h4>
+     * {@link #allowPluginInstall()} is the decision; {@link #trustedPluginRepositories()} is an
+     * <em>optional</em> way to narrow it further. That is a reversal of the original meaning, where
+     * an empty list refused everything, and it is what makes a fresh server work with no per-library
+     * configuration: the operator already named the graph repository by hand, and naming it is the
+     * trust decision. Someone who can commit to that repository can make the daemon run arbitrary
+     * graphs regardless, so requiring them to also enumerate every node library was ceremony rather
+     * than a boundary.
      *
-     * @param repositoryUrl the repository a manifest asked to install from
+     * <p>Operators who <em>want</em> the tighter rule still have it: list the repositories and only
+     * those match. {@link #load} logs a warning when installs are on with an empty list, so the wider
+     * meaning is never silent.
+     *
+     * <p>This is not a licence to fetch from anywhere. {@code GitHubReleases.ALLOWED_HOSTS} still
+     * bounds every lookup and download to GitHub, re-checked at download time — relaxing this widens
+     * which GitHub <em>repositories</em> may be used, never which hosts.
+     *
+     * <p>Comparison goes through {@link RepositoryUrls}, which normalises away a trailing
+     * {@code .git}, a trailing slash and case, so the operator writing the URL the way GitHub
+     * displays it still matches a graph that recorded it the way git clones it.
+     *
+     * @param repositoryUrl the repository a manifest or save file asked to install from
      * @return true when installing from it is permitted
      */
     public boolean isTrustedForInstall(String repositoryUrl) {
-        return allowPluginInstall && RepositoryUrls.matches(trustedPluginRepositories, repositoryUrl);
+        if (!allowPluginInstall || repositoryUrl == null || repositoryUrl.isBlank()) {
+            return false;
+        }
+        return trustedPluginRepositories.isEmpty()
+                || RepositoryUrls.matches(trustedPluginRepositories, repositoryUrl);
     }
 }

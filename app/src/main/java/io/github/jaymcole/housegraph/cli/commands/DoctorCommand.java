@@ -3,7 +3,6 @@ package io.github.jaymcole.housegraph.cli.commands;
 import io.github.jaymcole.housegraph.cli.Args;
 import io.github.jaymcole.housegraph.cli.Command;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
-import io.github.jaymcole.housegraph.plugin.PluginTrust;
 import io.github.jaymcole.housegraph.remote.GitCommand;
 import io.github.jaymcole.housegraph.remote.GraphProcess;
 import io.github.jaymcole.housegraph.remote.RemoteConfig;
@@ -74,17 +73,7 @@ public final class DoctorCommand implements Command {
             out.println("Poll interval:   " + config.pollSeconds() + "s");
         }
 
-        // Two independent trust models, printed together because "why didn't it install?" is the
-        // question this command exists to answer, and the answer is in whichever one applies.
-        out.println("Daemon installs: " + (config.allowPluginInstall()
-                ? "allowed from " + config.trustedPluginRepositories().size() + " trusted repository/ies"
-                : "off (manifests can't install libraries)"));
-
-        PluginTrust trust = PluginTrust.load();
-        out.println("App auto-install: " + (trust.isAutoInstallEnabled()
-                ? "on, for " + trust.trustedRepositories().size() + " trusted repository/ies"
-                : "off (opening a graph never installs on its own)"));
-        trust.trustedRepositories().forEach(url -> out.println("                  " + url));
+        out.println("Plugin installs: " + describeInstallGate(config));
 
         PluginCatalog catalog = PluginCatalog.load();
         out.println("Node libraries:  " + catalog.all().size() + " installed, "
@@ -95,5 +84,22 @@ public final class DoctorCommand implements Command {
         out.println();
         out.println(healthy ? "Ready." : "Not ready — see the notes above.");
         return healthy ? 0 : 1;
+    }
+
+    /**
+     * Spells out the install gate in the terms an operator would ask about, because "why did my graph
+     * come up with placeholder nodes?" is the main question this command exists to answer.
+     *
+     * <p>The empty-allowlist case gets its own wording rather than reading "0 trusted repositories",
+     * which would suggest the opposite of what it does: empty means <em>no narrowing</em>, so any
+     * GitHub repository the synced graphs name may be installed from.
+     */
+    private static String describeInstallGate(RemoteConfig config) {
+        if (!config.allowPluginInstall()) {
+            return "off (graphs and manifests can't install libraries)";
+        }
+        return config.trustedPluginRepositories().isEmpty()
+                ? "allowed from any GitHub repository your graphs name"
+                : "allowed from " + config.trustedPluginRepositories().size() + " trusted repository/ies";
     }
 }

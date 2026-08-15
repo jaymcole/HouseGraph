@@ -892,21 +892,6 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         }
     }
 
-    /**
-     * Empties the canvas ahead of a class-loader rebuild, so {@link #hasLiveLibraryNodes()} becomes
-     * false and {@code App.tryReloadNodeLibraries()} is able to run.
-     *
-     * <p>Exists for the auto-install path in {@code App.openGraph}: a library installed to satisfy the
-     * graph being opened is useless until the loader is rebuilt, and the loader refuses to rebuild
-     * while any node-library node is live. Clearing first is safe there because the canvas is about to
-     * be replaced by {@link #loadSnapshot} regardless — the graph on screen has already been given up
-     * on by the time this is called. <b>Do not</b> use it as a general "new document" action; that is
-     * {@link #loadSnapshot}'s job, which also resets undo history.
-     */
-    public void clearForLibraryReload() {
-        clearAll();
-    }
-
     /** Removes everything from the canvas, e.g. before loading a graph from file. */
     private void clearAll() {
         deleteNodes(nodeViews);

@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -81,16 +82,29 @@ public final class GraphDependencyCheck {
      * @return what is missing, disabled, or out of date
      */
     public static DependencyReport inspect(JSONObject saveRoot, PluginCatalog installed) {
-        List<RequiredPlugin> missing = new ArrayList<>();
-        List<RequiredPlugin> disabled = new ArrayList<>();
-        List<RequiredPlugin> older = new ArrayList<>();
+        return classify(requiredBy(saveRoot), installed);
+    }
 
-        // A v1 file has no plugins table. It reports nothing even if it does use an uninstalled
-        // library's node — those nodes still become placeholders and are preserved, but with no
-        // repository recorded there is nothing to offer. The first save under v2 fixes it for good.
+    /**
+     * The libraries a save file names, without comparing them to anything.
+     *
+     * <p>Split from {@link #inspect} so a caller with <em>several</em> save files — the daemon,
+     * looking at every graph a repository deploys — can gather across all of them and classify once,
+     * rather than merging reports after the fact. Duplicates within one file are dropped, first
+     * occurrence winning.
+     *
+     * <p>A v1 file has no {@code plugins} table and yields nothing, even when it does use an
+     * uninstalled library's node. Those nodes still become placeholders and are preserved, but with
+     * no repository recorded there is nothing to offer. The first save under v2 fixes it for good.
+     *
+     * @param saveRoot the parsed save file
+     * @return what it says it needs, in file order
+     */
+    public static List<RequiredPlugin> requiredBy(JSONObject saveRoot) {
+        List<RequiredPlugin> required = new ArrayList<>();
         JSONArray plugins = saveRoot.optJSONArray("plugins");
         if (plugins == null) {
-            return new DependencyReport(missing, disabled, older);
+            return required;
         }
 
         Set<String> seen = new LinkedHashSet<>();
@@ -103,19 +117,44 @@ public final class GraphDependencyCheck {
             if (id.isEmpty() || !seen.add(id)) {
                 continue;
             }
-            RequiredPlugin required = new RequiredPlugin(
+            required.add(new RequiredPlugin(
                     id,
                     row.optString("name", id),
                     emptyToNull(row.optString("version", "")),
-                    emptyToNull(row.optString("repository", "")));
+                    emptyToNull(row.optString("repository", ""))));
+        }
+        return required;
+    }
 
-            PluginCatalog.Installed match = installed.byId(id).orElse(null);
+    /**
+     * Sorts a set of requirements against the catalog into missing, disabled and out of date.
+     *
+     * <p><b>The first entry for an id wins</b>, and callers rely on that to express precedence by
+     * ordering: the daemon concatenates its manifest's declarations ahead of what its save files ask
+     * for, so an explicit declaration beside the graphs beats a byproduct of whichever machine last
+     * saved one.
+     *
+     * @param required  what is wanted, in precedence order
+     * @param installed the current catalog
+     * @return what is missing, disabled, or out of date
+     */
+    public static DependencyReport classify(Collection<RequiredPlugin> required, PluginCatalog installed) {
+        List<RequiredPlugin> missing = new ArrayList<>();
+        List<RequiredPlugin> disabled = new ArrayList<>();
+        List<RequiredPlugin> older = new ArrayList<>();
+
+        Set<String> seen = new LinkedHashSet<>();
+        for (RequiredPlugin entry : required) {
+            if (entry == null || entry.id() == null || entry.id().isBlank() || !seen.add(entry.id())) {
+                continue;
+            }
+            PluginCatalog.Installed match = installed.byId(entry.id()).orElse(null);
             if (match == null) {
-                missing.add(required);
+                missing.add(entry);
             } else if (!match.enabled()) {
-                disabled.add(required);
-            } else if (isOlder(match.version(), required.version())) {
-                older.add(required);
+                disabled.add(entry);
+            } else if (isOlder(match.version(), entry.version())) {
+                older.add(entry);
             }
         }
         return new DependencyReport(missing, disabled, older);

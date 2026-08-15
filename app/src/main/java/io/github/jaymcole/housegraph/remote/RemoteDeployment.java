@@ -2,9 +2,11 @@ package io.github.jaymcole.housegraph.remote;
 
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.plugin.AutoInstallPlan;
 import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
+import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -99,102 +101,114 @@ public final class RemoteDeployment {
     }
 
     /**
-     * Installs — and now updates — the node libraries a repository's manifest declares, insofar as
-     * the operator has permitted it.
+     * Installs and updates the node libraries a repository needs, insofar as the operator has
+     * permitted it.
      *
-     * <h2>Why the manifest's {@code version} finally matters</h2>
-     * This used to skip anything already in the catalog, so a library could be installed once and
-     * then never moved again: bumping {@code version} in {@code housegraph.json} changed nothing, and
-     * the only way to get a newer library onto a remote machine was to SSH in and run
-     * {@code plugins update} by hand. The field was parsed and read by nobody.
+     * <h4>Save files are read here — a deliberate reversal</h4>
+     * {@link RepoManifest} used to argue that the daemon must never take dependencies from save
+     * files, on the grounds that such a table describes what a graph was built against on someone
+     * else's machine. That reasoning does not survive contact with how a graph repository is actually
+     * used: the save files in it are commits in a repository the operator <b>named by hand</b> in
+     * {@code remote.json}, sitting beside the very manifest they were being contrasted with. Anyone
+     * who can commit a save file there can already commit a manifest, or a graph that does anything
+     * at all. Reading both widens nothing meaningful, and it is what lets a fresh server come up
+     * with no per-library configuration.
      *
-     * <p>Now an entry naming a version newer than what is installed triggers an update to the
-     * repository's <em>latest</em> release. Latest rather than that exact version, deliberately:
-     * {@code GitHubReleases} has no fetch-by-tag, and the manifest's number reads as "at least this",
-     * which the newest release satisfies. {@code GraphDependencyCheck.isOlder} does the comparison,
-     * and is lenient by design — a version scheme it cannot parse produces no update rather than a
-     * wrong one.
+     * <p>The manifest still earns its keep, and still comes first: it is the only place a
+     * <em>version floor</em> can be declared, which is what makes updates possible, and its entries
+     * take precedence per {@link GraphDependencyCheck#classify}'s first-wins rule. A save file's
+     * recorded version is whatever the authoring machine happened to have; the manifest's is a
+     * statement of intent someone wrote down.
      *
-     * <p>Installing by library id, not by repository alone, because a monorepo release attaches a jar
-     * per library and the id-less overload refuses those outright.
+     * <h4>Versions mean "at least this"</h4>
+     * A requirement naming a version newer than what is installed triggers an update to the
+     * repository's <em>latest</em> release — latest rather than that exact version, because
+     * {@code GitHubReleases} has no fetch-by-tag and the newest release satisfies "at least".
+     * {@code GraphDependencyCheck.isOlder} is lenient by design: a version scheme it cannot parse
+     * produces no update rather than a wrong one, since a false positive here downloads a jar and
+     * restarts a graph for nothing.
      *
-     * <h2>What has not changed</h2>
-     * Every skip is logged rather than silently tolerated, because "my graph came up with placeholder
-     * nodes" is otherwise a mystery. Nothing here can widen the trust set: the manifest proposes,
+     * <h4>What has not changed</h4>
+     * Nothing here can widen the trust set: the repository proposes,
      * {@link RemoteConfig#isTrustedForInstall} disposes, and a refused library simply means those
-     * nodes load as placeholders — which the app already handles safely. The manifest remains the only
-     * source of these declarations; save files are still not read here, for the reasons in
-     * {@link RepoManifest}.
+     * nodes load as placeholders — which the app already handles safely. Every refusal is logged
+     * rather than silently tolerated, because "my graph came up with placeholder nodes" is otherwise
+     * a mystery. A <b>disabled</b> library is never re-enabled by any of this; see
+     * {@link AutoInstallPlan}.
      *
      * <p>An updated jar reaches a running graph the same way a new one does: this runs only when a
      * repository has moved, and {@code Supervisor} then restarts every graph from it in a fresh JVM —
      * the only thing that reliably picks up a node-library change.
      */
     private void installDeclaredPlugins(GraphRepository repository) {
-        Optional<RepoManifest> manifest = RepoManifest.read(repository.cloneDirectory());
-        if (manifest.isEmpty() || manifest.get().plugins().isEmpty()) {
+        PluginCatalog catalog = PluginCatalog.load();
+        List<GraphDependencyCheck.RequiredPlugin> required = requirementsOf(repository);
+        if (required.isEmpty()) {
             return;
         }
-        PluginCatalog catalog = PluginCatalog.load();
-        for (RepoManifest.PluginEntry entry : manifest.get().plugins()) {
-            PluginCatalog.Installed installed = catalog.byId(entry.id()).orElse(null);
-            PluginAction action = decide(entry, installed);
-            if (action == PluginAction.SKIP) {
-                continue;
-            }
-            boolean update = action == PluginAction.UPDATE;
-            if (entry.repository() == null) {
-                log.warn("Manifest needs node library \"{}\" but records no repository for it", entry.id());
-                continue;
-            }
-            if (!config.isTrustedForInstall(entry.repository())) {
-                log.warn("Not {} \"{}\" from {} — add it to trustedPluginRepositories and set "
-                                + "allowPluginInstall in remote.json if you want that. Its nodes will "
-                                + "load as placeholders.",
-                        update ? "updating" : "installing", entry.id(), entry.repository());
-                continue;
-            }
-            try {
-                if (update) {
-                    log.info("Updating node library \"{}\" from {} (installed {}, manifest wants {})",
-                            entry.id(), entry.repository(), installed.version(), entry.version());
-                } else {
-                    log.info("Installing node library \"{}\" from {}", entry.id(), entry.repository());
-                }
-                PluginInstaller.install(entry.repository(), entry.id(), catalog);
-            } catch (IOException | RuntimeException e) {
-                log.error("Could not install \"{}\" from {}", entry.id(), entry.repository(), e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-    }
 
-    /** What a manifest entry calls for, given what is already installed. */
-    enum PluginAction {
-        INSTALL,
-        UPDATE,
-        SKIP
+        AutoInstallPlan plan = AutoInstallPlan.from(
+                GraphDependencyCheck.classify(required, catalog), config::isTrustedForInstall);
+
+        for (GraphDependencyCheck.RequiredPlugin refused : plan.refused()) {
+            log.warn("Not installing \"{}\"{} — {}", refused.id(),
+                    refused.repository() == null ? "" : " from " + refused.repository(),
+                    explainRefusal(refused, catalog));
+        }
+        if (!plan.hasActions()) {
+            return;
+        }
+        PluginInstaller.AutoInstallOutcome outcome = PluginInstaller.apply(plan, catalog);
+        if (!outcome.failed().isEmpty()) {
+            log.error("Node libraries that could not be installed: {}", String.join(", ", outcome.failed()));
+        }
     }
 
     /**
-     * The install/update/skip decision, split out from {@link #installDeclaredPlugins} so it can be
-     * tested without a network, a clone, or a catalog on disk. Trust is <em>not</em> considered here —
-     * that gate is applied separately by the caller, and keeping the two apart means a test of this
-     * logic cannot accidentally pass by being refused.
+     * What a repository needs, manifest first so its declarations win, then every graph it deploys.
      *
-     * @param entry     what the manifest declares
-     * @param installed the matching catalog entry, or null when the library isn't installed
-     * @return what to do about it
+     * <p>Reading save files with {@code GraphFileIO.readRoot} is precedent, not a new coupling —
+     * {@code CheckCommand} already does exactly this from a headless command, and {@code readRoot}
+     * is a JSON parse that builds nothing and loads no class.
      */
-    static PluginAction decide(RepoManifest.PluginEntry entry, PluginCatalog.Installed installed) {
-        if (installed == null) {
-            return PluginAction.INSTALL;
+    private List<GraphDependencyCheck.RequiredPlugin> requirementsOf(GraphRepository repository) {
+        List<GraphDependencyCheck.RequiredPlugin> required = new ArrayList<>();
+        RepoManifest.read(repository.cloneDirectory()).ifPresent(manifest -> {
+            for (RepoManifest.PluginEntry entry : manifest.plugins()) {
+                if (entry.repository() == null) {
+                    log.warn("Manifest needs node library \"{}\" but records no repository for it", entry.id());
+                }
+                required.add(new GraphDependencyCheck.RequiredPlugin(
+                        entry.id(), entry.id(), entry.version(), entry.repository()));
+            }
+        });
+
+        for (Path graph : graphsIn(repository)) {
+            try {
+                required.addAll(GraphDependencyCheck.requiredBy(GraphFileIO.readRoot(graph.toFile())));
+            } catch (IOException | RuntimeException e) {
+                // One unreadable graph must not stop the others' libraries being installed. The graph
+                // itself will fail to start and say so through the supervisor.
+                log.error("Could not read {} to see which node libraries it needs: {}", graph, e.toString());
+            }
         }
-        return GraphDependencyCheck.isOlder(installed.version(), entry.version())
-                ? PluginAction.UPDATE
-                : PluginAction.SKIP;
+        return required;
+    }
+
+    /** Why a requirement was refused, so the log line names the fix rather than just the symptom. */
+    private String explainRefusal(GraphDependencyCheck.RequiredPlugin refused, PluginCatalog catalog) {
+        if (catalog.byId(refused.id()).map(installed -> !installed.enabled()).orElse(false)) {
+            return "it is installed but disabled. Re-enable it with the library window or by editing "
+                    + "config/plugins.json; nothing here re-enables a library on its own.";
+        }
+        if (refused.repository() == null || refused.repository().isBlank()) {
+            return "no repository is recorded for it. Add a plugins[] entry to "
+                    + RepoManifest.FILE_NAME + ", or re-save the graph on a machine that has it installed.";
+        }
+        if (!config.allowPluginInstall()) {
+            return "allowPluginInstall is off in remote.json.";
+        }
+        return "it is not on trustedPluginRepositories in remote.json.";
     }
 
     /** The repositories this deployment tracks, one per configured entry. */

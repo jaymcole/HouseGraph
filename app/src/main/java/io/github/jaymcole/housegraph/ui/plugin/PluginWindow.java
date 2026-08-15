@@ -5,7 +5,6 @@ import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.plugin.GitHubReleases;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
-import io.github.jaymcole.housegraph.plugin.PluginTrust;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -16,13 +15,10 @@ import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
 import javafx.scene.control.SelectionMode;
-import javafx.scene.control.Separator;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextInputDialog;
@@ -70,7 +66,6 @@ public final class PluginWindow {
     private static PluginWindow instance;
 
     private final PluginCatalog catalog;
-    private final PluginTrust trust;
     private final java.util.function.BooleanSupplier tryReloadLibraries;
     private final java.util.function.ToIntFunction<String> liveNodeCount;
     private final Stage stage;
@@ -132,8 +127,6 @@ public final class PluginWindow {
      * Opens the window, or brings it to the front if already open.
      *
      * @param catalog            the installed libraries
-     * @param trust              which repositories may install without asking; the only place it is
-     *                           ever added to is this window's install confirmation
      * @param tryReloadLibraries called on the FX thread after a change that needs the node registry
      *                           and Add-Node menu rebuilt; attempts the rebuild and returns whether
      *                           it actually ran, which is false whenever a node-library node is live
@@ -141,11 +134,10 @@ public final class PluginWindow {
      *                           restart instead
      * @param liveNodeCount      how many nodes from a given library are on the canvas right now
      */
-    public static void show(PluginCatalog catalog, PluginTrust trust,
-                            java.util.function.BooleanSupplier tryReloadLibraries,
+    public static void show(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
                             java.util.function.ToIntFunction<String> liveNodeCount) {
         if (instance == null) {
-            instance = new PluginWindow(catalog, trust, tryReloadLibraries, liveNodeCount);
+            instance = new PluginWindow(catalog, tryReloadLibraries, liveNodeCount);
         }
         instance.open();
     }
@@ -157,19 +149,16 @@ public final class PluginWindow {
      *
      * @param repositoryUrl the repository a save file recorded for a library it needs
      */
-    public static void showAndInstall(PluginCatalog catalog, PluginTrust trust,
-                                      java.util.function.BooleanSupplier tryReloadLibraries,
+    public static void showAndInstall(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
                                       java.util.function.ToIntFunction<String> liveNodeCount,
                                       String repositoryUrl) {
-        show(catalog, trust, tryReloadLibraries, liveNodeCount);
+        show(catalog, tryReloadLibraries, liveNodeCount);
         instance.installFrom(repositoryUrl);
     }
 
-    private PluginWindow(PluginCatalog catalog, PluginTrust trust,
-                         java.util.function.BooleanSupplier tryReloadLibraries,
+    private PluginWindow(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
                          java.util.function.ToIntFunction<String> liveNodeCount) {
         this.catalog = catalog;
-        this.trust = trust;
         this.tryReloadLibraries = tryReloadLibraries;
         this.liveNodeCount = liveNodeCount;
         stage = new Stage();
@@ -218,86 +207,7 @@ public final class PluginWindow {
         // Every action above operates on the full selection (TableView.SelectionMode.MULTIPLE),
         // so ctrl/shift-click for bulk enable/disable, update, or remove.
 
-        Button trusted = new Button("Trusted Repositories…");
-        trusted.setOnAction(e -> showTrustedRepositories());
-
-        return new ToolBar(add, check, update, toggle, remove, new Separator(),
-                buildAutoInstallToggle(), trusted);
-    }
-
-    /**
-     * The master switch for installing without a prompt.
-     *
-     * <p>Turning it <em>on</em> confirms, because it changes what a graph file is able to cause: from
-     * that point a save file naming an already-trusted repository triggers a download with nothing
-     * further asked. Turning it off needs no confirmation — narrowing what may happen never does.
-     */
-    private CheckBox buildAutoInstallToggle() {
-        CheckBox autoInstall = new CheckBox("Auto-install from trusted repositories");
-        autoInstall.setSelected(trust.isAutoInstallEnabled());
-        autoInstall.setOnAction(e -> {
-            if (!autoInstall.isSelected()) {
-                trust.setAutoInstallEnabled(false);
-                status.setText("Auto-install off. Missing libraries will be offered, never installed.");
-                return;
-            }
-            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-            confirm.initOwner(stage);
-            confirm.setTitle("Turn on auto-install");
-            confirm.setHeaderText("Install missing node libraries without asking?");
-            confirm.setContentText("Opening a graph will then download and run node libraries from "
-                    + "repositories you have already marked trusted — including on startup, when the "
-                    + "last graph is reopened.\n\n"
-                    + "Only repositories you tick “Always allow…” for are ever affected; anything else "
-                    + "still asks. A node library runs with the same access as HouseGraph itself, so "
-                    + "keep that list to authors you would run any downloaded program from.");
-            confirm.getDialogPane().setMinWidth(520);
-            if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
-                autoInstall.setSelected(false);
-                return;
-            }
-            trust.setAutoInstallEnabled(true);
-            status.setText(trust.trustedRepositories().isEmpty()
-                    ? "Auto-install on, but no repository is trusted yet — tick “Always allow…” when installing."
-                    : "Auto-install on for " + trust.trustedRepositories().size() + " trusted repository/ies.");
-        });
-        return autoInstall;
-    }
-
-    /**
-     * Lists the trusted repositories and allows withdrawing one. Not optional polish: trust that can
-     * be granted from a dialog but never taken back from the UI would be a bad bargain to offer.
-     */
-    private void showTrustedRepositories() {
-        List<String> trustedNow = trust.trustedRepositories();
-        Dialog<Void> dialog = new Dialog<>();
-        dialog.initOwner(stage);
-        dialog.setTitle("Trusted repositories");
-        dialog.setHeaderText(trustedNow.isEmpty()
-                ? "No repository is trusted yet."
-                : "These repositories install and update without asking, when auto-install is on.");
-
-        ListView<String> list = new ListView<>(FXCollections.observableArrayList(trustedNow));
-        list.setPrefHeight(180);
-
-        Button revoke = new Button("Stop trusting");
-        revoke.setDisable(true);
-        list.getSelectionModel().selectedItemProperty().addListener(
-                (obs, old, selected) -> revoke.setDisable(selected == null));
-        revoke.setOnAction(e -> {
-            String selected = list.getSelectionModel().getSelectedItem();
-            if (selected != null && trust.revoke(selected)) {
-                list.getItems().remove(selected);
-                status.setText("No longer trusting " + selected + ".");
-            }
-        });
-
-        VBox content = new VBox(8, list, revoke);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().setMinWidth(560);
-        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-        dialog.showAndWait();
+        return new ToolBar(add, check, update, toggle, remove);
     }
 
     private TableView<Row> buildTable() {
@@ -447,61 +357,27 @@ public final class PluginWindow {
 
     private void confirmThenInstall(String repositoryUrl, GitHubReleases.Release release,
                                     GitHubReleases.Asset asset) {
-        // "Always allow" has to mean it here too, or the checkbox's wording is a lie: a repository
-        // the user already accepted, with auto-install on, downloads without asking again.
-        if (trust.isTrustedForInstall(repositoryUrl)) {
-            download(repositoryUrl, release, asset, false);
-            return;
-        }
-
         // Trust-on-first-use, stated plainly. This matters most when a save file proposed the
         // repository: that is untrusted input asking to download and execute code, so it must never
         // install silently. And there is no sandbox to fall back on.
-        //
-        // The checkbox below is the ONLY way a repository ever enters PluginTrust. That is what keeps
-        // auto-install honest: the list it consults can only contain repositories the user was shown,
-        // by name and size, and said yes to. Nothing a save file contains can add to it.
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.initOwner(stage);
         confirm.setTitle("Install node library");
         confirm.setHeaderText("Install " + asset.name() + " from " + repositoryUrl + "?");
-
-        Label warning = new Label("Release " + release.tagName() + " — "
+        confirm.setContentText("Release " + release.tagName() + " — "
                 + formatSize(asset.sizeBytes()) + ".\n\n"
                 + "A node library runs with the same access as HouseGraph itself: your files, your "
                 + "network, and your saved secrets. Install it only if you trust its author, exactly "
                 + "as you would any program you downloaded.");
-        warning.setWrapText(true);
-
-        CheckBox alwaysAllow = new CheckBox("Always allow installs and updates from this repository");
-        alwaysAllow.setSelected(trust.isTrustedForInstall(repositoryUrl));
-        VBox content = new VBox(12, warning, alwaysAllow);
-        content.setPadding(new Insets(4, 0, 0, 0));
-        confirm.getDialogPane().setContent(content);
         confirm.getDialogPane().setMinWidth(520);
-
         if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
             status.setText("Install cancelled.");
             return;
         }
-        download(repositoryUrl, release, asset, alwaysAllow.isSelected());
-    }
 
-    /**
-     * Fetches the jar and records the result, once something has decided it may be fetched.
-     *
-     * @param rememberRepository whether to add the repository to {@link PluginTrust} afterwards.
-     *                           Applied only on success: trusting a repository whose jar turned out
-     *                           to be unloadable would be remembering the wrong half of the outcome.
-     */
-    private void download(String repositoryUrl, GitHubReleases.Release release,
-                          GitHubReleases.Asset asset, boolean rememberRepository) {
         runOffThread("Downloading " + asset.name() + "…", () -> {
             PluginInstaller.install(repositoryUrl, release, asset, catalog);
         }, () -> {
-            if (rememberRepository) {
-                trust.trust(repositoryUrl);
-            }
             String id = catalogIdOf(repositoryUrl);
             latestKnown.put(id, release);
             librariesChanged("Installed " + asset.name() + ".", List.of(id));

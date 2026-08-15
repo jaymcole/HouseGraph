@@ -18,17 +18,30 @@ import java.util.Optional;
  * {@code housegraph.json} at the root of a synced graph repository: which graphs to run, and which
  * node libraries they need.
  *
- * <h2>Why a manifest and not just the save files</h2>
- * A save file's {@code plugins} table now records a repository URL (see {@code GraphFileIO}), so in
- * principle the daemon could read its dependencies straight out of the graphs. It deliberately does
- * not. That table describes what a graph <em>was built against</em> on someone else's machine, and
- * {@code docs/architecture/plugins.md} states the rule plainly: a save file is untrusted input
- * proposing a code download, and must never be acted on silently. The manifest is a separate,
- * explicit statement of intent, reviewed in a commit, in a repository the operator named by hand.
+ * <h2>Why a manifest, when the save files also record their dependencies</h2>
+ * {@code RemoteDeployment} reads <b>both</b>. This file used to argue that it must not — that a save
+ * file's {@code plugins} table describes what a graph was built against on someone else's machine,
+ * and so could not be acted on unattended. <b>That reasoning has been withdrawn.</b> It does not
+ * survive contact with how a graph repository is actually used: these save files are commits in a
+ * repository the operator named by hand in {@code remote.json}, sitting beside this very manifest.
+ * Anyone able to add a save file here can already edit this file, or commit a graph that does
+ * anything at all. Requiring the libraries to be restated here as well was ceremony, and it was the
+ * thing stopping a fresh server from coming up with no per-library configuration.
  *
- * <p>The save-file table still earns its keep — it drives the interactive "install and open" offer,
- * where a person is present to confirm. Here, {@link RemoteConfig#isTrustedForInstall} has the final
- * say regardless of what this file asks for.
+ * <p>What the manifest is still for, and why its entries take precedence:
+ * <ul>
+ *   <li><b>A version floor.</b> {@code plugins[].version} is the only place to say "at least this",
+ *       which is what makes an update happen at all. A save file's recorded version is whatever the
+ *       authoring machine had; this one is a statement of intent someone wrote down.</li>
+ *   <li><b>Which graphs run</b>, including {@code enabled: false} to park one.</li>
+ *   <li><b>A repository for a library a save file names bare.</b> A v1 save, or one written before
+ *       the full {@code plugins} row existed, records an id with no URL and cannot be installed from
+ *       on its own.</li>
+ * </ul>
+ *
+ * <p>{@link RemoteConfig#isTrustedForInstall} has the final say regardless of what either source
+ * asks for. The desktop app remains different in kind: it never auto-installs, because a save file
+ * opened there may have arrived from anywhere.
  *
  * <h2>Path safety</h2>
  * {@code graphs[].file} is a repository-relative path from a file fetched over the network, so it is

@@ -2,14 +2,11 @@ package io.github.jaymcole.housegraph;
 
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
-import io.github.jaymcole.housegraph.plugin.AutoInstallPlan;
 import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
 import io.github.jaymcole.housegraph.plugin.PluginLoader;
-import io.github.jaymcole.housegraph.plugin.PluginTrust;
 import io.github.jaymcole.housegraph.ui.plugin.PluginWindow;
-import javafx.concurrent.Task;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Hyperlink;
@@ -90,12 +87,6 @@ public class App extends Application {
     private NodeGraph graph;
     private NodeRegistry nodeRegistry;
     private PluginCatalog pluginCatalog;
-
-    /**
-     * Which repositories may install without asking. Loaded alongside the catalog and read on every
-     * open; both of its gates default to off, so this changes nothing until the user says so.
-     */
-    private PluginTrust pluginTrust;
     private PluginLoader pluginLoader;
     private GraphCanvas canvas;
 
@@ -132,7 +123,6 @@ public class App extends Application {
         // because a loader holds an open handle on its jars and on Windows an open jar can't be
         // deleted.
         pluginCatalog = PluginCatalog.load();
-        pluginTrust = PluginTrust.load();
         PluginInstaller.pruneSupersededVersions(pluginCatalog);
         pluginLoader = PluginLoader.from(pluginCatalog, App.class.getClassLoader());
         // Install as this thread's context loader before anything spawns a thread. start() runs on
@@ -244,7 +234,7 @@ public class App extends Application {
     }
 
     private void openPluginWindow() {
-        PluginWindow.show(pluginCatalog, pluginTrust, this::tryReloadNodeLibraries, canvas::countLiveNodesFrom);
+        PluginWindow.show(pluginCatalog, this::tryReloadNodeLibraries, canvas::countLiveNodesFrom);
     }
 
     @Override
@@ -338,41 +328,24 @@ public class App extends Application {
      * The single path both the Load button and the startup reopen take.
      *
      * <p>Before building anything, the file's root {@code plugins} table is compared against what's
-     * installed — one pass, no class loading. What happens next depends first on the user's trust
-     * settings and then on who asked.
+     * installed — one pass, no class loading. What happens when something is missing depends on who
+     * asked:
      *
-     * <h2>Auto-install, when it has been switched on</h2>
-     * {@link AutoInstallPlan} splits the report into what may be fetched without asking — a library
-     * whose repository the user previously accepted in the install dialog, with
-     * {@link PluginTrust#isAutoInstallEnabled()} on — and what still needs a person. Only the first
-     * half is acted on here; the rest falls through to the behaviour below unchanged. Both gates
-     * default to off, so a fresh install never reaches the network from this method at all.
-     *
-     * <p>Fetching happens on a worker thread, and the canvas is cleared <em>first</em>. That ordering
-     * is not cosmetic: {@code tryReloadNodeLibraries()} refuses to rebuild the shared class loader
-     * while any node-library node is live, so installing while the previous graph is still on screen
-     * would download a jar the loader then declines to pick up — a silent download that changes
-     * nothing, and the graph opens with placeholders anyway. Clearing is safe because this graph is
-     * being replaced regardless.
-     *
-     * <p>An install that fails is logged and the open continues, landing on exactly the outcome that
-     * happens without the feature: placeholders and the toolbar notice. So a machine that is offline
-     * pays the connection timeout and nothing else.
-     *
-     * <h2>What still needs a person</h2>
      * <ul>
      *   <li><b>The user chose the file</b> ({@code interactive}): a dialog listing what's missing,
      *       offering to open anyway or to install from the repository the file recorded. Never
-     *       installs silently — a save file is untrusted input proposing a code download, and the
-     *       trust list above is only ever written from a confirmation the user actually saw.</li>
-     *   <li><b>Startup reopen</b>: never blocks. This runs after {@code stage.show()}, so a modal
-     *       would appear over an already-rendered canvas, and someone reopening the app wants to see
-     *       their graph rather than a prompt. A toolbar notice points at the library window instead.
-     *       <p>Startup reopen <em>may</em> now touch the network, where it previously never did — but
-     *       only for the auto-install half, and only once the user has switched it on. The window is
-     *       already up and the work is off-thread, so a slow or hanging network delays the graph
-     *       appearing, never the app.</li>
+     *       installs silently — a save file is untrusted input proposing a code download.</li>
+     *   <li><b>Startup reopen</b>: never blocks, never touches the network. This runs after
+     *       {@code stage.show()}, so a modal would appear over an already-rendered canvas, and
+     *       someone reopening the app wants to see their graph rather than a network-dependent
+     *       prompt. A toolbar notice points at the library window instead.</li>
      * </ul>
+     *
+     * <p><b>There is deliberately no auto-install here.</b> Installing without asking exists only in
+     * the unattended daemon, where the operator hand-wrote the repository URL the graphs come from
+     * and that naming <em>is</em> the trust decision — see {@code RemoteDeployment} and
+     * {@code docs/architecture/plugins.md}. On the desktop the file may have arrived from anywhere,
+     * so it can propose a code download but never cause one.
      *
      * <p>Opening with missing libraries is safe because their nodes are preserved verbatim (see
      * {@code MissingNode}). Before that fix, "open anyway" would have been a data-loss trap.
@@ -387,74 +360,11 @@ public class App extends Application {
         }
 
         GraphDependencyCheck.DependencyReport report = GraphDependencyCheck.inspect(root, pluginCatalog);
-        AutoInstallPlan plan = AutoInstallPlan.from(report, pluginTrust);
-        if (plan.hasActions()) {
-            autoInstallThenOpen(stage, file, interactive, root, plan);
-            return;
-        }
-        finishOpen(stage, file, interactive, root, plan.needsConfirmation());
-    }
-
-    /**
-     * Clears the canvas, fetches the approved libraries off the FX thread, rebuilds the class loader,
-     * and then opens the graph.
-     *
-     * <p>The dependency report is deliberately recomputed against the updated catalog once the
-     * installs finish, rather than assuming they all worked: whatever is still missing is exactly what
-     * the user should be told about, and re-running the same pure check is cheaper than tracking
-     * partial success by hand.
-     */
-    private void autoInstallThenOpen(Stage stage, File file, boolean interactive,
-                                     JSONObject root, AutoInstallPlan plan) {
-        canvas.clearForLibraryReload();
-        missingLibrariesNotice.setText("Installing node libraries…");
-        missingLibrariesNotice.setVisible(true);
-        missingLibrariesNotice.setManaged(true);
-
-        Task<PluginInstaller.AutoInstallOutcome> task = new Task<>() {
-            @Override
-            protected PluginInstaller.AutoInstallOutcome call() {
-                return PluginInstaller.apply(plan, pluginCatalog);
-            }
-        };
-        task.setOnSucceeded(event -> {
-            PluginInstaller.AutoInstallOutcome outcome = task.getValue();
-            if (outcome.anyInstalled()) {
-                // The canvas was emptied before the fetch precisely so this can't be refused.
-                tryReloadNodeLibraries();
-            }
-            if (!outcome.failed().isEmpty()) {
-                log.warn("Some node libraries could not be installed automatically: {}",
-                        String.join(", ", outcome.failed()));
-            }
-            finishOpen(stage, file, interactive, root,
-                    GraphDependencyCheck.inspect(root, pluginCatalog).blocking());
-        });
-        task.setOnFailed(event -> {
-            log.error("Auto-installing node libraries failed", task.getException());
-            finishOpen(stage, file, interactive, root,
-                    GraphDependencyCheck.inspect(root, pluginCatalog).blocking());
-        });
-        Thread worker = new Thread(task, "housegraph-auto-install");
-        worker.setDaemon(true);
-        worker.start();
-    }
-
-    /**
-     * Prompts about anything still unresolved, then builds the graph. Always runs on the FX thread —
-     * either directly from {@link #openGraph} or from a {@code Task}'s success handler, which JavaFX
-     * dispatches there.
-     *
-     * @param root         the already-parsed save file
-     * @param stillMissing libraries the auto-install couldn't or wouldn't handle
-     */
-    private void finishOpen(Stage stage, File file, boolean interactive, JSONObject root,
-                            List<GraphDependencyCheck.RequiredPlugin> stillMissing) {
-        if (!stillMissing.isEmpty()) {
-            if (interactive && !confirmOpenWithMissingLibraries(stage, stillMissing)) {
+        if (!report.isSatisfied()) {
+            if (interactive && !confirmOpenWithMissingLibraries(stage, report.blocking())) {
                 return;
             }
-            showMissingLibrariesNotice(stillMissing);
+            showMissingLibrariesNotice(report.blocking());
         } else {
             missingLibrariesNotice.setVisible(false);
             missingLibrariesNotice.setManaged(false);
@@ -516,7 +426,7 @@ public class App extends Application {
             blocking.stream()
                     .filter(GraphDependencyCheck.RequiredPlugin::isInstallable)
                     .map(GraphDependencyCheck.RequiredPlugin::repository)
-                    .forEach(repository -> PluginWindow.showAndInstall(pluginCatalog, pluginTrust,
+                    .forEach(repository -> PluginWindow.showAndInstall(pluginCatalog,
                             this::tryReloadNodeLibraries, canvas::countLiveNodesFrom, repository));
         }
         return true;

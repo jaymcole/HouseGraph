@@ -73,7 +73,7 @@ class RemoteConfigTest {
     }
 
     @Test
-    void installsAreRefusedUnlessBothGatesAreOpen() {
+    void allowPluginInstallIsTheDecisionAndDefaultsOff() {
         String url = "https://github.com/jaymcole/housegraph-nodes";
 
         RemoteConfig listedButNotAllowed = RemoteConfig.fromJson(new JSONObject("""
@@ -82,10 +82,24 @@ class RemoteConfigTest {
         assertFalse(listedButNotAllowed.isTrustedForInstall(url),
                 "allowPluginInstall defaults off, and an allowlist alone must not open the door");
 
-        RemoteConfig allowedButNotListed = RemoteConfig.fromJson(
-                new JSONObject("{ \"allowPluginInstall\": true }"));
-        assertFalse(allowedButNotListed.isTrustedForInstall(url),
-                "an empty allowlist allows nothing — an allowlist that guesses is not an allowlist");
+        RemoteConfig off = RemoteConfig.fromJson(new JSONObject("{ \"allowPluginInstall\": false }"));
+        assertFalse(off.isTrustedForInstall(url));
+    }
+
+    @Test
+    void anEmptyAllowlistNarrowsNothingRatherThanRefusingEverything() {
+        // A deliberate reversal of the original meaning. The operator already named the graph
+        // repository by hand in this same file, and that naming is the trust decision; requiring
+        // them to also enumerate every node library was ceremony, not a boundary. The list is now an
+        // optional narrowing, and RemoteConfig.load warns when it is left empty.
+        RemoteConfig config = RemoteConfig.fromJson(new JSONObject("{ \"allowPluginInstall\": true }"));
+
+        assertTrue(config.isTrustedForInstall("https://github.com/jaymcole/housegraph-nodes"));
+        assertTrue(config.isTrustedForInstall("https://github.com/anyone/anything"));
+        // Still not a licence to fetch from anywhere: GitHubReleases.ALLOWED_HOSTS bounds the hosts,
+        // and a blank URL is never a wildcard.
+        assertFalse(config.isTrustedForInstall(""));
+        assertFalse(config.isTrustedForInstall(null));
     }
 
     @Test

@@ -4,22 +4,22 @@ import java.util.Collection;
 import java.util.Locale;
 
 /**
- * Compares repository URLs for the two allowlists that decide whether code may be downloaded without
- * a human present: the daemon's {@code trustedPluginRepositories} and the desktop's
- * {@link PluginTrust}.
+ * Compares repository URLs for {@code RemoteConfig.trustedPluginRepositories}, the operator's
+ * optional narrowing of what an unattended machine may install from.
  *
- * <h2>Why this is shared rather than written twice</h2>
- * Both allowlists answer the same question — "is this URL one the operator already accepted?" — and
- * both must answer it the <em>same</em> way. Two independent implementations would drift on the
- * details that matter here: a trailing slash, a {@code .git} suffix, or a difference in case would
- * silently turn an accepted repository into an unrecognised one, and the symptom is a library that
- * quietly fails to install with a log line the user has no reason to connect to a typo. This lived
- * as a private method in {@code RemoteConfig} until the desktop needed the same rule.
+ * <h2>Why this is its own class</h2>
+ * The comparison has to survive the ways the same GitHub repository is routinely written down. A
+ * trailing slash, a {@code .git} suffix or a difference in case would otherwise turn an accepted
+ * repository into an unrecognised one, and the symptom — a library that quietly fails to install —
+ * is one an operator has no reason to connect to a typo in a URL. Keeping the rule in one tested
+ * place, rather than inline in {@code RemoteConfig}, is what makes that behaviour pinned rather than
+ * incidental; the regex here already had to be corrected once, because the two sequential patterns
+ * it grew from could not strip a {@code .git} that was followed by a slash.
  *
  * <p><b>Normalisation is for recognition, not for security.</b> It decides whether two spellings name
- * the repository the user already said yes to. What may be <em>fetched</em> is a separate and
- * stricter question, answered by {@link GitHubReleases#isAllowed}, which is re-checked at download
- * time. Neither replaces the other: a trusted URL is still refused if it does not point at GitHub.
+ * the repository the operator already listed. What may be <em>fetched</em> is a separate and stricter
+ * question, answered by {@link GitHubReleases#isAllowed} and re-checked at download time. Neither
+ * replaces the other: a listed URL is still refused if it does not point at GitHub.
  */
 public final class RepositoryUrls {
 

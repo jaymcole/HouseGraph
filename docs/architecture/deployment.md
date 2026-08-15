@@ -49,11 +49,18 @@ untrusted input proposing a code download, and must never be acted on silently**
 and a repository fetched over the network is no different. A graph repository can
 *ask* for a node library; it cannot widen the set of places one may come from.
 
-Auto-install is gated twice:
+Auto-install is gated by `allowPluginInstall`, **false** unless the operator turns it
+on. `trustedPluginRepositories` is an *optional* narrowing on top: list repositories
+and only those may be installed from; leave it empty and it narrows nothing.
 
-- `allowPluginInstall` is **false** unless the operator turns it on, and
-- even then, a library is installed only if its repository appears in
-  `trustedPluginRepositories`.
+**Empty once meant "nothing" and now means "no narrowing"** — a deliberate reversal.
+The operator already named the graph repository by hand in this same file, and that
+naming is the trust decision; anyone able to commit there can make the daemon run
+arbitrary graphs regardless, so enumerating every node library as well was ceremony
+rather than a boundary. It was also the thing stopping a fresh server from coming up
+with no per-library configuration. `RemoteConfig.load` warns when installs are on with
+an empty list, and `doctor` says so plainly, and `GitHubReleases.ALLOWED_HOSTS` still
+bounds every fetch to GitHub.
 
 A graph needing something outside that set still runs. Its nodes load as
 `MissingNode` placeholders — already safe, already lossless — and the log says
@@ -103,6 +110,11 @@ a wrong token fails instead of blocking forever on a prompt nobody will answer.
 A repository with no manifest runs nothing, and says so. `enabled: false` parks a
 graph in the repository without running it.
 
+**`plugins[]` is optional.** A library a save file names with a repository URL is
+installed without being listed here at all — that is the point of reading both sources.
+List one when you want a version floor, or when a graph names a library bare (a v1 save
+records an id with no URL).
+
 **`plugins[].version` means "at least this".** When the installed library is behind
 it, the daemon updates to the repository's *latest* release — latest rather than that
 exact version, because `GitHubReleases` has no fetch-by-tag and the newest release
@@ -115,8 +127,6 @@ Bumping the version is therefore how a remote machine gets a newer library — c
 the bump, push, and the next poll installs it and restarts the graphs from that
 repository. Before this, the field was parsed and read by nobody: a library installed
 once could only be moved forward by SSHing in and running `plugins update` by hand.
-`RemoteDeployment.decide` is that install/update/skip choice, split out so it is
-testable without a network or a clone.
 
 **`graphs[].file` is checked for containment.** It is a path from a file fetched
 over the network, so it is resolved and then verified to still be inside the clone;
@@ -124,18 +134,30 @@ over the network, so it is resolved and then verified to still be inside the clo
 manifest could have the daemon load and execute a graph from anywhere on the disk —
 and a graph's nodes run with the user's full privileges.
 
-### Why a manifest, when save files now record their dependencies
+### Why a manifest, when the save files also record their dependencies
 
-`GraphFileIO` writes a `plugins` table carrying each library's repository URL, so
-the daemon *could* read its dependencies straight out of the graphs. It
-deliberately does not. That table describes what a graph was built against on
-someone else's machine; the manifest is an explicit statement of intent, reviewed
-in a commit, in a repository the operator named by hand. The save-file table still
-earns its keep — it drives the "install and open" offer in the app, where either a
-person is present to confirm or the repository is one they previously accepted (see
-[plugins.md](plugins.md#auto-install--two-gates-off-by-default)). That desktop trust
-store is a separate file from this one and does not affect the daemon: `remote.json`
-remains the only thing that decides what an unattended machine may fetch.
+`RemoteDeployment` reads **both**, manifest first. This used to be a refusal — the
+argument being that a save file's `plugins` table describes what a graph was built
+against on someone else's machine, and so could not be acted on unattended. **That
+argument has been withdrawn.** These save files are commits in a repository the
+operator named by hand in `remote.json`, sitting beside the manifest they were being
+contrasted with; anyone who can add one can already edit the manifest. Requiring the
+libraries to be restated was what stopped a fresh server working with no per-library
+configuration.
+
+The manifest still earns its keep, and its entries take precedence
+(`GraphDependencyCheck.classify` keeps the first per id):
+
+- **A version floor.** `plugins[].version` is the only place to say "at least this",
+  which is what makes an update happen. A save file's version is whatever the
+  authoring machine had; this one is intent someone wrote down.
+- **Which graphs run**, including `enabled: false`.
+- **A repository for a library a save file names bare** — a v1 save records an id
+  with no URL and cannot be installed from on its own.
+
+The desktop app is unchanged and still never auto-installs: a save file opened there
+may have arrived from anywhere. See
+[plugins.md](plugins.md#auto-install-is-a-daemon-only-feature).
 
 ## The sync
 
@@ -296,7 +318,6 @@ out there:
 | `housegraph daemon [--once]` | sync loop plus supervision |
 | `housegraph sync [--force]` | pull now and report; starts nothing |
 | `housegraph plugins list \| install <url> \| update [id...]` | node libraries from the terminal |
-| `housegraph plugins trust list \| add <url> \| remove <url> \| on \| off` | the app's auto-install trust store, for a machine with no window |
 | `housegraph check <graph.json>` | dependency report; non-zero when something is missing |
 | `housegraph doctor` | is this machine ready? |
 

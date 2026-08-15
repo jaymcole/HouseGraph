@@ -222,6 +222,7 @@ Create `remote.json`:
 | `repositories[].branch` | which branch to follow — a `deploy` branch is a nice way to separate "written" from "live". |
 | `repositories[].tokenSecret` | only for HTTPS: the name of the key in your secrets store holding the token. |
 | `allowPluginInstall` | whether the server may install node libraries by itself. Off by default. See the next step. |
+| `trustedPluginRepositories` | optional. Leave it empty and any GitHub repository your graphs name may be used; list repositories to narrow it to those. |
 
 ---
 
@@ -231,20 +232,55 @@ If your graphs use anything beyond the built-in nodes — cameras, Discord, the 
 server — the server needs those libraries too. Otherwise those nodes load as
 placeholders: the graph still opens and nothing is lost, but those nodes don't run.
 
-**Recommended: install them yourself, once.**
+**Recommended: let the server install them.** Set one key in `remote.json`:
+
+```jsonc
+{
+  "allowPluginInstall": true
+}
+```
+
+That's the whole configuration. On each sync the server reads the save files it's about
+to run, sees which libraries they were built against and where they came from, and
+installs what's missing before starting them.
+
+Why one key is enough: **you already named the graph repository by hand in this file.**
+The save files in it are your commits, in your repository. Anyone who could put a
+malicious plugin URL in one could equally commit a graph that does anything at all — so
+listing every library separately was ceremony, not a boundary. Fetching is still limited
+to GitHub, and nothing is installed if `allowPluginInstall` is off.
+
+**This applies only to the server.** The desktop app never installs on its own, no matter
+what a graph asks for — a graph file you were sent can propose a download but never cause
+one.
+
+**Optional: narrow it.** If you'd rather bound which repositories the server may fetch
+from, list them:
+
+```jsonc
+{
+  "allowPluginInstall": true,
+  "trustedPluginRepositories": ["https://github.com/jaymcole/housegraph-nodes"]
+}
+```
+
+With that list non-empty, anything not on it is refused with a line in the log saying so
+and how to fix it.
+
+**Optional: install them yourself instead**, and leave `allowPluginInstall` off:
 
 ```bash
 housegraph plugins install https://github.com/jaymcole/housegraph-nodes
-housegraph plugins list
 ```
-
-Check a graph has everything it needs before deploying it:
 
 ```bash
 housegraph check ~/some/porch-light.json
 ```
 
-**Optional: let the repository install them.** Declare them in `housegraph.json`:
+### Keeping libraries up to date
+
+Automatic installs cover getting a library *there*; a `plugins[]` entry in
+`housegraph.json` is how you move one *forward*:
 
 ```jsonc
 {
@@ -258,32 +294,22 @@ housegraph check ~/some/porch-light.json
 }
 ```
 
-…and open **both** gates in `remote.json`:
-
-```jsonc
-{
-  "allowPluginInstall": true,
-  "trustedPluginRepositories": ["https://github.com/jaymcole/housegraph-nodes"]
-}
-```
-
-Both are required, and a repository not on the list is refused with a line in the log.
-This is deliberate: **a node library is arbitrary code running with your full
-privileges**, so nothing gets installed unattended unless you named the source by hand
-in a file on your own machine.
-
-### Keeping libraries up to date
-
 `version` means **"at least this"**. When the installed library is behind it, the server
 updates to the repository's latest release on the next poll and restarts the graphs from
-that repository. So bumping the number in `housegraph.json` and pushing is how you roll a
-new library out — you don't have to SSH in and run `plugins update`.
+that repository. So bumping the number and pushing is how you roll a new library out —
+you don't have to SSH in and run `plugins update`.
 
-Leave `version` out and the library is installed once and never moved again, which is
+Leave the entry out and the library is installed once and never moved again, which is
 what you want if you'd rather do updates by hand. A version string the comparison can't
 read as numbers (`nightly`, say) is treated the same way: no update, rather than a guess.
 
 `housegraph doctor` prints which gates are open and what's installed.
+
+> **Upgrading from an earlier build?** An empty `trustedPluginRepositories` used to mean
+> "refuse everything"; it now means "don't narrow". If you have `allowPluginInstall: true`
+> with an empty list, the server previously installed nothing and will now install what
+> your graphs name. The startup log says so; add the list back if you want the old
+> behaviour.
 
 ---
 
@@ -407,7 +433,6 @@ Run `housegraph doctor` for the data directory; underneath it:
 | `config/remote.json` | your configuration |
 | `config/remote-state.json` | the last commit deployed, so a reboot isn't treated as a change |
 | `config/plugins.json` | installed node libraries |
-| `config/plugin-trust.json` | the app's auto-install switch and trusted repositories (unused by the daemon, which reads `remote.json` instead) |
 | `remotes/<owner>-<repo>/` | the local mirror of each graphs repository |
 | `logs/housegraph.log` | everything the daemon and its graphs logged |
 | `secrets/` | the encrypted secrets store |
