@@ -143,11 +143,10 @@ What is worth building anyway, in value order:
 
 1. **Explicit install confirmation per repository**, naming owner/repo/asset/size.
    This matters most for the load-time dependency check, where an *untrusted save
-   file* proposes a code download via its recorded repository URL. Never
-   auto-install from a save file. *(built — `PluginWindow.confirmThenInstall` shows
-   repository, asset, release and size before anything is fetched. The
-   trust-on-first-use half, remembering a repository the user already accepted, is
-   **not** built: every install is confirmed afresh.)*
+   file* proposes a code download via its recorded repository URL. *(built —
+   `PluginWindow.confirmThenInstall` shows repository, asset, release and size before
+   anything is fetched. The trust-on-first-use half is now built too: see
+   [Auto-install](#auto-install--two-gates-off-by-default) below.)*
 2. **Restrict fetch origins** to `github.com`, `api.github.com`,
    `objects.githubusercontent.com`. *(built — `GitHubReleases.ALLOWED_HOSTS`,
    re-checked in `PluginInstaller.download` so neither a lookup nor a download can
@@ -170,6 +169,54 @@ not a design — but until it exists, do not describe the cached jars as verifie
 local secrecy is already "casual inspection" grade. Node libraries do not worsen the
 local-attacker story; they create a *remote exfiltration* story that did not exist
 before.
+
+## Auto-install — two gates, off by default
+
+Opening a graph whose libraries are missing used to ask every time, even for a
+repository the user had accepted a dozen times. It now doesn't have to — but the
+mechanism is deliberately *not* a single "auto-install missing libraries" switch. Such
+a switch would let any save file nominate any repository and have code fetched and run
+with the user's full privileges, which is a much larger blast radius than the
+convenience is worth.
+
+Instead the desktop copies the shape the daemon already had, in `plugin/PluginTrust`
+over `config/plugin-trust.json`:
+
+| Gate | What it is | Default |
+| --- | --- | --- |
+| `autoInstall` | The master switch, in the library window's toolbar | **off** |
+| `trustedRepositories` | Repositories the user explicitly accepted | **empty** |
+
+`PluginTrust.isTrustedForInstall` requires both, mirroring
+`RemoteConfig.isTrustedForInstall` in name and meaning. `plugin/RepositoryUrls` holds
+the URL comparison both use, so the two allowlists cannot drift on what counts as the
+same repository — a `.git` suffix or a trailing slash silently un-trusting a repository
+is exactly the kind of bug two copies would produce.
+
+**The only writer of the trust list is a confirmation the user saw.** The checkbox in
+`PluginWindow.confirmThenInstall` ("Always allow installs and updates from this
+repository") is the single call site of `PluginTrust.trust`, and it fires only after the
+install succeeded. There is no path from a save file's `plugins` table to a new trusted
+repository — a graph can only ever *use* trust that was granted elsewhere. The CLI's
+`plugins trust add` is the headless equivalent, and typing it is the same explicit act.
+
+`plugin/AutoInstallPlan` is the decision, as a pure function of a `DependencyReport` and
+a `PluginTrust`: missing-and-trusted becomes an `INSTALL`, older-than-saved-and-trusted
+becomes an `UPDATE`, and everything else falls through to the confirmation path exactly
+as before. Two things it never does silently:
+
+- **A disabled library is never re-enabled.** Disabling one is an explicit decision in
+  the library window, and a graph asking for it must not overturn that.
+- **Trust does not override the host allowlist.** `RequiredPlugin.isInstallable()` still
+  has to pass, so a trusted repository that isn't on GitHub is refused anyway.
+
+With `autoInstall` off, `AutoInstallPlan.from` returns no actions and routes the whole
+report to the user — the same code path, an empty answer. That is the property worth
+keeping: the feature being off is not a second branch that can rot.
+
+An **update** always goes to the repository's *latest* release. There is no fetch-by-tag
+in `GitHubReleases` and none is needed: a recorded version reads as "at least this", and
+the newest release satisfies it.
 
 ## Node discovery across libraries — done
 
@@ -207,8 +254,11 @@ way to test JavaFX windows, so nothing worth testing may live in one.
 | --- | --- |
 | `PluginManifest` | Reads `META-INF/housegraph-plugin.json` **without loading a class**. A `ServiceLoader` provider would have been typed and matches the repo's existing precedent, but reading it means loading and linking a class — and the most important job this metadata has is explaining why a library *couldn't* be loaded. Metadata must be readable from a jar you've decided not to trust. |
 | `PluginCatalog` | What's installed → `config/plugins.json`, written atomically. Its own file because `AppPreferences` is string-values-only. |
+| `PluginTrust` | Which repositories may install without asking → `config/plugin-trust.json`. Separate from the catalog: that file records what *is* installed, this one what *may* be. |
+| `RepositoryUrls` | The URL comparison shared by `PluginTrust` and `RemoteConfig`, so the two allowlists agree on what "the same repository" means. |
+| `AutoInstallPlan` | The pure install/update/ask decision, given a `DependencyReport` and a `PluginTrust`. |
 | `GitHubReleases` | Latest-release lookup and asset selection, restricted to GitHub hosts. |
-| `PluginInstaller` | Download, validate, SHA-256, record; prunes superseded versions at startup. |
+| `PluginInstaller` | Download, validate, SHA-256, record; prunes superseded versions at startup. `install(url, pluginId, catalog)` is the headless monorepo-safe entry point, and `apply(plan, catalog)` runs an approved `AutoInstallPlan`. |
 | `PluginLoader` | One shared **parent-first** `URLClassLoader`, plus the `ScanRoot`s. |
 
 **Parent-first is load-bearing, not a style choice.** SLF4J 2 binds once, via
@@ -225,9 +275,16 @@ shading, owner identity by the scan-time map.
 SLF4J provider. Not security — see below — just turning three baffling runtime symptoms
 into one clear message.
 
-**Startup makes no network call.** The loader reads only the local catalog and cached
-jars. Everything network-shaped is user-initiated. A library whose jar has gone missing
-is skipped with a warning; its nodes become placeholders and the graph still opens.
+**Startup loads no library over the network.** The loader reads only the local catalog
+and cached jars. A library whose jar has gone missing is skipped with a warning; its
+nodes become placeholders and the graph still opens.
+
+The one thing that can now reach the network at startup is the auto-install of a
+*missing* library during the startup reopen — and only once the user has switched
+`autoInstall` on and trusted the repository. It runs off the FX thread after
+`stage.show()`, so the window is already up; a slow or hanging network delays the graph
+appearing, never the app. With the feature off (the default) the old guarantee holds
+unchanged: the app opens the same offline as on.
 
 **Rate limits shape `GitHubReleases`:** unauthenticated `api.github.com` allows 60
 requests/hour/IP. So updates are never checked automatically — every lookup is a user
@@ -253,29 +310,38 @@ asset naming.
 
 `GraphDependencyCheck.inspect` compares the save file's root `plugins` table against the
 catalog in one pure pass, before any node is built or any class is loaded. `App` collapses
-both load paths into `openGraph(file, interactive)`, and what happens next depends on who
-asked:
+both load paths into `openGraph(file, interactive)`. That report is then split by
+`AutoInstallPlan.from` into what may be fetched without asking and what still needs a
+person; only the second half reaches the behaviour below.
 
 - **The user chose the file** — a dialog listing what's missing, offering *Open anyway*
   (default) or *Install and open*. Opening anyway is safe precisely because of
   `MissingNode`; before that fix it would have been a data-loss trap.
-- **Startup reopen** — never blocks and never touches the network. It runs after
-  `stage.show()`, so a modal would appear over an already-rendered canvas, and someone
-  reopening the app wants to see their graph rather than a network-dependent prompt. A
-  toolbar notice links to the library window instead.
+- **Startup reopen** — never blocks. It runs after `stage.show()`, so a modal would appear
+  over an already-rendered canvas, and someone reopening the app wants to see their graph
+  rather than a prompt. A toolbar notice links to the library window instead.
 
-An install offered from a save file still goes through the same per-repository
-confirmation as any other: a save file is untrusted input proposing a code download, so it
-never installs silently.
+An install *offered* from a save file still goes through the same per-repository
+confirmation as any other. What auto-install changes is only that a repository the user
+already accepted, with the master switch on, does not have to be accepted again.
+
+**Clearing the canvas before an auto-install is load-bearing, not tidiness.**
+`App.tryReloadNodeLibraries()` refuses to rebuild the shared class loader while
+`GraphCanvas.hasLiveLibraryNodes()`. On an interactive Load with a graph already open that
+is true — so installing first and clearing second would download a jar the loader then
+declines to pick up, and the graph would open with placeholders anyway. `App.openGraph`
+therefore calls `GraphCanvas.clearForLibraryReload()` before the fetch, which is safe
+because the canvas is about to be replaced regardless. An install that fails is logged and
+the open continues, landing on exactly the outcome that happens without the feature.
 
 **Unattended, there is nobody to confirm.** The daemon in [deployment.md](deployment.md)
-therefore does not read dependencies from save files at all. It installs only what a
-repository's `housegraph.json` manifest declares, and only when the operator has both set
-`allowPluginInstall` and listed that repository in `trustedPluginRepositories` in their own
-`config/remote.json`. A library outside that set is skipped with a log line and its nodes
-load as placeholders — the same safe outcome as opening a graph without its library. The
-rule is unchanged, just enforced differently: the human decision moves from a dialog to a
-file they wrote by hand.
+therefore does not read dependencies from save files at all. It installs — and now
+updates — only what a repository's `housegraph.json` manifest declares, and only when the
+operator has both set `allowPluginInstall` and listed that repository in
+`trustedPluginRepositories` in their own `config/remote.json`. A library outside that set
+is skipped with a log line and its nodes load as placeholders — the same safe outcome as
+opening a graph without its library. The rule is unchanged, just enforced differently: the
+human decision moves from a dialog to a file they wrote by hand.
 
 A library installed at an *older* version than the graph was saved against is reported but
 does not block — its nodes still resolve, they may just lack a newer feature.
@@ -291,6 +357,18 @@ under v2 fixes it permanently.
 unowned, singleton, toggle-to-front. Installing is long and network-bound, and the user
 should be able to watch the canvas and log window while it runs — a modal forbids exactly
 that. It's a deliberately thin shell; everything worth testing lives in `plugin/`.
+
+Two controls sit apart from the per-selection actions, because they are policy rather than
+per-library operations: the **Auto-install from trusted repositories** checkbox (which
+confirms when switched on, since it widens what a graph file can cause, and not when
+switched off) and **Trusted Repositories…**, which lists what has been accepted and lets
+it be withdrawn. Revocation is not optional polish — trust that can be granted from a
+dialog but never taken back from the UI would be a bad bargain to offer.
+
+For the same reason the install confirmation's checkbox says "installs **and updates**",
+`confirmThenInstall` skips its own dialog for an already-trusted repository. Otherwise the
+window's Update button would keep asking about exactly the repositories the user marked as
+never needing to be asked about.
 
 The table supports multi-selection. Update, Enable/Disable, and Remove all act on the whole
 selection at once — each still goes through the same per-library gate (an install
@@ -393,6 +471,11 @@ Nothing on the node-extraction front — all five built-in integration categorie
 out-of-tree. Future work here is host-side hardening: per-plugin secret ACLs beyond
 the `sdk.Secrets` seam described in [Security](#security--the-honest-threat-model)
 above, and revisiting that seam now that several plugins exist to use it.
+
+Item 3 of the security list — verifying a cached jar's recorded SHA-256 on load — remains
+the honest gap, and auto-install raises its stakes: a jar that arrives without a person
+watching is one more reason for `PluginLoader` to call
+`PluginInstaller.matchesRecordedHash` rather than loading whatever is on disk.
 
 ---
 

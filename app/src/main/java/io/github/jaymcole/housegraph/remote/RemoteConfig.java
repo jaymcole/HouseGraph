@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.remote;
 
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.plugin.RepositoryUrls;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -190,22 +191,17 @@ public final class RemoteConfig {
     /**
      * Whether a node library may be installed from {@code repositoryUrl} without a human present.
      *
-     * <p>Compared after normalising away a trailing {@code .git} and case, so the operator writing
-     * the URL the way GitHub displays it still matches a manifest that wrote it the way git clones
-     * it. Anything not matched is refused — an allowlist that guesses is not an allowlist.
+     * <p>Compared through {@link RepositoryUrls}, which normalises away a trailing {@code .git}, a
+     * trailing slash and case, so the operator writing the URL the way GitHub displays it still
+     * matches a manifest that wrote it the way git clones it. Anything not matched is refused — an
+     * allowlist that guesses is not an allowlist. That comparison is shared with the desktop's
+     * {@code PluginTrust} precisely so the two allowlists cannot drift apart on what counts as the
+     * same repository.
      *
      * @param repositoryUrl the repository a manifest asked to install from
      * @return true when installing from it is permitted
      */
     public boolean isTrustedForInstall(String repositoryUrl) {
-        if (!allowPluginInstall || repositoryUrl == null || repositoryUrl.isBlank()) {
-            return false;
-        }
-        String candidate = normalise(repositoryUrl);
-        return trustedPluginRepositories.stream().anyMatch(trusted -> normalise(trusted).equals(candidate));
-    }
-
-    private static String normalise(String url) {
-        return url.trim().toLowerCase(Locale.ROOT).replaceAll("\\.git$", "").replaceAll("/+$", "");
+        return allowPluginInstall && RepositoryUrls.matches(trustedPluginRepositories, repositoryUrl);
     }
 }

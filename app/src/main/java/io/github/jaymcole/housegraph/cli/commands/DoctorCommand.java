@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.cli.commands;
 import io.github.jaymcole.housegraph.cli.Args;
 import io.github.jaymcole.housegraph.cli.Command;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
+import io.github.jaymcole.housegraph.plugin.PluginTrust;
 import io.github.jaymcole.housegraph.remote.GitCommand;
 import io.github.jaymcole.housegraph.remote.GraphProcess;
 import io.github.jaymcole.housegraph.remote.RemoteConfig;
@@ -73,9 +74,17 @@ public final class DoctorCommand implements Command {
             out.println("Poll interval:   " + config.pollSeconds() + "s");
         }
 
-        out.println("Plugin installs: " + (config.allowPluginInstall()
+        // Two independent trust models, printed together because "why didn't it install?" is the
+        // question this command exists to answer, and the answer is in whichever one applies.
+        out.println("Daemon installs: " + (config.allowPluginInstall()
                 ? "allowed from " + config.trustedPluginRepositories().size() + " trusted repository/ies"
                 : "off (manifests can't install libraries)"));
+
+        PluginTrust trust = PluginTrust.load();
+        out.println("App auto-install: " + (trust.isAutoInstallEnabled()
+                ? "on, for " + trust.trustedRepositories().size() + " trusted repository/ies"
+                : "off (opening a graph never installs on its own)"));
+        trust.trustedRepositories().forEach(url -> out.println("                  " + url));
 
         PluginCatalog catalog = PluginCatalog.load();
         out.println("Node libraries:  " + catalog.all().size() + " installed, "

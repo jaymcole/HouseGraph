@@ -272,6 +272,19 @@ This is deliberate: **a node library is arbitrary code running with your full
 privileges**, so nothing gets installed unattended unless you named the source by hand
 in a file on your own machine.
 
+### Keeping libraries up to date
+
+`version` means **"at least this"**. When the installed library is behind it, the server
+updates to the repository's latest release on the next poll and restarts the graphs from
+that repository. So bumping the number in `housegraph.json` and pushing is how you roll a
+new library out — you don't have to SSH in and run `plugins update`.
+
+Leave `version` out and the library is installed once and never moved again, which is
+what you want if you'd rather do updates by hand. A version string the comparison can't
+read as numbers (`nightly`, say) is treated the same way: no update, rather than a guess.
+
+`housegraph doctor` prints which gates are open and what's installed.
+
 ---
 
 ## 7. Test it before automating it
@@ -394,6 +407,7 @@ Run `housegraph doctor` for the data directory; underneath it:
 | `config/remote.json` | your configuration |
 | `config/remote-state.json` | the last commit deployed, so a reboot isn't treated as a change |
 | `config/plugins.json` | installed node libraries |
+| `config/plugin-trust.json` | the app's auto-install switch and trusted repositories (unused by the daemon, which reads `remote.json` instead) |
 | `remotes/<owner>-<repo>/` | the local mirror of each graphs repository |
 | `logs/housegraph.log` | everything the daemon and its graphs logged |
 | `secrets/` | the encrypted secrets store |

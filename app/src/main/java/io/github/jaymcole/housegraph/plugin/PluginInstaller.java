@@ -81,6 +81,33 @@ public final class PluginInstaller {
     }
 
     /**
+     * Downloads and installs one <em>named</em> library from a repository's latest release, which is
+     * also how an update is performed: the newest release is fetched and recorded over the old entry.
+     *
+     * <p>This exists because {@link #install(String, PluginCatalog)} refuses a release carrying
+     * several libraries, and every first-party release does — {@code housegraph-nodes} is a monorepo
+     * that attaches a jar per library. Naming the wanted id resolves that without a human choosing,
+     * which is what lets an unattended daemon and an auto-install both work against a monorepo.
+     * {@code PluginWindow} had the same logic buried in a JavaFX class where nothing headless could
+     * reach it.
+     *
+     * @param repositoryUrl  the library's GitHub repository
+     * @param wantedPluginId which library to take when the release publishes several
+     * @param catalog        updated in place and saved on success
+     * @return the installed entry
+     * @throws InstallException when the latest release carries no jar for {@code wantedPluginId}
+     */
+    public static PluginCatalog.Installed install(String repositoryUrl, String wantedPluginId, PluginCatalog catalog)
+            throws IOException, InterruptedException {
+        GitHubReleases.Release release = GitHubReleases.latest(repositoryUrl, null)
+                .orElseThrow(() -> new InstallException("No release information returned for " + repositoryUrl));
+        GitHubReleases.Asset asset = release.assetFor(wantedPluginId)
+                .orElseThrow(() -> new InstallException("Release " + release.tagName() + " of " + repositoryUrl
+                        + " has no jar for \"" + wantedPluginId + "\"."));
+        return install(repositoryUrl, release, asset, catalog);
+    }
+
+    /**
      * Installs one library from an already-resolved release, so a caller that showed a confirmation
      * can reuse it — and so a repository publishing several libraries installs the chosen one rather
      * than whichever happened to be listed first.
@@ -126,6 +153,61 @@ public final class PluginInstaller {
         } finally {
             Files.deleteIfExists(staged);
         }
+    }
+
+    /**
+     * What came of running an {@link AutoInstallPlan}.
+     *
+     * @param installed ids that were fetched successfully, in the order they were done
+     * @param failed    ids that could not be fetched, each with the reason, for one summary log line
+     */
+    public record AutoInstallOutcome(List<String> installed, List<String> failed) {
+
+        public AutoInstallOutcome {
+            installed = List.copyOf(installed);
+            failed = List.copyOf(failed);
+        }
+
+        public boolean anyInstalled() {
+            return !installed.isEmpty();
+        }
+    }
+
+    /**
+     * Carries out a plan the user's trust settings already approved, one library at a time.
+     *
+     * <p><b>Never call this on a UI thread.</b> Each action is a network fetch of an arbitrarily large
+     * jar; the caller is expected to be on a worker.
+     *
+     * <p>A failure is collected rather than thrown. The caller's next move is to open the graph
+     * regardless — a library that could not be fetched simply leaves its nodes as placeholders, which
+     * is already safe and already what happens without this feature — so one library being
+     * unreachable must not abandon the others or the open itself. An interrupt is the exception: it
+     * means the app is going away, so the loop stops immediately with what it has.
+     *
+     * @param plan    the approved actions
+     * @param catalog updated and saved as each install completes
+     * @return what succeeded and what did not
+     */
+    public static AutoInstallOutcome apply(AutoInstallPlan plan, PluginCatalog catalog) {
+        List<String> installed = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        for (AutoInstallPlan.Action action : plan.actions()) {
+            try {
+                log.info("Auto-{} node library \"{}\" from {}",
+                        action.kind() == AutoInstallPlan.Kind.UPDATE ? "updating" : "installing",
+                        action.pluginId(), action.repository());
+                PluginCatalog.Installed result = install(action.repository(), action.pluginId(), catalog);
+                installed.add(result.id() + " " + result.version());
+            } catch (IOException | RuntimeException e) {
+                log.error("Could not auto-install \"{}\" from {}", action.pluginId(), action.repository(), e);
+                failed.add(action.pluginId() + " (" + e.getMessage() + ")");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return new AutoInstallOutcome(installed, failed);
     }
 
     /**

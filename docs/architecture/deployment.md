@@ -103,6 +103,21 @@ a wrong token fails instead of blocking forever on a prompt nobody will answer.
 A repository with no manifest runs nothing, and says so. `enabled: false` parks a
 graph in the repository without running it.
 
+**`plugins[].version` means "at least this".** When the installed library is behind
+it, the daemon updates to the repository's *latest* release — latest rather than that
+exact version, because `GitHubReleases` has no fetch-by-tag and the newest release
+satisfies "at least". An entry with no `version` installs once and is never moved
+again. The comparison is `GraphDependencyCheck.isOlder`, deliberately lenient: a
+version scheme it cannot parse produces no update rather than a wrong one, since a
+false positive here downloads a jar and restarts a graph for nothing.
+
+Bumping the version is therefore how a remote machine gets a newer library — commit
+the bump, push, and the next poll installs it and restarts the graphs from that
+repository. Before this, the field was parsed and read by nobody: a library installed
+once could only be moved forward by SSHing in and running `plugins update` by hand.
+`RemoteDeployment.decide` is that install/update/skip choice, split out so it is
+testable without a network or a clone.
+
 **`graphs[].file` is checked for containment.** It is a path from a file fetched
 over the network, so it is resolved and then verified to still be inside the clone;
 `../` and absolute paths are refused rather than clamped. Without that check, a
@@ -116,8 +131,11 @@ the daemon *could* read its dependencies straight out of the graphs. It
 deliberately does not. That table describes what a graph was built against on
 someone else's machine; the manifest is an explicit statement of intent, reviewed
 in a commit, in a repository the operator named by hand. The save-file table still
-earns its keep — it drives the interactive "install and open" offer in the app,
-where a person is present to confirm.
+earns its keep — it drives the "install and open" offer in the app, where either a
+person is present to confirm or the repository is one they previously accepted (see
+[plugins.md](plugins.md#auto-install--two-gates-off-by-default)). That desktop trust
+store is a separate file from this one and does not affect the daemon: `remote.json`
+remains the only thing that decides what an unattended machine may fetch.
 
 ## The sync
 
@@ -278,6 +296,7 @@ out there:
 | `housegraph daemon [--once]` | sync loop plus supervision |
 | `housegraph sync [--force]` | pull now and report; starts nothing |
 | `housegraph plugins list \| install <url> \| update [id...]` | node libraries from the terminal |
+| `housegraph plugins trust list \| add <url> \| remove <url> \| on \| off` | the app's auto-install trust store, for a machine with no window |
 | `housegraph check <graph.json>` | dependency report; non-zero when something is missing |
 | `housegraph doctor` | is this machine ready? |
 

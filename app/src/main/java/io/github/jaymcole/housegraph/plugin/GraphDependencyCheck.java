@@ -123,11 +123,19 @@ public final class GraphDependencyCheck {
 
     /**
      * Whether {@code installedVersion} is behind {@code savedVersion}, comparing dot-separated
-     * numeric parts and ignoring anything it can't read as a number. Deliberately lenient: this only
-     * drives an advisory message, so a version scheme it doesn't understand should say nothing
-     * rather than raise a false alarm.
+     * numeric parts and ignoring anything it can't read as a number. Deliberately lenient: a version
+     * scheme it doesn't understand should say nothing rather than raise a false alarm.
+     *
+     * <p>Public because the daemon needs the same comparison against a repository manifest's declared
+     * version ({@code RemoteDeployment.installDeclaredPlugins}). The leniency matters more there — a
+     * false positive would download a jar and restart a graph for no reason — which is why an
+     * unparseable part stops the comparison rather than guessing at an ordering.
+     *
+     * @param installedVersion the version on this machine
+     * @param savedVersion     the version being asked for
+     * @return true only when the installed version is definitely behind
      */
-    static boolean isOlder(String installedVersion, String savedVersion) {
+    public static boolean isOlder(String installedVersion, String savedVersion) {
         if (installedVersion == null || savedVersion == null
                 || installedVersion.isBlank() || savedVersion.isBlank()) {
             return false;

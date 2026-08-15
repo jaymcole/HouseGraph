@@ -23,7 +23,11 @@ design idea:
   Libraries…**) and loaded at runtime, with no rebuild of the app. Write your own
   starting from [housegraph-plugin-template](https://github.com/jaymcole/housegraph-plugin-template).
   A graph that uses a library you don't have installed still opens — the node is
-  preserved exactly and offered for install, never silently lost.
+  preserved exactly and offered for install, never silently lost. If you'd rather
+  not be asked every time, tick **Always allow installs and updates from this
+  repository** when installing and turn on **Auto-install from trusted
+  repositories**; both are off by default, and only repositories you accepted that
+  way are ever fetched without a prompt.
 - First-party node libraries, in [housegraph-nodes](https://github.com/jaymcole/housegraph-nodes):
   a **Discord** bot with modular text/slash commands (via JDA), an **IoT**
   library driving an Arduino UNO R4 WiFi LED-matrix sign, a **Camera** library
@@ -93,6 +97,7 @@ java -jar app/build/libs/app-<version>.jar daemon   # poll and keep the graphs r
 | `daemon [--once]` | sync loop plus process supervision |
 | `sync [--force]` | pull the configured repositories now; starts nothing |
 | `plugins list \| install <url> \| update [id...]` | node libraries from the terminal |
+| `plugins trust list \| add <url> \| remove <url> \| on \| off` | the auto-install switch and its trusted repositories |
 | `check <graph.json>` | which libraries a graph needs, and whether you have them |
 | `doctor` | check git, the data directory, config and installed libraries |
 

@@ -56,7 +56,10 @@ public final class RepoManifest {
      *
      * @param id         the library id, matching its manifest and the save files' {@code plugin} key
      * @param repository where it can be installed from — still subject to the operator's allowlist
-     * @param version    the version the graphs were built against; advisory, may be null
+     * @param version    the minimum version the graphs need. Read as "at least this": when the
+     *                   installed library is behind it, {@code RemoteDeployment} updates to the
+     *                   repository's latest release. May be null, which means "any version will do",
+     *                   so an entry with no version installs once and is never moved again
      */
     public record PluginEntry(String id, String repository, String version) {
     }
