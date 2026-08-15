@@ -41,8 +41,16 @@ public final class Supervisor {
     /** How long a child must stay up before its next failure is treated as a fresh problem. */
     static final Duration HEALTHY_AFTER = Duration.ofSeconds(60);
 
-    /** How long a child gets to shut down cleanly before it is killed. */
-    static final long STOP_TIMEOUT_SECONDS = 20;
+    /**
+     * How long a child gets to shut down cleanly before it is killed.
+     *
+     * <p>Must exceed the child's own shutdown budget ({@code App.SHUTDOWN_TIMEOUT_SECONDS}, itself
+     * derived from the engine's per-node release timeout), or this wait truncates that one and the
+     * child is killed part-way through the teardown it was already doing — leaving exactly the
+     * orphaned child processes the whole chain exists to prevent. The layers only work if each is
+     * strictly longer than the one inside it.
+     */
+    static final long STOP_TIMEOUT_SECONDS = 40;
 
     /** One graph being kept alive. */
     private static final class Supervised {

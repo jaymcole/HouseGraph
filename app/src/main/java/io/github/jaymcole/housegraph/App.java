@@ -68,10 +68,17 @@ public class App extends Application {
 
     /**
      * How long the shutdown hook waits for {@link #stop()} to finish before giving up and letting the
-     * JVM die anyway. Long enough for an orderly teardown (a bot logging out, a child process being
-     * killed), short enough that one wedged node can't hang the machine's restart cycle.
+     * JVM die anyway.
+     *
+     * <p>Derived from {@link NodeGraph#DEFAULT_RELEASE_TIMEOUT} rather than picked: the engine already
+     * bounds teardown per node and runs those releases concurrently, so a whole graph's slow half
+     * costs one release timeout no matter how many server nodes are on the canvas. This only has to
+     * be that, plus room for the fast half and for closing the plugin loader and the log file. It is
+     * deliberately <em>not</em> a budget shared between nodes — that was the thing that broke, since
+     * any such number is one added node away from being too small.
      */
-    private static final long SHUTDOWN_TIMEOUT_SECONDS = 15;
+    private static final long SHUTDOWN_TIMEOUT_SECONDS =
+            NodeGraph.DEFAULT_RELEASE_TIMEOUT.toSeconds() + 10;
 
     private final AppPreferences preferences = AppPreferences.load();
 

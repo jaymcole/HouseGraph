@@ -189,11 +189,34 @@ ran either, and connections, child processes and timers were all left to the OS,
 with the tail of the log never reaching disk.
 
 `App` now installs a hook that calls `Platform.exit()` and waits on a latch counted
-down at the end of `stop()`, with a 15-second timeout so one wedged node delays a
-restart rather than blocking it forever. `GraphProcess.stop` is the other half:
-`destroy()` (SIGTERM), wait 20s, `destroyForcibly()` only if it won't go.
+down at the end of `stop()`. `GraphProcess.stop` is the other half: `destroy()`
+(SIGTERM), wait, `destroyForcibly()` only if it won't go.
 
 This was a leak on every ordinary `kill` and logout, not only under supervision.
+
+**The timeouts nest, and the order matters.** `App`'s budget started life as a flat
+15 seconds shared by every node, which cannot hold: teardown that waits on the outside
+world costs seconds each, so any fixed total is one added server node away from being
+too small — and when it expired, the JVM exited mid-teardown and orphaned exactly the
+child processes the hook exists to kill. The engine now bounds teardown *per node* and
+runs those releases concurrently (see
+[graph-engine.md](graph-engine.md#teardown-is-two-halves-and-the-slow-one-is-bounded)),
+so a whole graph costs one release timeout however many servers are on it, and each
+outer wait is derived from the one inside it rather than guessed:
+
+```
+NodeGraph release timeout  15s  per node, concurrent
+  < App.SHUTDOWN_TIMEOUT   25s  DEFAULT_RELEASE_TIMEOUT + 10
+    < Supervisor STOP       40s  before the child JVM is killed outright
+```
+
+Each must be strictly longer than the one inside it. Invert any pair and the outer
+wait truncates the inner, killing a child part-way through a teardown it was already
+performing.
+
+> **A node library only gets this if it opts in.** Blocking work left in `onRemoved()`
+> still runs unbounded on the shutdown thread. Moving it to `releaseResources()` is what
+> puts it under the limit — see [plugins.md](plugins.md).
 
 ## Why the window is still there
 

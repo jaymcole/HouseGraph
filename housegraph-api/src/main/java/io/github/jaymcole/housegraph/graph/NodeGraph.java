@@ -3,10 +3,12 @@ package io.github.jaymcole.housegraph.graph;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
@@ -173,6 +176,19 @@ public class NodeGraph {
 
     private volatile Executor callbackExecutor = Runnable::run;
 
+    /**
+     * How long {@link #dispose()} waits for {@link BaseNode#releaseResources()}, per node and — since
+     * they run concurrently — for the pass as a whole.
+     *
+     * <p>Long enough for the slowest teardown a node reasonably has: signalling a server that drains
+     * its connections before exiting, then confirming the port came free, is on the order of ten
+     * seconds. Whoever waits on {@code dispose()} must allow more than this, or the outer wait
+     * truncates the inner one and the limit here never gets to do its job.
+     */
+    public static final Duration DEFAULT_RELEASE_TIMEOUT = Duration.ofSeconds(15);
+
+    private volatile Duration releaseTimeout = DEFAULT_RELEASE_TIMEOUT;
+
     private static final Runnable NO_PREPARATION = () -> {
     };
 
@@ -187,6 +203,29 @@ public class NodeGraph {
      */
     public void setCallbackExecutor(Executor callbackExecutor) {
         this.callbackExecutor = Objects.requireNonNull(callbackExecutor, "callbackExecutor");
+    }
+
+    /**
+     * How long {@link #dispose()} gives each node's {@link BaseNode#releaseResources()}.
+     *
+     * @return the per-node release timeout
+     */
+    public Duration getReleaseTimeout() {
+        return releaseTimeout;
+    }
+
+    /**
+     * Overrides {@link #DEFAULT_RELEASE_TIMEOUT} — for tests, which shouldn't wait out real
+     * timeouts, and for a host that knows its own shutdown budget.
+     *
+     * @param releaseTimeout the per-node release timeout; must be positive
+     */
+    public void setReleaseTimeout(Duration releaseTimeout) {
+        Objects.requireNonNull(releaseTimeout, "releaseTimeout");
+        if (releaseTimeout.isNegative() || releaseTimeout.isZero()) {
+            throw new IllegalArgumentException("releaseTimeout must be positive");
+        }
+        this.releaseTimeout = releaseTimeout;
     }
 
     // --- Node lifecycle ---------------------------------------------------------
@@ -217,6 +256,11 @@ public class NodeGraph {
         // stopping a timer) mustn't be held up by, or hold up, the graph lock.
         if (detach(node)) {
             node.onRemoved();
+            // The slow half never runs on the caller's thread: deleting a node from the canvas
+            // must not freeze the UI while a child process is signalled and waited for. Nothing
+            // waits on it here — the app carries on, and the resource lets go when it lets go.
+            Thread.ofVirtual().name("release-" + node.getName())
+                    .start(() -> release(node));
         }
     }
 
@@ -258,8 +302,25 @@ public class NodeGraph {
 
     /**
      * Removes and disposes every node (so long-lived resources get cleaned up via
-     * {@link BaseNode#onRemoved()}) and stops the execution threads. Intended for app
-     * shutdown; the graph shouldn't be used afterward.
+     * {@link BaseNode#onRemoved()} and {@link BaseNode#releaseResources()}) and stops the execution
+     * threads. Intended for app shutdown; the graph shouldn't be used afterward.
+     *
+     * <h2>Two passes, and why the second one is concurrent</h2>
+     * The fast, thread-affine half ({@code onRemoved()}) runs first, in order, on the calling
+     * thread — the FX thread in the app, which is what lets a node stop a {@code Timeline} or reset
+     * a control. Then every node's {@code releaseResources()} runs <em>at once</em> on virtual
+     * threads under a single wall-clock deadline.
+     * <p>
+     * Concurrent rather than serial because the alternative does not scale: teardown that waits on
+     * the outside world costs seconds, and running five servers' worth in sequence would cost five
+     * times as long as one. Nothing the app can budget survives a user simply adding another server
+     * node. Run together, shutdown costs the slowest node, not the sum — a number that no longer
+     * grows with the size of the graph.
+     * <p>
+     * A node that overruns {@link #getReleaseTimeout()} is interrupted and abandoned. That is the
+     * point of the limit: one wedged resource delays shutdown by a bounded amount instead of
+     * hanging it, and — unlike a shared budget — it cannot consume the time the other nodes needed.
+     * Failures are logged and swallowed, so one node throwing on teardown can't strand the rest.
      */
     public void dispose() {
         List<BaseNode> current;
@@ -267,10 +328,71 @@ public class NodeGraph {
             current = new ArrayList<>(nodes);
         }
         for (BaseNode node : current) {
-            removeNode(node);
+            if (detach(node)) {
+                // Swallowed, not propagated: a node that throws here must not abandon every node
+                // after it — nor the executor shutdown below, nor whatever the caller does next.
+                guarded(node, "onRemoved", node::onRemoved);
+            }
         }
+        releaseAll(current);
         runExecutor.shutdownNow();
         watchdogScheduler.shutdownNow();
+    }
+
+    /**
+     * Runs every node's {@link BaseNode#releaseResources()} concurrently, waiting no longer than
+     * {@link #getReleaseTimeout()} in total, and interrupting whatever hasn't finished by then.
+     *
+     * @param nodes the nodes to release, already detached
+     */
+    private void releaseAll(List<BaseNode> nodes) {
+        if (nodes.isEmpty()) {
+            return;
+        }
+        ExecutorService releaser = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            Map<BaseNode, Future<?>> pending = new LinkedHashMap<>();
+            for (BaseNode node : nodes) {
+                pending.put(node, releaser.submit(() -> guarded(node, "releaseResources", node::releaseResources)));
+            }
+            // One deadline shared by all of them, which is what a per-node limit means once they
+            // run in parallel: every node gets the whole window, and the window doesn't grow.
+            long deadline = System.nanoTime() + releaseTimeout.toNanos();
+            for (Map.Entry<BaseNode, Future<?>> entry : pending.entrySet()) {
+                long remaining = deadline - System.nanoTime();
+                try {
+                    entry.getValue().get(Math.max(0, remaining), TimeUnit.NANOSECONDS);
+                } catch (TimeoutException e) {
+                    entry.getValue().cancel(true);
+                    log.warn("Node \"{}\" did not release its resources within {}ms; abandoning it",
+                            entry.getKey().getName(), releaseTimeout.toMillis());
+                } catch (ExecutionException e) {
+                    // guarded() already logged whatever the node threw.
+                    log.debug("Release of \"{}\" ended exceptionally", entry.getKey().getName(), e);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        } finally {
+            // shutdownNow, never close(): AutoCloseable's close() waits for running tasks, which is
+            // exactly the unbounded wait the deadline above exists to prevent.
+            releaser.shutdownNow();
+        }
+    }
+
+    /** Runs a teardown hook, logging anything it throws rather than letting it escape. */
+    private void guarded(BaseNode node, String hook, Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException | Error e) {
+            log.error("Node \"{}\" threw from {}()", node.getName(), hook, e);
+        }
+    }
+
+    /** The slow half of one node's teardown, for the single-removal path. */
+    private void release(BaseNode node) {
+        guarded(node, "releaseResources", node::releaseResources);
     }
 
     // --- Data edges ---------------------------------------------------------------

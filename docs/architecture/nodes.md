@@ -253,7 +253,12 @@ That's the whole thing — no registration. Checklist:
 3. `@Display.Name("…")` for a nice menu/label name.
 4. Optional: implement `NodeContentProvider` for inline UI (see [ui.md](ui.md)),
    override `saveState`/`loadState` for extra config, `activate()` for branching,
-   `onActivated`/`onRemoved` for a long-lived resource.
+   `onActivated`/`onRemoved` for a long-lived resource — and `releaseResources()`
+   if letting go of it *blocks* (a child process, an mDNS registration, a client
+   logging out). `onRemoved()` runs on the caller's thread and is not time-bounded,
+   so slow work there stalls shutdown; `releaseResources()` runs on a worker under a
+   limit, concurrently with every other node's. See
+   [graph-engine.md](graph-engine.md#teardown-is-two-halves-and-the-slow-one-is-bounded).
 5. Add a test mirroring `NodeGraphTest` / the existing node tests (see
    [testing.md](testing.md)).
 

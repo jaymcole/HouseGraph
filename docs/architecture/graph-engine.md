@@ -229,7 +229,8 @@ Hooks the engine calls (all no-ops by default; override as needed):
 | `process(ProcessContext ctx)` | each pass, after inputs are resolved | the node's actual work (see [ProcessContext](#processcontext--the-per-invocation-handle)) |
 | `onExecuted()` | right after `process()` (success or fail), via callback executor | push a computed value into a custom UI |
 | `onActivated()` | when added to a live graph (incl. on load) | subscribe / register a resource by name (not open a connection) |
-| `onRemoved()` | when it leaves a live graph (delete/load/shutdown) | release timers, sockets, threads — must be idempotent |
+| `onRemoved()` | when it leaves a live graph (delete/load/shutdown), on the removing thread | the *fast, thread-affine* half — stop a `Timeline`, reset a control. Must be idempotent, and must be quick: it is not time-bounded |
+| `releaseResources()` | right after `onRemoved()`, on a worker thread, under a time limit | the *slow* half — kill a child process, withdraw an mDNS registration, log a client out. Must be idempotent, and should honour interruption |
 | `onInputEdgeAdded/Removed(edge)` | after a data edge to this node is (un)wired | grow/shrink dynamic ports (e.g. the object decomposer) |
 | `activate(port)` | called *from* `process()` | branch: fire only chosen flow-out port(s). No call = fire all |
 | `runFlowBranchToCompletion(port, seed)` | called *from* `process()` | loop: run one flow-out branch once per item as a seeded sub-run (see [Loop bodies](#loop-bodies-seeded-sub-runs)) |
@@ -237,6 +238,41 @@ Hooks the engine calls (all no-ops by default; override as needed):
 Cycle-free data + `activate` are how branch nodes work: see `IfNode` (fires
 `True` or `False`) as the canonical example; `ForEachNode` uses
 `runFlowBranchToCompletion` to run its body once per list item.
+
+### Teardown is two halves, and the slow one is bounded
+
+Splitting `onRemoved()` from `releaseResources()` looks like ceremony until you try to put a
+time limit on teardown. The two halves want opposite threads: stopping a `Timeline` or touching
+a control **must** happen on the FX thread, while killing a process tree **must not**, because
+you cannot bound work running on the thread you are standing on — and `dispose()` runs *on* the
+FX thread inside `App.stop()`, so marshalling back to it with `Platform.runLater` would simply
+never run.
+
+So `dispose()` makes two passes. The fast half runs first, in order, on the calling thread. Then
+every node's `releaseResources()` runs **concurrently** on virtual threads under one wall-clock
+deadline (`NodeGraph.DEFAULT_RELEASE_TIMEOUT`, 15s; `setReleaseTimeout` overrides it). A node
+that overruns is interrupted and abandoned; anything either half throws is logged and swallowed,
+so one bad node cannot strand the ones after it.
+
+**Concurrent, not serial, and that is the whole point.** A shared shutdown budget cannot work:
+teardown that waits on the outside world costs seconds, so any fixed total is one added server
+node away from being too small. Running the releases together makes shutdown cost the slowest
+node rather than the sum — a number that no longer grows with the graph. The waits nest, and
+each layer must be strictly longer than the one inside it:
+
+```
+NodeProcessServer.stop()  ~11s   (housegraph-web: signal, wait, kill, wait for the port)
+  < NodeGraph release      15s   DEFAULT_RELEASE_TIMEOUT, per node, concurrent
+    < App.stop()           25s   SHUTDOWN_TIMEOUT_SECONDS, derived from the above
+      < Supervisor         40s   STOP_TIMEOUT_SECONDS, before it kills the child JVM
+```
+
+Invert any of those and the outer wait truncates the inner one — killing a child part-way
+through the teardown it was already doing, which orphans exactly the child processes the chain
+exists to clean up.
+
+On an ordinary single-node removal (a user deleting a node) `releaseResources()` is handed to a
+background thread and *not* waited for, so deleting a node never freezes the canvas.
 
 ## `ProcessContext` — the per-invocation handle
 

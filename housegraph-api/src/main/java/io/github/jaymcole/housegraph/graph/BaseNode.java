@@ -234,8 +234,42 @@ public abstract class BaseNode {
      * on app shutdown ({@link NodeGraph#dispose()}). This is the place to release
      * anything long-lived (timers, sockets, threads) so it can't leak or keep running
      * as a zombie. Must be idempotent and safe even if the node's UI was never built.
+     * <p>
+     * Runs on the thread that removed the node — the FX thread in the app — and is
+     * therefore the right place for teardown that is <em>thread-affine</em>: stopping a
+     * {@code Timeline}, resetting a control. It is <b>not</b> time-bounded, so it must be
+     * quick. Anything that blocks on the outside world belongs in
+     * {@link #releaseResources()}.
      */
     protected void onRemoved() {
+    }
+
+    /**
+     * Releases resources whose teardown takes real time — a child process to signal and
+     * wait for, an mDNS registration to withdraw, a client to log out. Called once per
+     * node, immediately after {@link #onRemoved()}, on a worker thread and under a time
+     * limit. Must be idempotent, and safe even if the node's UI was never built.
+     *
+     * <h2>Why this is separate from {@code onRemoved()}</h2>
+     * The two halves of teardown want opposite things. Stopping a {@code Timeline} or
+     * touching a control <em>must</em> happen on the FX thread; killing a process tree
+     * <em>must not</em>, because the app cannot wait on the FX thread for something that
+     * might take ten seconds — and cannot bound it either, since you cannot time-limit
+     * code running on the thread you are standing on. Splitting them lets each half run
+     * where it belongs.
+     * <p>
+     * On {@link NodeGraph#dispose()} every node's {@code releaseResources()} runs
+     * <em>concurrently</em>, so a machine running five servers shuts down in the time of
+     * the slowest, not the sum of all five; a node that overruns
+     * {@link NodeGraph#getReleaseTimeout()} is interrupted and abandoned so it cannot hold
+     * up the rest. On an ordinary single-node removal it is handed to a background thread
+     * and not waited for, so deleting a node never freezes the canvas.
+     * <p>
+     * Because it may be interrupted, treat a long wait here as cancellable: honour
+     * {@link Thread#interrupted()} where you can. A no-op by default — only nodes owning
+     * something slow need it.
+     */
+    protected void releaseResources() {
     }
 
     /**

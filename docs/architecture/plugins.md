@@ -40,6 +40,24 @@ every node library anyone has written.** Two rules follow:
 Note `graph/` is in the api module while `graph/nodes/` is in `app`. Distinct
 packages, not a split package — but worth knowing before you go looking for a class.
 
+### If your node's teardown blocks, move it to `releaseResources()`
+
+`onRemoved()` runs on the thread that removed the node — the FX thread at shutdown —
+and is **not** time-bounded. That is fine for stopping a `Timeline` or resetting a
+control, and wrong for anything that waits on the outside world: a child process being
+signalled and reaped, an mDNS registration being withdrawn, a bot logging out. Left in
+`onRemoved()`, that work stalls shutdown for as long as it takes, and when the host's
+budget runs out the JVM exits mid-teardown and orphans whatever it was cleaning up.
+
+`releaseResources()` is the other half — a concrete no-op hook, so adding it broke
+nothing. It runs on a worker thread, under a per-node limit, concurrently with every
+other node's, and may be interrupted. Split your teardown across the two and the slow
+part stops being able to hang a restart. See
+[graph-engine.md](graph-engine.md#teardown-is-two-halves-and-the-slow-one-is-bounded).
+
+A library built against an older api still works unchanged — it just doesn't get the
+bound until it adopts the hook.
+
 ## The `sdk/` package
 
 `graph/` is the model a node is built from. `sdk/` is everything else an author

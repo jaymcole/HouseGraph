@@ -519,6 +519,139 @@ class NodeGraphTest {
         assertTrue(graph.getNodes().isEmpty());
     }
 
+    @Test
+    void disposeReleasesEveryNodesResources() {
+        NodeGraph graph = new NodeGraph();
+        ReleasingNode a = new ReleasingNode();
+        ReleasingNode b = new ReleasingNode();
+        graph.addNode(a);
+        graph.addNode(b);
+
+        graph.dispose();
+
+        assertEquals(0, a.released.getCount(), "a's resources should have been released");
+        assertEquals(0, b.released.getCount(), "b's resources should have been released");
+    }
+
+    @Test
+    void disposeReleasesNodesConcurrentlyRatherThanInSequence() {
+        NodeGraph graph = new NodeGraph();
+        List<ReleasingNode> nodes = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            ReleasingNode node = new ReleasingNode();
+            node.releaseDelayMillis = 400;
+            nodes.add(node);
+            graph.addNode(node);
+        }
+
+        long start = System.nanoTime();
+        graph.dispose();
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+        for (ReleasingNode node : nodes) {
+            assertEquals(0, node.released.getCount(), "every node should have released");
+        }
+        // Serially this would be 2000ms. The point of running them together is that shutdown costs
+        // the slowest node, not the sum — otherwise adding a server node lengthens every shutdown.
+        assertTrue(elapsedMillis < 1500,
+                "releases should overlap, but 5 x 400ms took " + elapsedMillis + "ms");
+    }
+
+    @Test
+    void aNodeThatOverrunsIsAbandonedAndTheRestStillRelease() {
+        NodeGraph graph = new NodeGraph();
+        graph.setReleaseTimeout(java.time.Duration.ofMillis(400));
+        ReleasingNode wedged = new ReleasingNode();
+        wedged.releaseDelayMillis = 60_000;
+        ReleasingNode prompt = new ReleasingNode();
+        graph.addNode(wedged);
+        graph.addNode(prompt);
+
+        long start = System.nanoTime();
+        graph.dispose();
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+        assertEquals(0, prompt.released.getCount(), "a healthy node still releases");
+        assertTrue(elapsedMillis < 5_000,
+                "one wedged node must not hang shutdown, but dispose took " + elapsedMillis + "ms");
+    }
+
+    @Test
+    void aNodeThrowingOnRemovedDoesNotStrandTheNodesAfterIt() {
+        NodeGraph graph = new NodeGraph();
+        ReleasingNode throwing = new ReleasingNode();
+        throwing.throwOnRemoved = true;
+        ReleasingNode later = new ReleasingNode();
+        graph.addNode(throwing);
+        graph.addNode(later);
+
+        assertDoesNotThrow(graph::dispose, "one node's teardown failure must not escape dispose");
+
+        assertEquals(0, later.released.getCount(),
+                "a node after the throwing one should still have been torn down");
+        assertTrue(graph.getNodes().isEmpty());
+    }
+
+    @Test
+    void removingASingleNodeReleasesItOffTheCallersThread() throws Exception {
+        NodeGraph graph = new NodeGraph();
+        ReleasingNode node = new ReleasingNode();
+        node.releaseDelayMillis = 300;
+        graph.addNode(node);
+
+        long start = System.nanoTime();
+        graph.removeNode(node);
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+        // Deleting a node from the canvas must not freeze the UI for the length of a process kill.
+        assertTrue(elapsedMillis < 200, "removeNode should not wait on the slow half, but took "
+                + elapsedMillis + "ms");
+        assertTrue(node.released.await(10, TimeUnit.SECONDS), "the release should still happen");
+        assertFalse(node.releaseThreadWasCaller, "the slow half should not run on the calling thread");
+    }
+
+    /** A node whose slow teardown can be made slow, wedged, or explosive on demand. */
+    private static final class ReleasingNode extends BaseNode {
+        final CountDownLatch released = new CountDownLatch(1);
+        volatile long releaseDelayMillis = 0;
+        volatile boolean throwOnRemoved = false;
+        volatile boolean releaseThreadWasCaller = false;
+        private final Thread creator = Thread.currentThread();
+
+        @Override
+        protected void onRemoved() {
+            if (throwOnRemoved) {
+                throw new IllegalStateException("boom");
+            }
+        }
+
+        @Override
+        protected void releaseResources() {
+            releaseThreadWasCaller = Thread.currentThread() == creator;
+            if (releaseDelayMillis > 0) {
+                try {
+                    Thread.sleep(releaseDelayMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return; // abandoned by the timeout; leave the latch alone
+                }
+            }
+            released.countDown();
+        }
+
+        @Override
+        public void process(ProcessContext ctx) {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+    }
+
     /** A node that counts its lifecycle-hook calls, for asserting activate/dispose behaviour. */
     private static final class LifecycleNode extends BaseNode {
         int activatedCount = 0;
