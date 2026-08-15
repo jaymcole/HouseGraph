@@ -39,7 +39,7 @@ Use this map of change → what to update:
 | Out-of-tree node libraries (fetching, loading, extraction status) | [`docs/architecture/plugins.md`](docs/architecture/plugins.md) |
 | CLI commands, git sync, process supervision, exit codes, unattended trust model | [`docs/architecture/deployment.md`](docs/architecture/deployment.md) |
 | Anything that changes how a server is set up (config shape, manifest, prerequisites, launchd) | [`docs/remote-server-setup.md`](docs/remote-server-setup.md) — the user-facing runbook |
-| Docs meant to be mirrored into `housegraph-nodes` / `housegraph-plugin-template`, or the sync mechanism itself | [`docs/shared/`](docs/shared/) for the content; [`docs/architecture/doc-sync.md`](docs/architecture/doc-sync.md) if the trigger, PAT scope, or merge behavior changes |
+| Node-development guidance also relevant to `housegraph-nodes` / `housegraph-plugin-template` (rules for out-of-tree node authors, control-vs-action design) | [`docs/architecture/nodes.md`](docs/architecture/nodes.md) and [`docs/architecture/plugins.md`](docs/architecture/plugins.md) — this repo is the source of truth; the companion repos link here rather than duplicating the text, so there is nothing to sync |
 | Add a new package | Add a `package-info.java` for it |
 | Anything user-facing (build, run, features) | `README.md` |
 

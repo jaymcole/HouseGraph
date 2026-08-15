@@ -209,6 +209,43 @@ When writing a dynamic-port node: guard against reacting to the edge churn your
 own `rebuildPorts()` causes (see `ObjectDecomposerNode`'s `refreshing` flag), and
 persist enough in `saveState` to reconstruct ports deterministically.
 
+## Designing a node's ports: control vs. action
+
+Before wiring up a new node's ports, decide which of two shapes it is. A node should almost
+always be **either** control-oriented **or** action-oriented, not both — this applies equally to
+this repository's built-in library and to nodes in out-of-tree libraries
+(`housegraph-nodes`, `housegraph-plugin-template`).
+
+- **Control-oriented** nodes exist to shape *when* and *how often* flow moves: a trigger, a
+  timer, a branch, a loop, a join. Their job is deciding whether/when something downstream runs —
+  not doing that something themselves. The built-in library already ships several of these (a
+  plain trigger button, a repeating timer trigger, `If`, `graph/nodes/control/ForEachNode.java`),
+  so an out-of-tree library rarely needs to reinvent one.
+- **Action-oriented** nodes exist to *do* something: call an API, read a sensor, write a file,
+  transform data. Their flow ports exist only to report that they ran and, at most, which of a
+  small number of known outcomes happened for *that one run* — not to decide independently when
+  to run again.
+
+**Why this split matters, concretely:** an early version of `housegraph-github`'s `GitSyncNode`
+owned both — its own `Start`/`Stop` timer *and* the git sync itself, in one class. That made it
+impossible to reuse with a different schedule, harder to test (the timer and the action were
+welded together), and duplicated what a repeating-trigger node already does. Splitting the timer
+out — the node now has a flow-in and expects something else to drive it — left it a plain action
+node: `Checked` always fires (it ran), `Pulled` fires only when that run's outcome was "found and
+pulled a new commit." That's the shape to reach for by default: an action node's branches
+describe the outcomes of one invocation, not points on a schedule it manages itself.
+
+When a request describes a node that would own its own scheduling/looping/branching-on-a-timer
+*and* perform an external action, don't build the fused version by default — ask whether the
+control part (the trigger/timer/loop) and the action part should be two composable nodes
+instead, with the control node's flow-out wired into the action node's flow-in.
+
+The one common exception is a *resource* node that must own a real connection lifecycle (a
+Discord bot, a web server) — see [resources.md](resources.md) and `sdk.AutoStartable` /
+`sdk.NodeContentProvider`. There, "control" (Start/Stop) and "state" genuinely belong to the same
+node because the connection itself is what's being managed. Treat that as a deliberate, named
+exception, not precedent for fusing scheduling into an ordinary action node.
+
 ## Recipe: add a new node
 
 Minimal example — a node that multiplies two floats. Compare with
@@ -266,4 +303,8 @@ That's the whole thing — no registration. Checklist:
 
 **When you change this, update…** this file whenever you change the `BaseNode`
 port model, the `NodeRegistry` discovery mechanism, the persistence rules, the
-add-a-node recipe, or the set of node **categories**.
+add-a-node recipe, the control-vs-action node design guidance, or the set of
+node **categories**. This file is the canonical source for that guidance —
+`housegraph-nodes` and `housegraph-plugin-template` link here rather than
+restating it, so keep it accurate for a reader who has never opened this
+repository's code.
