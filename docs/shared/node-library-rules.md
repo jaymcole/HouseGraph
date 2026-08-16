@@ -169,10 +169,19 @@ A node should almost always be **either** control-oriented **or** action-oriente
   a few known outcomes happened **for that one invocation** — not points on a
   schedule the node manages itself.
 
-A node that owns its own timer *and* performs an external action cannot be reused on
-a different schedule, is harder to test because the two are welded together, and
-duplicates a repeating-trigger node that already exists. Split it: the control
-node's flow-out wires into the action node's flow-in.
+A node that owns its own timer *and* performs an external action duplicates a
+repeating-trigger node that already exists, and cannot be reused on a different
+schedule. Split it: give the action a flow-in and let a repeating trigger wired
+upstream decide when it fires.
+
+**That also makes it directly testable.** An action node with a flow-in is
+exercised by calling `process()` on it. A node that owns its own timer has to have
+that timer spun up and torn down before you can test the thing you actually care
+about.
+
+**If a request describes a node that would both schedule its own execution and
+perform an external action, treat that as a smell** — ask whether it should be two
+composable nodes before building the fused version.
 
 **The exception is a resource node that owns a real connection lifecycle** — a bot,
 a web server. There Start/Stop and state genuinely belong to the same node, because
