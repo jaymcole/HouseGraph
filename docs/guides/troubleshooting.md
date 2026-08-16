@@ -38,6 +38,7 @@ housegraph doctor
 | Nodes show as placeholders | The library isn't installed | `housegraph check <graph>`, then install it from **Node Libraries…** |
 | Placeholders, and no install is offered | The graph was saved before the library recorded its repository | Open it on a machine that has the library and re-save. That repairs the file permanently |
 | A library change didn't take effect | Nodes from some library are on the canvas | The status says "Pending restart". Restart the app |
+| Install fails: "Could not write ... still loaded" | Rare: the on-disk jar for this exact version is still open *and* differs from what was just downloaded (re-adding the unchanged jar reuses the existing file automatically, so this only hits when the content actually changed underneath a still-open handle) | Restart the app, then install |
 | Install rejected: bundles `housegraph-api` or `slf4j` | The library's build uses `implementation` instead of `compileOnly`, or doesn't exclude `slf4j-api` | A library bug. See [`../nodes/publishing-a-library.md`](../nodes/publishing-a-library.md) |
 | A library's log lines never appear | Same cause — a bundled SLF4J binding | Same fix |
 | Update check fails | GitHub's 60 requests/hour limit | Wait, or select fewer rows |

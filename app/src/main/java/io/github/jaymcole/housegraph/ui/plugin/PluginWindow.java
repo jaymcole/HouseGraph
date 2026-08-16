@@ -5,39 +5,40 @@ import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.plugin.GitHubReleases;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
+import io.github.jaymcole.housegraph.storage.AppPreferences;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.Dialog;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.SelectionMode;
+import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.TextField;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
-import javafx.util.StringConverter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
- * Manage installed node libraries: add one from a GitHub URL, check for updates, remove, or
+ * Manage installed node libraries: add one or more from a GitHub URL, check for updates, remove, or
  * enable/disable.
  *
  * <p>Modelled on {@code LogWindow} rather than {@code SecretsEditor}: a non-modal, unowned,
@@ -46,15 +47,20 @@ import java.util.Set;
  * forbid exactly that. Structurally it is a table of rows with per-row status, which is
  * {@code LogWindow}'s shape; {@code SecretsEditor}'s list-plus-form is for editing one item.
  *
- * <p>The table allows multi-selection, and Update/Enable-Disable/Remove act on the whole
- * selection at once. The catalog/disk change always happens immediately — the version-stamped
- * jar path and plain JSON catalog write are safe even while a library's nodes are live. What
- * defers is the in-memory hot reload: rebuilding the shared class loader would leave any
- * node-library node currently on the canvas bound to a discarded {@code Class}, so a reload only
- * runs when the canvas has none. When it can't, the change is left pending and takes effect on
- * the next restart; the first time that happens in a session gets one summary alert, later ones
- * just update the status line and the row's "Pending restart" state. Check for Updates checks the
- * selection when one exists, or every installed library when nothing is selected.
+ * <p>The table allows multi-selection, and every action operates on the whole selection at once
+ * rather than one item at a time. Add from URL ({@link AddFromUrlDialog}) shows every package a
+ * repository's latest release publishes as a table with an Add button per row, instead of asking
+ * the user to pick exactly one from a dropdown. Update and Remove each show a single confirmation
+ * summarising the whole batch — one dialog naming every affected library, not one dialog per
+ * library — so accepting once acts on all of them. The catalog/disk change always happens
+ * immediately — the version-stamped jar path and plain JSON catalog write are safe even while a
+ * library's nodes are live. What defers is the in-memory hot reload: rebuilding the shared class
+ * loader would leave any node-library node currently on the canvas bound to a discarded
+ * {@code Class}, so a reload only runs when the canvas has none. When it can't, the change is left
+ * pending and takes effect on the next restart; the first time that happens in a session gets one
+ * summary alert, later ones just update the status line and the row's "Pending restart" state.
+ * Check for Updates checks the selection when one exists, or every installed library when nothing
+ * is selected.
  *
  * <p>Deliberately a thin shell. Everything worth testing lives in the headless
  * {@code plugin} package, because this project has no infrastructure for testing JavaFX windows.
@@ -65,7 +71,11 @@ public final class PluginWindow {
 
     private static PluginWindow instance;
 
+    /** Key in {@link AppPreferences} for "skip the trust-on-first-use install warning from now on". */
+    private static final String SKIP_INSTALL_WARNING_KEY = "plugin.skipInstallWarning";
+
     private final PluginCatalog catalog;
+    private final AppPreferences preferences;
     private final java.util.function.BooleanSupplier tryReloadLibraries;
     private final java.util.function.ToIntFunction<String> liveNodeCount;
     private final Stage stage;
@@ -102,6 +112,10 @@ public final class PluginWindow {
             return installed.name();
         }
 
+        public String getRepository() {
+            return installed.repository() == null ? "—" : installed.repository();
+        }
+
         public String getVersion() {
             return installed.version();
         }
@@ -123,10 +137,166 @@ public final class PluginWindow {
         }
     }
 
+    /** One row of {@link AddFromUrlDialog}'s results table: a release asset and whether it's installed. */
+    private static final class AssetRow {
+        private final GitHubReleases.Asset asset;
+        private final SimpleStringProperty status;
+        private boolean installed;
+
+        AssetRow(GitHubReleases.Asset asset, boolean installed) {
+            this.asset = asset;
+            this.installed = installed;
+            this.status = new SimpleStringProperty(installed ? "Installed" : "Not installed");
+        }
+    }
+
+    /**
+     * The "Add from URL…" window: a repository field and, once looked up, every node-library
+     * package the latest release publishes, as a table with an Add button per not-yet-installed row.
+     * Replaces the old text-then-dropdown-then-confirm sequence — a monorepo release can carry many
+     * packages, and the user should see all of them at once rather than picking exactly one blind.
+     *
+     * <p>Non-modal and owned by the main window, for the same reason {@code PluginWindow} itself is:
+     * installing is network-bound and the user shouldn't be blocked from the rest of the app while
+     * it runs, and a table lets several packages be added one after another without reopening.
+     */
+    private final class AddFromUrlDialog {
+        private final Stage dialogStage = new Stage();
+        private final TextField urlField;
+        private final ObservableList<AssetRow> assetRows = FXCollections.observableArrayList();
+        private final TableView<AssetRow> assetTable = new TableView<>();
+        private final Label dialogStatus = new Label();
+        private String repositoryUrl;
+        private GitHubReleases.Release release;
+
+        AddFromUrlDialog(String initialUrl) {
+            dialogStage.initOwner(stage);
+            dialogStage.setTitle("Add a node library");
+
+            urlField = new TextField(initialUrl == null || initialUrl.isBlank()
+                    ? "https://github.com/" : initialUrl);
+            HBox.setHgrow(urlField, Priority.ALWAYS);
+            Button lookUp = new Button("Look Up");
+            lookUp.setDefaultButton(true);
+            lookUp.setOnAction(e -> lookUp());
+            urlField.setOnAction(e -> lookUp());
+            HBox urlRow = new HBox(8, new Label("Repository:"), urlField, lookUp);
+            urlRow.setAlignment(Pos.CENTER_LEFT);
+            urlRow.setPadding(new Insets(10, 10, 6, 10));
+
+            assetTable.setItems(assetRows);
+            assetTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+            TableColumn<AssetRow, String> nameCol = new TableColumn<>("Package");
+            nameCol.setPrefWidth(260);
+            nameCol.setCellValueFactory(data -> new SimpleStringProperty(data.getValue().asset.name()));
+            TableColumn<AssetRow, String> sizeCol = new TableColumn<>("Size");
+            sizeCol.setPrefWidth(90);
+            sizeCol.setCellValueFactory(data -> new SimpleStringProperty(formatSize(data.getValue().asset.sizeBytes())));
+            TableColumn<AssetRow, String> statusCol = new TableColumn<>("Status");
+            statusCol.setPrefWidth(110);
+            statusCol.setCellValueFactory(data -> data.getValue().status);
+            TableColumn<AssetRow, Void> actionCol = new TableColumn<>("");
+            actionCol.setPrefWidth(80);
+            actionCol.setCellFactory(col -> new TableCell<>() {
+                private final Button addButton = new Button("Add");
+                {
+                    addButton.setOnAction(e -> install(getTableRow().getItem()));
+                }
+
+                @Override
+                protected void updateItem(Void ignored, boolean empty) {
+                    super.updateItem(ignored, empty);
+                    AssetRow row = empty || getTableRow() == null ? null : getTableRow().getItem();
+                    setGraphic(row == null || row.installed ? null : addButton);
+                }
+            });
+            assetTable.getColumns().setAll(List.of(nameCol, sizeCol, statusCol, actionCol));
+            assetTable.setPlaceholder(new Label("Enter a repository URL and press “Look Up”."));
+
+            dialogStatus.setWrapText(true);
+            dialogStatus.setPadding(new Insets(0, 10, 8, 10));
+
+            BorderPane root = new BorderPane();
+            root.setTop(urlRow);
+            root.setCenter(assetTable);
+            root.setBottom(dialogStatus);
+            dialogStage.setScene(new Scene(root, 560, 360));
+        }
+
+        void show() {
+            dialogStage.show();
+            dialogStage.toFront();
+        }
+
+        void showAndLookUp() {
+            show();
+            lookUp();
+        }
+
+        private void lookUp() {
+            String url = urlField.getText() == null ? "" : urlField.getText().trim();
+            if (url.isBlank()) {
+                dialogStatus.setText("Enter a repository URL first.");
+                return;
+            }
+            assetRows.clear();
+            dialogStatus.setText("Looking up the latest release of " + url + "…");
+            Task<GitHubReleases.Release> task = new Task<>() {
+                @Override
+                protected GitHubReleases.Release call() throws Exception {
+                    return GitHubReleases.latest(url, null)
+                            .orElseThrow(() -> new IllegalStateException("No release information returned"));
+                }
+            };
+            task.setOnSucceeded(e -> {
+                repositoryUrl = url;
+                release = task.getValue();
+                assetRows.setAll(release.assets().stream()
+                        .map(asset -> new AssetRow(asset, isAssetInstalled(repositoryUrl, release, asset)))
+                        .toList());
+                dialogStatus.setText("Release " + release.tagName() + " — " + release.assets().size()
+                        + (release.assets().size() == 1 ? " package." : " packages."));
+            });
+            task.setOnFailed(e -> {
+                Throwable failure = task.getException();
+                log.error("Node-library lookup failed", failure);
+                dialogStatus.setText("Failed: " + failure.getMessage());
+            });
+            Thread thread = new Thread(task, "housegraph-plugin-lookup");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        private void install(AssetRow row) {
+            if (row == null || row.installed) {
+                return;
+            }
+            confirmThenInstall(dialogStage, repositoryUrl, release, row.asset, () -> {
+                row.installed = true;
+                row.status.set("Installed");
+                assetTable.refresh();
+            });
+        }
+    }
+
+    /**
+     * Whether a release asset corresponds to an already-installed library from this repository,
+     * matched the same way {@link GitHubReleases.Release#assetFor} resolves a wanted id: an
+     * installed entry counts if its id would resolve to this exact asset.
+     */
+    private boolean isAssetInstalled(String repositoryUrl, GitHubReleases.Release release, GitHubReleases.Asset asset) {
+        return catalog.all().stream()
+                .filter(installed -> repositoryUrl.equals(installed.repository()))
+                .anyMatch(installed -> release.assetFor(installed.id())
+                        .map(found -> found.name().equals(asset.name()))
+                        .orElse(false));
+    }
+
     /**
      * Opens the window, or brings it to the front if already open.
      *
      * @param catalog            the installed libraries
+     * @param preferences        where the "don't show the install warning again" choice is persisted
      * @param tryReloadLibraries called on the FX thread after a change that needs the node registry
      *                           and Add-Node menu rebuilt; attempts the rebuild and returns whether
      *                           it actually ran, which is false whenever a node-library node is live
@@ -134,10 +304,11 @@ public final class PluginWindow {
      *                           restart instead
      * @param liveNodeCount      how many nodes from a given library are on the canvas right now
      */
-    public static void show(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
+    public static void show(PluginCatalog catalog, AppPreferences preferences,
+                            java.util.function.BooleanSupplier tryReloadLibraries,
                             java.util.function.ToIntFunction<String> liveNodeCount) {
         if (instance == null) {
-            instance = new PluginWindow(catalog, tryReloadLibraries, liveNodeCount);
+            instance = new PluginWindow(catalog, preferences, tryReloadLibraries, liveNodeCount);
         }
         instance.open();
     }
@@ -149,21 +320,24 @@ public final class PluginWindow {
      *
      * @param repositoryUrl the repository a save file recorded for a library it needs
      */
-    public static void showAndInstall(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
+    public static void showAndInstall(PluginCatalog catalog, AppPreferences preferences,
+                                      java.util.function.BooleanSupplier tryReloadLibraries,
                                       java.util.function.ToIntFunction<String> liveNodeCount,
                                       String repositoryUrl) {
-        show(catalog, tryReloadLibraries, liveNodeCount);
+        show(catalog, preferences, tryReloadLibraries, liveNodeCount);
         instance.installFrom(repositoryUrl);
     }
 
-    private PluginWindow(PluginCatalog catalog, java.util.function.BooleanSupplier tryReloadLibraries,
+    private PluginWindow(PluginCatalog catalog, AppPreferences preferences,
+                         java.util.function.BooleanSupplier tryReloadLibraries,
                          java.util.function.ToIntFunction<String> liveNodeCount) {
         this.catalog = catalog;
+        this.preferences = preferences;
         this.tryReloadLibraries = tryReloadLibraries;
         this.liveNodeCount = liveNodeCount;
         stage = new Stage();
         stage.setTitle("HouseGraph Node Libraries");
-        stage.setScene(new Scene(buildRoot(), 860, 420));
+        stage.setScene(new Scene(buildRoot(), 1080, 420));
     }
 
     private void open() {
@@ -217,11 +391,15 @@ public final class PluginWindow {
         table.getColumns().setAll(
                 column("Id", 170, row -> new SimpleStringProperty(row.getId())),
                 column("Name", 150, row -> new SimpleStringProperty(row.getName())),
+                column("Repository", 220, row -> new SimpleStringProperty(row.getRepository())),
                 column("Installed", 90, row -> new SimpleStringProperty(row.getVersion())),
                 column("Latest", 90, Row::latestProperty),
                 column("API", 60, row -> new SimpleStringProperty(row.getApiVersion())),
                 column("Enabled", 70, row -> new SimpleStringProperty(row.getEnabled())),
                 column("Status", 200, Row::stateProperty));
+        // Every column is sortable via its header by default (TableView needs no extra wiring for a
+        // String column) — click Repository to group libraries that share one, the way Update and
+        // Remove already let you act on a multi-selection of them at once.
         table.setPlaceholder(new Label("No node libraries installed. Use “Add from URL…” "
                 + "with a library's GitHub repository."));
         return table;
@@ -260,18 +438,12 @@ public final class PluginWindow {
     // --- Actions --------------------------------------------------------------------------------
 
     private void promptAndInstall() {
-        TextInputDialog dialog = new TextInputDialog("https://github.com/");
-        dialog.initOwner(stage);
-        dialog.setTitle("Add a node library");
-        dialog.setHeaderText("Paste the library's GitHub repository URL.");
-        dialog.setContentText("Repository:");
-        Optional<String> url = dialog.showAndWait();
-        url.filter(value -> !value.isBlank()).ifPresent(this::installFrom);
+        new AddFromUrlDialog(null).show();
     }
 
     /**
-     * Installs from a repository URL after an explicit confirmation naming what is about to be
-     * downloaded and run.
+     * Opens the Add-from-URL window already looking up {@code repositoryUrl}, so a caller that
+     * already knows the repository doesn't make the user retype it.
      */
     public void installFrom(String repositoryUrl) {
         installFrom(repositoryUrl, null);
@@ -279,109 +451,93 @@ public final class PluginWindow {
 
     /**
      * @param wantedPluginId the library to take from the release when the repository publishes
-     *                       several (an update knows which); null to ask
+     *                       several (an update knows which); null to show every package the
+     *                       repository's latest release publishes and let the user pick
      */
     public void installFrom(String repositoryUrl, String wantedPluginId) {
+        if (wantedPluginId == null) {
+            new AddFromUrlDialog(repositoryUrl).showAndLookUp();
+            return;
+        }
         runOffThread("Looking up the latest release of " + repositoryUrl + "…", () -> {
             GitHubReleases.Release release = GitHubReleases.latest(repositoryUrl, null)
                     .orElseThrow(() -> new IllegalStateException("No release information returned"));
-            Platform.runLater(() -> chooseAssetThenInstall(repositoryUrl, release, wantedPluginId));
-        });
-    }
-
-    /**
-     * Chooses which library to install from a release, asking when the repository publishes more
-     * than one — a monorepo attaches a jar per library, and installing whichever came first would
-     * silently be the wrong one.
-     *
-     * @param wantedPluginId the library already known to be wanted (an update), or null to ask
-     */
-    private void chooseAssetThenInstall(String repositoryUrl, GitHubReleases.Release release, String wantedPluginId) {
-        if (wantedPluginId != null) {
-            release.assetFor(wantedPluginId).ifPresentOrElse(
-                    asset -> confirmThenInstall(repositoryUrl, release, asset),
+            Platform.runLater(() -> release.assetFor(wantedPluginId).ifPresentOrElse(
+                    asset -> confirmThenInstall(stage, repositoryUrl, release, asset, () -> {
+                    }),
                     () -> status.setText("Release " + release.tagName() + " has no jar for \""
-                            + wantedPluginId + "\"."));
-            return;
-        }
-        if (!release.hasSeveralLibraries()) {
-            confirmThenInstall(repositoryUrl, release, release.assets().get(0));
-            return;
-        }
-        buildAssetPicker(release).showAndWait()
-                .ifPresent(asset -> confirmThenInstall(repositoryUrl, release, asset));
+                            + wantedPluginId + "\".")));
+        });
     }
 
     /**
-     * A dropdown of jar names only — an {@link GitHubReleases.Asset}'s default {@code toString()}
-     * dumps every field, which reads as noise when all the user needs to recognize is the name. The
-     * size is shown separately, below the dropdown, once something is selected.
+     * Shows the trust-on-first-use warning — unless the user has already turned it off — then
+     * installs on success. Shared by the legacy named-install path and every row of
+     * {@link AddFromUrlDialog}'s table, so the security-relevant wording lives in one place.
+     *
+     * <p>Deliberately says nothing about the release or asset size: that is already on screen, in
+     * the Add-from-URL table's row the user just clicked "Add" on. Repeating it here just buried the
+     * warning that matters underneath information the user had already seen.
+     *
+     * @param owner       the window the confirmation belongs to — the main window for a named
+     *                    install, the Add-from-URL window for a row's "Add"
+     * @param onInstalled run on the FX thread after a successful install, in addition to the usual
+     *                    catalog refresh
      */
-    private Dialog<GitHubReleases.Asset> buildAssetPicker(GitHubReleases.Release release) {
-        Dialog<GitHubReleases.Asset> dialog = new Dialog<>();
-        dialog.initOwner(stage);
-        dialog.setTitle("Choose a node library");
-        dialog.setHeaderText("Release " + release.tagName() + " publishes "
-                + release.assets().size() + " node libraries.");
+    private void confirmThenInstall(Stage owner, String repositoryUrl, GitHubReleases.Release release,
+                                    GitHubReleases.Asset asset, Runnable onInstalled) {
+        if (skipInstallWarning()) {
+            downloadAndInstall(repositoryUrl, release, asset, onInstalled);
+            return;
+        }
 
-        ComboBox<GitHubReleases.Asset> combo =
-                new ComboBox<>(FXCollections.observableArrayList(release.assets()));
-        combo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(GitHubReleases.Asset asset) {
-                return asset == null ? "" : asset.name();
-            }
-
-            @Override
-            public GitHubReleases.Asset fromString(String string) {
-                throw new UnsupportedOperationException("not editable");
-            }
-        });
-        combo.setMaxWidth(Double.MAX_VALUE);
-        combo.getSelectionModel().selectFirst();
-
-        Label details = new Label();
-        details.setWrapText(true);
-        combo.valueProperty().addListener((obs, old, asset) ->
-                details.setText(asset == null ? "" : formatSize(asset.sizeBytes())));
-        details.setText(formatSize(combo.getValue().sizeBytes()));
-
-        VBox content = new VBox(8, new Label("Install:"), combo, details);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-        dialog.setResultConverter(button ->
-                button != null && button.getButtonData().isDefaultButton() ? combo.getValue() : null);
-        return dialog;
-    }
-
-    private void confirmThenInstall(String repositoryUrl, GitHubReleases.Release release,
-                                    GitHubReleases.Asset asset) {
         // Trust-on-first-use, stated plainly. This matters most when a save file proposed the
         // repository: that is untrusted input asking to download and execute code, so it must never
         // install silently. And there is no sandbox to fall back on.
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-        confirm.initOwner(stage);
+        confirm.initOwner(owner);
         confirm.setTitle("Install node library");
         confirm.setHeaderText("Install " + asset.name() + " from " + repositoryUrl + "?");
-        confirm.setContentText("Release " + release.tagName() + " — "
-                + formatSize(asset.sizeBytes()) + ".\n\n"
-                + "A node library runs with the same access as HouseGraph itself: your files, your "
-                + "network, and your saved secrets. Install it only if you trust its author, exactly "
-                + "as you would any program you downloaded.");
-        confirm.getDialogPane().setMinWidth(520);
+
+        Label warning = new Label("A node library runs with the same access as HouseGraph itself: "
+                + "your files, your network, and your saved secrets. Install it only if you trust its "
+                + "author, exactly as you would any program you downloaded.");
+        warning.setWrapText(true);
+        CheckBox dontShowAgain = new CheckBox("Don't show this warning again");
+        VBox content = new VBox(12, warning, dontShowAgain);
+        content.setPadding(new Insets(4, 0, 0, 0));
+        confirm.getDialogPane().setContent(content);
+        confirm.getDialogPane().setMinWidth(480);
+
         if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
             status.setText("Install cancelled.");
             return;
         }
+        if (dontShowAgain.isSelected()) {
+            setSkipInstallWarning(true);
+        }
+        downloadAndInstall(repositoryUrl, release, asset, onInstalled);
+    }
 
+    private void downloadAndInstall(String repositoryUrl, GitHubReleases.Release release,
+                                    GitHubReleases.Asset asset, Runnable onInstalled) {
         runOffThread("Downloading " + asset.name() + "…", () -> {
             PluginInstaller.install(repositoryUrl, release, asset, catalog);
         }, () -> {
             String id = catalogIdOf(repositoryUrl);
             latestKnown.put(id, release);
             librariesChanged("Installed " + asset.name() + ".", List.of(id));
+            onInstalled.run();
         });
+    }
+
+    private boolean skipInstallWarning() {
+        return preferences.get(SKIP_INSTALL_WARNING_KEY).map(Boolean::parseBoolean).orElse(false);
+    }
+
+    private void setSkipInstallWarning(boolean skip) {
+        preferences.put(SKIP_INSTALL_WARNING_KEY, Boolean.toString(skip));
+        preferences.save();
     }
 
     private String catalogIdOf(String repositoryUrl) {
@@ -418,6 +574,17 @@ public final class PluginWindow {
         });
     }
 
+    /** One library's resolved update: what it would become, and from where. */
+    private record UpdatePlan(PluginCatalog.Installed installed, GitHubReleases.Release release,
+                              GitHubReleases.Asset asset) {
+    }
+
+    /**
+     * Looks up every selected library's latest release, then shows one confirmation summarising the
+     * whole batch — name, current and new version, and size for each — instead of a separate dialog
+     * per library. A library id is passed with each lookup, the same as before: a monorepo's release
+     * carries a jar per library, and an update must take the one it already has rather than asking.
+     */
     private void updateSelected() {
         List<Row> selected = selectedRows();
         if (selected.isEmpty()) {
@@ -436,13 +603,101 @@ public final class PluginWindow {
         if (!noRepository.isEmpty()) {
             status.setText("No recorded repository to update from: " + String.join(", ", noRepository) + ".");
         }
-        // Pass the library id with each: a monorepo's release carries a jar per library, and an
-        // update must take the one it already has rather than asking again. Each still goes through
-        // its own confirmation dialog before downloading. A library whose nodes are live on the
-        // canvas updates its jar and catalog entry just the same — see librariesChanged.
-        for (PluginCatalog.Installed installed : toUpdate) {
-            installFrom(installed.repository(), installed.id());
+        if (toUpdate.isEmpty()) {
+            return;
         }
+
+        List<UpdatePlan> plans = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        runOffThread("Checking " + toUpdate.size() + (toUpdate.size() == 1 ? " library" : " libraries")
+                + " for updates…", () -> {
+            for (PluginCatalog.Installed installed : toUpdate) {
+                try {
+                    GitHubReleases.Release release = GitHubReleases.latest(installed.repository(), null)
+                            .orElseThrow(() -> new IllegalStateException("No release information returned"));
+                    GitHubReleases.Asset asset = release.assetFor(installed.id())
+                            .orElseThrow(() -> new IllegalStateException("Release " + release.tagName()
+                                    + " has no jar for \"" + installed.id() + "\""));
+                    plans.add(new UpdatePlan(installed, release, asset));
+                } catch (Exception e) {
+                    failed.add(installed.id() + " (" + e.getMessage() + ")");
+                }
+            }
+        }, () -> confirmThenUpdateAll(plans, failed));
+    }
+
+    /** Shows the one batch confirmation, then installs every accepted update. */
+    private void confirmThenUpdateAll(List<UpdatePlan> plans, List<String> lookupFailures) {
+        List<UpdatePlan> outdated = plans.stream()
+                .filter(plan -> !plan.release().version().equals(plan.installed().version())).toList();
+        List<UpdatePlan> upToDate = plans.stream()
+                .filter(plan -> plan.release().version().equals(plan.installed().version())).toList();
+        if (outdated.isEmpty()) {
+            StringBuilder message = new StringBuilder(upToDate.isEmpty() ? "Nothing to update." : "Already up to date.");
+            if (!lookupFailures.isEmpty()) {
+                message.append(" Could not check: ").append(String.join(", ", lookupFailures)).append('.');
+            }
+            status.setText(message.toString());
+            return;
+        }
+
+        boolean plural = outdated.size() > 1;
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.initOwner(stage);
+        confirm.setTitle("Update node libraries");
+        confirm.setHeaderText("Update " + outdated.size() + (plural ? " libraries?" : " library?"));
+        StringBuilder body = new StringBuilder();
+        long totalBytes = 0;
+        for (UpdatePlan plan : outdated) {
+            body.append("• ").append(plan.installed().id()).append(": ").append(plan.installed().version())
+                    .append(" → ").append(plan.release().version())
+                    .append(" (").append(formatSize(plan.asset().sizeBytes())).append(")\n");
+            totalBytes += plan.asset().sizeBytes();
+        }
+        if (!upToDate.isEmpty()) {
+            List<String> ids = upToDate.stream().map(plan -> plan.installed().id()).toList();
+            body.append("\nAlready up to date: ").append(String.join(", ", ids)).append('\n');
+        }
+        if (!lookupFailures.isEmpty()) {
+            body.append("\nCould not check: ").append(String.join(", ", lookupFailures)).append('\n');
+        }
+        body.append("\nTotal download: ").append(formatSize(totalBytes)).append(".\n\n")
+                .append("A node library runs with the same access as HouseGraph itself: your files, your "
+                        + "network, and your saved secrets. Update only if you still trust its author.");
+        confirm.setContentText(body.toString());
+        confirm.getDialogPane().setMinWidth(520);
+        if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
+            status.setText("Update cancelled.");
+            return;
+        }
+        installAllUpdates(outdated);
+    }
+
+    /** A library whose nodes are live on the canvas updates its jar and catalog entry just the same. */
+    private void installAllUpdates(List<UpdatePlan> plans) {
+        List<String> installedIds = new ArrayList<>();
+        List<String> failedInstalls = new ArrayList<>();
+        runOffThread("Updating " + plans.size() + (plans.size() == 1 ? " library…" : " libraries…"), () -> {
+            for (UpdatePlan plan : plans) {
+                try {
+                    PluginInstaller.install(plan.installed().repository(), plan.release(), plan.asset(), catalog);
+                    latestKnown.put(plan.installed().id(), plan.release());
+                    installedIds.add(plan.installed().id());
+                } catch (Exception e) {
+                    failedInstalls.add(plan.installed().id() + " (" + e.getMessage() + ")");
+                }
+            }
+        }, () -> {
+            StringBuilder message = new StringBuilder();
+            if (!installedIds.isEmpty()) {
+                message.append("Updated ").append(String.join(", ", installedIds)).append('.');
+            }
+            if (!failedInstalls.isEmpty()) {
+                message.append(message.isEmpty() ? "" : " ").append("Failed: ")
+                        .append(String.join(", ", failedInstalls)).append('.');
+            }
+            librariesChanged(message.toString(), installedIds);
+        });
     }
 
     private void toggleSelected() {
@@ -475,6 +730,7 @@ public final class PluginWindow {
         librariesChanged(message.toString().trim(), changed);
     }
 
+    /** One confirmation for the whole selection, listing each library, rather than one per removal. */
     private void removeSelected() {
         List<Row> selected = selectedRows();
         if (selected.isEmpty()) {
@@ -483,11 +739,21 @@ public final class PluginWindow {
         boolean plural = selected.size() > 1;
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.initOwner(stage);
+        confirm.setTitle("Remove node libraries");
         confirm.setHeaderText(plural ? "Remove " + selected.size() + " libraries?"
                 : "Remove \"" + selected.get(0).getId() + "\"?");
-        confirm.setContentText("Graphs using " + (plural ? "their nodes" : "its nodes") + " will still open "
-                + "— those nodes are kept as placeholders and come back if you reinstall "
-                + (plural ? "them" : "it") + ".");
+        StringBuilder body = new StringBuilder();
+        if (plural) {
+            for (Row row : selected) {
+                body.append("• ").append(row.getId()).append(" (").append(row.getVersion()).append(")\n");
+            }
+            body.append('\n');
+        }
+        body.append("Graphs using ").append(plural ? "their nodes" : "its nodes").append(" will still open "
+                + "— those nodes are kept as placeholders and come back if you reinstall ")
+                .append(plural ? "them" : "it").append('.');
+        confirm.setContentText(body.toString());
+        confirm.getDialogPane().setMinWidth(420);
         if (confirm.showAndWait().filter(button -> button.getButtonData().isDefaultButton()).isEmpty()) {
             return;
         }

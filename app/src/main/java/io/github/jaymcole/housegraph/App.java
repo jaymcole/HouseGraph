@@ -234,7 +234,7 @@ public class App extends Application {
     }
 
     private void openPluginWindow() {
-        PluginWindow.show(pluginCatalog, this::tryReloadNodeLibraries, canvas::countLiveNodesFrom);
+        PluginWindow.show(pluginCatalog, preferences, this::tryReloadNodeLibraries, canvas::countLiveNodesFrom);
     }
 
     @Override
@@ -426,7 +426,7 @@ public class App extends Application {
             blocking.stream()
                     .filter(GraphDependencyCheck.RequiredPlugin::isInstallable)
                     .map(GraphDependencyCheck.RequiredPlugin::repository)
-                    .forEach(repository -> PluginWindow.showAndInstall(pluginCatalog,
+                    .forEach(repository -> PluginWindow.showAndInstall(pluginCatalog, preferences,
                             this::tryReloadNodeLibraries, canvas::countLiveNodesFrom, repository));
         }
         return true;

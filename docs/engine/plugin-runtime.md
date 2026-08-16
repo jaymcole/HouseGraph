@@ -144,6 +144,15 @@ catalog, and for an update downloads the new jar to its own version-stamped path
 None of that touches the shared `PluginLoader` or any jar it has open, so it is
 safe whatever is live.
 
+Reinstalling the *exact same* version — typically removing a library and adding it
+straight back before a restart — resolves to that same version-stamped path, which
+can still be open if a node from it was live when it was removed. `PluginInstaller`
+checks the freshly downloaded jar's hash against whatever is already at that path
+first: if they match, it reuses the file on disk instead of overwriting it, so
+there is nothing for an open handle to block. Only a genuine mismatch — the file
+at that path differs from what was just downloaded, and is still open — reaches
+the filesystem move and can fail.
+
 What cannot safely happen while any node-library node is on the canvas is the
 in-memory hot reload, `App.tryReloadNodeLibraries`. Rebuilding the shared class
 loader re-scans every enabled library's classes, not just the changed one, so a node

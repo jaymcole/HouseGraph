@@ -9,6 +9,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -142,7 +143,19 @@ public final class PluginInstaller {
                     .resolve(PluginCatalog.sanitize(manifest.version()))
                     .resolve(PluginCatalog.sanitize(manifest.id()) + ".jar");
             Files.createDirectories(target.getParent());
-            moveInto(staged, target);
+            if (Files.isRegularFile(target) && matchesRecordedHash(target, sha256)) {
+                // Byte-identical to what's already on disk at this exact version — most often because
+                // it was removed or updated earlier this session while one of its nodes was still on
+                // the canvas, which defers the physical cleanup (see pruneSupersededVersions) without
+                // touching the catalog entry's file. Nothing needs to move, so there's nothing for a
+                // still-open handle to block: reinstating the catalog entry below is the whole job,
+                // and that alone cancels the deferred cleanup, since pruning only ever deletes what
+                // the catalog no longer lists.
+                log.info("\"{}\" {} is already on disk and unchanged; skipping the download's jar in favor "
+                        + "of the existing one", manifest.id(), manifest.version());
+            } else {
+                moveInto(staged, target);
+            }
 
             PluginCatalog.Installed installed =
                     PluginCatalog.Installed.fromManifest(manifest, repositoryUrl, sha256);
@@ -289,12 +302,29 @@ public final class PluginInstaller {
         }
     }
 
+    /**
+     * @throws InstallException when {@code target} is a jar a class loader still has open. That
+     *                          happens when this exact version was removed or updated earlier in the
+     *                          same session while one of its nodes was live on the canvas: the reload
+     *                          that would have released the handle is deferred until nothing is live,
+     *                          same as the "Pending restart" state in the library window. Windows
+     *                          can neither delete nor overwrite an open file, so the raw
+     *                          {@link AccessDeniedException} is translated into a message that says
+     *                          what to actually do about it, rather than surfacing as a stack trace.
+     */
     private static void moveInto(Path staged, Path target) throws IOException {
         try {
-            Files.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            // The staging file is in the system temp directory, which is often a different volume.
-            Files.copy(staged, target, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                // The staging file is in the system temp directory, which is often a different volume.
+                Files.copy(staged, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (AccessDeniedException e) {
+            throw new InstallException("Could not write " + target.getFileName() + " — that exact version is "
+                    + "still loaded, most likely because a node from it was on the canvas when it was removed "
+                    + "or updated earlier this session (see \"Pending restart\" in the library window). Close "
+                    + "or delete those nodes, or restart HouseGraph, then try again.", e);
         }
     }
 

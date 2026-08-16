@@ -22,14 +22,17 @@ saying so.
 
 | Control | Where | Effect |
 | --- | --- | --- |
-| Explicit install confirmation per repository | `PluginWindow.confirmThenInstall` | Names repository, asset, release and size before anything is fetched. Every install is confirmed afresh |
+| Explicit install confirmation before any download | `PluginWindow.confirmThenInstall` (one asset, from the Add-from-URL table) and `confirmThenUpdateAll` (a batch of updates, one dialog listing all of them) | Names what's about to be fetched and warns that a node library runs with full privileges. Update's batch confirmation always shows; the single-install warning has a "don't show this again" checkbox (`AppPreferences` key `plugin.skipInstallWarning`) once the user has seen and accepted it |
 | Fetch origins restricted to GitHub | `GitHubReleases.ALLOWED_HOSTS`, re-checked in `PluginInstaller.download` | Neither a lookup nor a download can leave `github.com`, `api.github.com`, `objects.githubusercontent.com` |
 | Save-file path containment | `RemoteDeployment` | A manifest's `graphs[].file` is resolved and verified to stay inside the clone; `../` and absolute paths are refused rather than clamped |
 | Directory-key sanitising | `AppDirectories` | A hostile repository URL or manifest cannot write outside its own folder |
 | Secret access through a seam | `sdk.Secrets` | Does nothing today that `SecretsStore.open()` does not; exists so a per-library grant can be added host-side later |
 
-There is deliberately no "remember this repository" in the app. The only place
-installing-without-asking makes sense is unattended.
+There is deliberately no "remember this repository" in the app — the dismissible
+warning is a global one-time acknowledgement of what installing means at all, not
+a per-repository trust decision, and every install still shows what it is about to
+fetch in the Add-from-URL table itself before the "Add" click that triggers it. The
+only place installing-without-asking makes sense is unattended.
 
 ## What is not enforced
 

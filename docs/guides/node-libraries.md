@@ -15,13 +15,16 @@ Install libraries you trust the author of.
 
 ## Installing
 
-Open **Node Libraries…** from the toolbar, and give it a GitHub repository URL.
-HouseGraph looks up the latest release and shows you the repository, the asset, the
-release and its size before fetching anything. Nothing is downloaded until you
-confirm.
-
-If a repository publishes several libraries in one release, you pick which to
-install from a dropdown.
+Open **Node Libraries…** from the toolbar, choose **Add from URL…**, and give it a
+GitHub repository URL. HouseGraph looks up the latest release and lists every
+package it publishes as a table — name, size, and whether it's already installed —
+with an **Add** button on each row that isn't. Clicking one warns that a node
+library runs with your full privileges before fetching anything; nothing is
+downloaded until you confirm. That warning has its own "don't show this again"
+checkbox, since the table above it already named what's about to be installed —
+check it once and later installs proceed straight to the download. You can add
+several packages from the same release one after another without reopening the
+dialog.
 
 The first-party libraries are all in one repository:
 
@@ -52,8 +55,15 @@ housegraph plugins install https://github.com/jaymcole/housegraph-nodes
 ## Managing what you have
 
 The library window's table supports multi-selection. **Update**, **Enable/Disable**
-and **Remove** act on the whole selection, each still going through its own
-confirmation, so one refusal does not abort the batch.
+and **Remove** act on the whole selection at once. Update and Remove each show one
+confirmation summarising every affected library — name, and for Update its current
+and new version and size — rather than a separate dialog per library; accepting it
+acts on the whole batch.
+
+Every column is sortable — click its header. Sorting by **Repository** groups
+libraries that came from the same one, which is useful before a bulk Update or
+Remove: a monorepo release publishes several libraries at once, and it's often the
+whole group you want to act on.
 
 **Check for Updates** checks just the selection when rows are selected, or every
 installed library when nothing is.
