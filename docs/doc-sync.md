@@ -5,11 +5,14 @@ HouseGraph is the source of truth for documentation shared with
 [`housegraph-plugin-template`](https://github.com/jaymcole/housegraph-plugin-template).
 Anything meant to be mirrored into both lives under [`shared/`](shared/).
 
-> **`shared/` currently holds no synced content.** The obvious candidates are the
-> node-authoring pages — [`nodes/guidelines.md`](nodes/guidelines.md) and
-> [`nodes/publishing-a-library.md`](nodes/publishing-a-library.md) — which the
-> companion repositories both need. Moving them here means rewriting their relative
-> links, since a synced file is read from a repository with a different doc tree.
+Currently synced: [`shared/node-library-rules.md`](shared/node-library-rules.md),
+the build rules and API surface a node library author needs. It lives here because
+all three repositories teach it, and three copies drift.
+
+> **A sync into `housegraph-nodes` must not cut a release.** That repository's
+> `auto-tag.yml` tags and releases on every push to `main`, so without a
+> `paths-ignore` for `docs/shared/**` a documentation edit here would publish a new
+> version of every library it ships.
 
 ## How it works
 
