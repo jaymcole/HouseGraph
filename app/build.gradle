@@ -26,6 +26,16 @@ dependencies {
     implementation project(':housegraph-api')
 }
 
+jar {
+    // Its own classifier so this task's output path never collides with shadowJar's below.
+    // Nobody uses the plain jar directly -- the shadow jar is the only distribution artifact
+    // (see the "Standalone jar" section of the README) -- but the `application` and `shadow`
+    // plugins each wire a dist/launch-script task that reads *this* task's output, and Gradle's
+    // task validation rejects two tasks in the same build writing the same file path, which is
+    // exactly what an empty classifier here plus shadowJar's empty classifier would do.
+    archiveClassifier = 'thin'
+}
+
 shadowJar {
     // Plain name (no "-all" suffix) so it's easy to find: app/build/libs/app-<version>.jar.
     archiveClassifier = ''

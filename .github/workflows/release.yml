@@ -38,22 +38,20 @@ jobs:
       - name: Build and test both modules
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
+        # `build` already produces the standalone app jar: the shadow plugin wires `shadowJar`
+        # into `assemble`. It lands next to the plain `jar` task's output (app-<version>-thin.jar)
+        # without colliding, since app/build.gradle gives the plain jar its own classifier.
         run: ./gradlew build "-Pversion=${TAG#v}"
-
-      - name: Build the standalone app jar
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        # Separate invocation, deliberately: shadowJar shares app-<version>.jar's filename with
-        # the plain `jar` task's output (see app/build.gradle), so running it in the same command
-        # as `build` would race the two tasks over that path. Running it after is what makes the
-        # shadow (fat) jar the one left on disk.
-        run: ./gradlew :app:shadowJar "-Pversion=${TAG#v}"
 
       - name: Attach the app jar to the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           # Built on ubuntu-latest, so it bundles Linux JavaFX natives (see README's "Standalone
-          # jar" section) — usable as-is on a Linux machine, but not on macOS or Windows.
-          files: 'app/build/libs/app-*.jar'
+          # jar" section) — usable as-is on a Linux machine, but not on macOS or Windows. Excludes
+          # app-<version>-thin.jar, the plain jar with no bundled dependencies -- not runnable
+          # standalone, so not something to hand a user via the release page.
+          files: |
+            app/build/libs/app-*.jar
+            !app/build/libs/app-*-thin.jar
           generate_release_notes: true
