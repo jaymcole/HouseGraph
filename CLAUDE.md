@@ -80,6 +80,26 @@ rebuilding those repositories, so make the change there in the same pass. Prefer
 adding a concrete hook with a default over a new abstract method, since that avoids
 the rebuild. A preference, not a guarantee.
 
+## Tag every PR title for release
+
+`.github/workflows/auto-tag.yml` tags and releases every merge to `main`
+automatically, bumping **patch** by default. When opening a pull request, put
+`#minor` or `#major` in the PR title yourself if the change warrants it — don't
+leave it to default to patch:
+
+- `#major` — a breaking change: `housegraph-api`'s public contract changes
+  incompatibly, or a built-in node's ports, id, or saved-graph-visible behavior
+  change incompatibly.
+- `#minor` — a backwards-compatible addition: a new built-in node, a new editable
+  value type, a new `housegraph-api` hook, or a new port on an existing node that
+  doesn't change what old graphs do.
+- *(no tag)* — a fix, refactor, docs change, or anything else that doesn't add or
+  break public surface. This is the default, so no action needed.
+
+Get this right at PR-creation time — the tag is read from the merge commit
+message, and there's no fixing it after the merge without deleting and
+recreating the release tag by hand.
+
 ## Documentation mandate
 
 **A change that alters architecture, a public contract, a subsystem's observable

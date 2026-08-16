@@ -1,0 +1,59 @@
+name: Release
+
+# Pushing a tag builds and tests both modules, then attaches the standalone app jar to a GitHub
+# Release. housegraph-api itself is published separately, by JitPack building the same tag (see
+# jitpack.yml) — this workflow doesn't need to do anything for that.
+# Also accepts workflow_dispatch, with the tag as an input: a workflow's own GITHUB_TOKEN is
+# blocked from triggering other workflows' `push: tags` events (GitHub's anti-recursion guard), so
+# auto-tag.yml — which pushes tags with that same token — cannot rely on this trigger firing and
+# instead dispatches this workflow directly. workflow_dispatch is exempt from that guard.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release, e.g. v0.8.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - run: chmod +x ./gradlew
+
+      - name: Build and test both modules
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: ./gradlew build "-Pversion=${TAG#v}"
+
+      - name: Build the standalone app jar
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        # Separate invocation, deliberately: shadowJar shares app-<version>.jar's filename with
+        # the plain `jar` task's output (see app/build.gradle), so running it in the same command
+        # as `build` would race the two tasks over that path. Running it after is what makes the
+        # shadow (fat) jar the one left on disk.
+        run: ./gradlew :app:shadowJar "-Pversion=${TAG#v}"
+
+      - name: Attach the app jar to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          # Built on ubuntu-latest, so it bundles Linux JavaFX natives (see README's "Standalone
+          # jar" section) — usable as-is on a Linux machine, but not on macOS or Windows.
+          files: 'app/build/libs/app-*.jar'
+          generate_release_notes: true

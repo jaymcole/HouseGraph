@@ -102,6 +102,30 @@ Two things worth knowing before you start:
 Graphs run in the normal windowed app, supervised as child processes, so the
 machine needs a logged-in GUI session.
 
+## Releasing
+
+Releasing is automatic: merging a pull request into `main` triggers
+`.github/workflows/auto-tag.yml`, which tags the resulting commit
+`v<major>.<minor>.<patch>`, bumping the patch number by default. Put `#minor` or
+`#major` anywhere in the PR title to bump one of those instead (and reset the
+parts below it to zero) — e.g. a title of `Add plugin update command #minor`
+bumps the minor version.
+
+Pushing a `v*` tag — whether from `auto-tag.yml` or manually — triggers
+`.github/workflows/release.yml`, which:
+
+1. Checks out, sets up JDK 21.
+2. Runs `./gradlew build -Pversion=<tag without the v>` — builds and tests both
+   modules at that version.
+3. Runs `./gradlew :app:shadowJar -Pversion=<tag without the v>` and attaches the
+   resulting jar to a GitHub Release, with auto-generated release notes. It's built
+   on `ubuntu-latest`, so — per the platform caveat above — it bundles Linux JavaFX
+   natives and runs as-is only on Linux.
+
+`housegraph-api` isn't released through this workflow: JitPack publishes it
+directly from the same tag (see [`jitpack.yml`](jitpack.yml) and
+[`docs/nodes/publishing-a-library.md`](docs/nodes/publishing-a-library.md)).
+
 ## Documentation
 
 | Section | For |
