@@ -36,22 +36,23 @@ jobs:
       - run: chmod +x ./gradlew
 
       - name: Build and test both modules
+        id: build
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         # `build` already produces the standalone app jar: the shadow plugin wires `shadowJar`
         # into `assemble`. It lands next to the plain `jar` task's output (app-<version>-thin.jar)
         # without colliding, since app/build.gradle gives the plain jar its own classifier.
-        run: ./gradlew build "-Pversion=${TAG#v}"
+        run: |
+          ./gradlew build "-Pversion=${TAG#v}"
+          echo "asset=app/build/libs/app-${TAG#v}.jar" >> "$GITHUB_OUTPUT"
 
       - name: Attach the app jar to the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           # Built on ubuntu-latest, so it bundles Linux JavaFX natives (see README's "Standalone
-          # jar" section) — usable as-is on a Linux machine, but not on macOS or Windows. Excludes
-          # app-<version>-thin.jar, the plain jar with no bundled dependencies -- not runnable
-          # standalone, so not something to hand a user via the release page.
-          files: |
-            app/build/libs/app-*.jar
-            !app/build/libs/app-*-thin.jar
+          # jar" section) — usable as-is on a Linux machine, but not on macOS or Windows. Named
+          # explicitly rather than globbed, so app-<version>-thin.jar (the plain jar with no
+          # bundled dependencies, not runnable standalone) never ends up attached alongside it.
+          files: ${{ steps.build.outputs.asset }}
           generate_release_notes: true
