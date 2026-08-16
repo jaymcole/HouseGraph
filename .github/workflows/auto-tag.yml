@@ -1,0 +1,59 @@
+name: Auto Tag
+
+# Tags every merge to main and dispatches .github/workflows/release.yml directly. (release.yml
+# also listens for `v*` tag pushes, for tags pushed by a human — but a workflow's own GITHUB_TOKEN
+# is blocked from triggering other workflows' `push: tags` events, GitHub's anti-recursion guard,
+# so this job can't just push the tag and rely on that trigger; it has to dispatch explicitly.)
+# Bumps patch by default; put #minor or #major anywhere in the PR title to bump one of those
+# instead (the PR title ends up in the merge commit message).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute and push the next tag
+        id: tag
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+
+          latest_tag=$(git tag -l 'v*' | sort -V | tail -n1)
+          latest_tag=${latest_tag:-v0.0.0}
+
+          version=${latest_tag#v}
+          IFS='.' read -r major minor patch <<< "$version"
+
+          if [[ "$COMMIT_MESSAGE" == *"#major"* ]]; then
+            major=$((major + 1)); minor=0; patch=0
+          elif [[ "$COMMIT_MESSAGE" == *"#minor"* ]]; then
+            minor=$((minor + 1)); patch=0
+          else
+            patch=$((patch + 1))
+          fi
+
+          new_tag="v${major}.${minor}.${patch}"
+          echo "Tagging $new_tag"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag "$new_tag"
+          git push origin "$new_tag"
+
+          echo "tag=$new_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch the release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --ref main -f tag="${{ steps.tag.outputs.tag }}"
