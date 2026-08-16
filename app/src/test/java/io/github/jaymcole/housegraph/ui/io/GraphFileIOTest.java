@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.ui.io;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.graph.BaseNode;
+import io.github.jaymcole.housegraph.ui.CameraState;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
@@ -620,6 +621,28 @@ class GraphFileIOTest {
         ClipboardDataEdge dataEdge = loaded.dataEdges().get(0);
         assertEquals(0, dataEdge.sourceVariableIndex());
         assertEquals(0, dataEdge.targetVariableIndex());
+    }
+
+    // --- Camera state (pan/zoom) -----------------------------------------------------------------
+
+    @Test
+    void cameraStateRoundTripsThroughSaveAndLoad() {
+        JSONObject json = GraphFileIO.toJson(new GraphSnapshot(List.of(), List.of(), List.of()),
+                REGISTRY, PluginDirectory.EMPTY, new CameraState(2.5, 120.0, -40.0));
+
+        CameraState restored = GraphFileIO.cameraFromJson(json);
+
+        assertEquals(2.5, restored.zoom());
+        assertEquals(120.0, restored.translateX());
+        assertEquals(-40.0, restored.translateY());
+    }
+
+    @Test
+    void aFileWithNoCameraKeyRestoresTheDefaultCamera() {
+        // A save written before camera state existed has no "camera" key at all.
+        JSONObject root = rootWith(List.of(), List.of(), List.of());
+
+        assertEquals(CameraState.DEFAULT, GraphFileIO.cameraFromJson(root));
     }
 
     // --- Stable type identity and format version -----------------------------------------------

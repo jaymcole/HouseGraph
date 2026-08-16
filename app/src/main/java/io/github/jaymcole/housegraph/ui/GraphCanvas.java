@@ -1388,4 +1388,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
+
+    /** The canvas's current pan/zoom, for a save file to carry alongside the graph (see {@code GraphFileIO}). */
+    public CameraState getCameraState() {
+        return new CameraState(zoom, translateX, translateY);
+    }
+
+    /** Restores a previously captured pan/zoom, e.g. on loading a save file. Zoom is clamped to the usual scroll-zoom range. */
+    public void setCameraState(CameraState state) {
+        zoom = clamp(state.zoom(), 0.2, 3.0);
+        translateX = state.translateX();
+        translateY = state.translateY();
+        updateTransform();
+    }
 }

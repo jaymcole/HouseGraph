@@ -372,6 +372,7 @@ public class App extends Application {
 
         try {
             canvas.loadSnapshot(GraphFileIO.fromRoot(root, nodeRegistry));
+            canvas.setCameraState(GraphFileIO.cameraFromJson(root));
             rememberLastFile(file);
         } catch (RuntimeException ex) {
             reportOpenFailure(file, interactive, ex);

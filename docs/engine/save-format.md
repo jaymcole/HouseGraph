@@ -33,7 +33,8 @@ The JSON conversion — `toJson` and `fromJson` — is free of any JavaFX or
                    "waypoints": [ {"x":0,"y":0} ] } ],
   "flowEdges": [ { "sourceNode": 0, "sourcePort": "True",
                    "targetNode": 1, "targetPort": 0,
-                   "waypoints": [ ] } ]
+                   "waypoints": [ ] } ],
+  "camera": { "zoom": 1.0, "translateX": 0.0, "translateY": 0.0 } // pan/zoom; absent = default view
 }
 ```
 
@@ -82,6 +83,12 @@ credentials out of files.
 **`state` is loaded before ports are touched**, so dynamic-port nodes rebuild their
 ports from state before values are applied.
 
+**The camera is not part of `GraphSnapshot`.** Pan/zoom is a view concern that copy/
+paste has no use for, so it is read and written directly against the root — `save`
+pulls it from `GraphCanvas.getCameraState()`, and `load` restores it with
+`GraphCanvas.setCameraState` via `GraphFileIO.cameraFromJson` — rather than flowing
+through `toJson`/`fromJson`'s snapshot conversion.
+
 ## Forgiving reads
 
 The old **positional** shape still loads. Bare scalar `inputs`/`outputs` arrays,
@@ -91,7 +98,8 @@ no per-node `plugin` key, and reads with every node resolving to no owning libra
 
 Missing `waypoints`, `sourcePort` and `targetPort` default sensibly. A missing or
 unknown `executionPolicy` loads as `QUEUE`. An edge whose named endpoint no longer
-resolves on its node is dropped rather than mis-wired.
+resolves on its node is dropped rather than mis-wired. A file with no `camera` key —
+every save before this one — restores the default view (zoom 1, no pan).
 
 **Keep this behaviour when you change the format**, and document new fields.
 

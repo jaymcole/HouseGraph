@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.ui.io;
 
+import io.github.jaymcole.housegraph.ui.CameraState;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
@@ -66,11 +67,18 @@ import java.util.Map;
  * anchors — the failure mode of the old purely positional format. {@code requiredInputs} is likewise
  * an array of the <em>names</em> of the required inputs.
  * <p>
+ * The root also carries a {@code camera} object recording the canvas's pan/zoom
+ * ({@link CameraState}) at save time, restored on load so opening a graph returns the view to where
+ * it was left rather than resetting it. Unlike the node/edge tables it is not part of
+ * {@link GraphSnapshot} — copy/paste has no use for a viewport — so it is read and written directly
+ * against the root by {@link #save}/{@link #load} and {@link #cameraFromJson}.
+ * <p>
  * <b>Reads stay forgiving, including of the old positional format.</b> Files written before this
  * change store bare scalar {@code inputs}/{@code outputs} arrays, integer edge references, and a
  * positional {@code requiredInputs} boolean array; all three are still read positionally (detected by
  * JSON shape). Beyond that: a missing {@code executionPolicy} loads as the default {@code QUEUE},
  * missing {@code maxConcurrency}/{@code timeoutMillis} as 0 (unlimited / no timeout), a missing
+ * {@code camera} restores {@link CameraState#DEFAULT}, a missing
  * {@code requiredInputs} leaves each input's author-declared default, an unknown node type loads as a
  * null-node placeholder (rather than failing the whole load) that holds its index slot so later nodes
  * — and the edges that reference them — stay correctly aligned, and an edge whose named endpoint no
@@ -113,14 +121,16 @@ public final class GraphFileIO {
      *                app's {@code PluginCatalog}
      */
     public static void save(GraphCanvas canvas, File file, PluginDirectory plugins) throws IOException {
-        JSONObject root = toJson(canvas.snapshotAll(), canvas.getNodeRegistry(), plugins);
+        JSONObject root = toJson(canvas.snapshotAll(), canvas.getNodeRegistry(), plugins, canvas.getCameraState());
         try (FileWriter writer = new FileWriter(file)) {
             writer.write(root.toString(2));
         }
     }
 
     public static void load(GraphCanvas canvas, File file) throws IOException {
-        canvas.loadSnapshot(fromRoot(readRoot(file), canvas.getNodeRegistry()));
+        JSONObject root = readRoot(file);
+        canvas.loadSnapshot(fromRoot(root, canvas.getNodeRegistry()));
+        canvas.setCameraState(cameraFromJson(root));
     }
 
     /**
@@ -152,14 +162,35 @@ public final class GraphFileIO {
         return fromJson(root, registry);
     }
 
+    /**
+     * The camera state (pan/zoom) recorded in an already-parsed root, or {@link CameraState#DEFAULT}
+     * for a file saved before camera state existed. Split out from {@link #fromRoot} because the
+     * camera is not part of {@link GraphSnapshot} — a caller restoring a canvas from a save file calls
+     * both against the same root; one restoring only a snapshot (e.g. copy/paste) calls neither.
+     */
+    public static CameraState cameraFromJson(JSONObject root) {
+        JSONObject cameraJson = root.optJSONObject("camera");
+        if (cameraJson == null) {
+            return CameraState.DEFAULT;
+        }
+        return new CameraState(
+                cameraJson.optDouble("zoom", CameraState.DEFAULT.zoom()),
+                cameraJson.optDouble("translateX", CameraState.DEFAULT.translateX()),
+                cameraJson.optDouble("translateY", CameraState.DEFAULT.translateY()));
+    }
+
     // The registry is a parameter rather than a static lookup so these two stay headless AND
     // injectable: a test can now hand in a registry scanning a fixture package instead of asserting
     // against whatever node types happen to ship in the app.
     static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry) {
-        return toJson(snapshot, registry, PluginDirectory.EMPTY);
+        return toJson(snapshot, registry, PluginDirectory.EMPTY, CameraState.DEFAULT);
     }
 
     static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry, PluginDirectory plugins) {
+        return toJson(snapshot, registry, plugins, CameraState.DEFAULT);
+    }
+
+    static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry, PluginDirectory plugins, CameraState camera) {
         List<ClipboardNode> snapshotNodes = snapshot.nodes();
         JSONArray nodesJson = new JSONArray();
         // Keyed by library id, insertion-ordered so the written table is stable between saves.
@@ -253,6 +284,10 @@ public final class GraphFileIO {
         root.put("nodes", nodesJson);
         root.put("dataEdges", dataEdgesJson);
         root.put("flowEdges", flowEdgesJson);
+        root.put("camera", new JSONObject()
+                .put("zoom", camera.zoom())
+                .put("translateX", camera.translateX())
+                .put("translateY", camera.translateY()));
         return root;
     }
 
