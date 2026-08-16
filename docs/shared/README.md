@@ -1,18 +1,23 @@
 # Shared documentation
 
-Files in this folder are mirrored verbatim into HouseGraph's companion
-repositories,
-[`housegraph-nodes`](https://github.com/jaymcole/housegraph-nodes) and
-[`housegraph-plugin-template`](https://github.com/jaymcole/housegraph-plugin-template),
-on every push to `main` that touches it.
+Documentation that has to be identical across the three HouseGraph repositories —
+[HouseGraph](https://github.com/jaymcole/HouseGraph),
+[housegraph-nodes](https://github.com/jaymcole/housegraph-nodes) and
+[housegraph-plugin-template](https://github.com/jaymcole/housegraph-plugin-template).
 
-**This folder currently holds no synced content.** The candidates are HouseGraph's
-node-authoring pages, which the companion repositories both need; moving them here
-means rewriting their relative links first.
+| File | Holds |
+| --- | --- |
+| [node-library-rules.md](node-library-rules.md) | The build rules, API surface, node-design guidance and trust note every node library author needs |
 
-Write anything placed here assuming it will be read from a companion repository,
-not from HouseGraph — no relative links into this repository's doc tree, and no
-context that only makes sense here.
+**HouseGraph is the source of truth.** These files are authored in
+[`docs/shared/`](https://github.com/jaymcole/HouseGraph/tree/main/docs/shared)
+there and mirrored into the other two automatically on every push. Editing a copy
+in a companion repository is pointless — the next sync overwrites it.
 
-See [`docs/doc-sync.md`](../doc-sync.md) for how the sync works and what to do if
-it breaks.
+Anything placed here is read from all three repositories, so it uses absolute
+`https://github.com/jaymcole/...` URLs rather than relative links, and avoids
+context that only makes sense in one of them. The sync replaces the whole folder,
+so a file removed at the source is removed everywhere.
+
+The mechanism is described in
+[`docs/doc-sync.md`](https://github.com/jaymcole/HouseGraph/blob/main/docs/doc-sync.md).
