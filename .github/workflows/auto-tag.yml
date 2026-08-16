@@ -29,15 +29,20 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Only the first line (the PR title) is checked, not the full merge commit body --
+          # otherwise a commit body that merely mentions "#minor"/"#major" in prose (e.g.
+          # documenting this workflow) would be misread as a version-bump directive.
+          commit_title=$(head -n1 <<< "$COMMIT_MESSAGE")
+
           latest_tag=$(git tag -l 'v*' | sort -V | tail -n1)
           latest_tag=${latest_tag:-v0.0.0}
 
           version=${latest_tag#v}
           IFS='.' read -r major minor patch <<< "$version"
 
-          if [[ "$COMMIT_MESSAGE" == *"#major"* ]]; then
+          if [[ "$commit_title" == *"#major"* ]]; then
             major=$((major + 1)); minor=0; patch=0
-          elif [[ "$COMMIT_MESSAGE" == *"#minor"* ]]; then
+          elif [[ "$commit_title" == *"#minor"* ]]; then
             minor=$((minor + 1)); patch=0
           else
             patch=$((patch + 1))
