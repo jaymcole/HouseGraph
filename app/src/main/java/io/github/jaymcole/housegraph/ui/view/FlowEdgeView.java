@@ -27,10 +27,6 @@ public class FlowEdgeView extends AbstractEdgeView {
         return FLOW_STROKE;
     }
 
-    public boolean hasTarget(FlowPortView port) {
-        return targetPort == port;
-    }
-
     public FlowPortView getSourcePort() {
         return sourcePort;
     }

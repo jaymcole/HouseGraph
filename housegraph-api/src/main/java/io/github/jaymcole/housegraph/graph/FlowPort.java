@@ -13,7 +13,10 @@ import java.util.UUID;
  * no dead value/type machinery on flow ports, no control-only special-casing on data.
  * <p>
  * A node can expose several OUT ports and choose at runtime which to fire (see
- * {@link BaseNode#activate}), which is what makes branch/decider nodes possible. The
+ * {@link BaseNode#activate}), which is what makes branch/decider nodes possible. It can
+ * equally expose several IN ports and tell at runtime which one it was reached through
+ * (see {@link ProcessContext#triggeredVia()}), which is what lets one node carry, say, a
+ * Start and a Stop entry point. Any number of {@link FlowEdge}s may feed one IN port. The
  * {@code name} is what the UI labels the port with; a blank name renders as a bare
  * anchor with no label, which is the right look for a node that has just one.
  */

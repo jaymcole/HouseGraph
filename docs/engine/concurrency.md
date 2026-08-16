@@ -9,8 +9,8 @@ Read this alongside the `NodeGraph` and `ExecutionContext` Javadoc.
 ## Isolation: `ExecutionContext`
 
 One context per run. It holds that run's node statuses, `flowVisited` set,
-activated flow ports, per-node resolution monitors, join-arrival counts, and the
-**computed-value overlay**.
+activated flow-out ports, per-node flow-in arrivals, per-node resolution monitors,
+join-arrival counts, and the **computed-value overlay**.
 
 A `NodeVariable`'s authored value stays on the node, read-only during a run and
 therefore safe to share. Its computed value lives in the context bound to the
@@ -36,6 +36,12 @@ branches, use a **flow join**: `BaseNode.isFlowJoin()` returns true, and
 `JoinNode` is the concrete node. The engine counts arrivals per run and fires the
 join once they reach its wired-edge count. An unwired port does not count, and a
 join whose branch is pruned by an upstream `If` simply does not fire that run.
+
+The barrier counts **edges, not ports**, which is the one place fan-in into a
+single flow-in port changes behaviour: two edges into one join port make the join
+wait for both. Everywhere else a node fires once per run regardless, and the port
+appears once in `ProcessContext.triggeredVia()` — see
+[execution-model.md](execution-model.md).
 
 ## Locking
 

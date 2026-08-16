@@ -83,6 +83,22 @@ non-red port, mirroring `NodeGraph.attachEdge`. See
 Flow anchors come straight from `BaseNode.getFlowInputs()`/`getFlowOutputs()`, so a
 branch node with several out-ports gets one anchor each automatically.
 
+### Flow-edge wiring
+
+A flow-in anchor accepts **several** incoming edges: two triggers can both be wired
+into one `Start` port, and either firing triggers the node.
+`GraphCanvas.createFlowEdge` adds alongside whatever already feeds the port rather
+than replacing it. Data ports keep their single-source restriction, which is why
+`CreateEdgeCommand` records a displaced edge for undo and `CreateFlowEdgeCommand`
+has nothing to record.
+
+The one gesture refused is wiring the *identical* pair of ports twice:
+`isValidFlowConnection` calls `findFlowEdge` and rejects a pair already joined, so a
+duplicate edge — which would change nothing but would inflate a
+[flow join](concurrency.md)'s arrival count — cannot be dragged into existence.
+`createFlowEdge` returns the existing view instead of a second one for the same
+reason, covering the load, paste and node-rebuild paths that call it directly.
+
 ### Node visual states
 
 `NodeView` layers unmanaged, mouse-transparent overlay rectangles over the node,

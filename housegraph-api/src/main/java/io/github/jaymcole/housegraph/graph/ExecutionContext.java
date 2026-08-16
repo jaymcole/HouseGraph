@@ -62,6 +62,16 @@ public final class ExecutionContext {
     private final Map<BaseNode, Set<FlowPort>> activatedOutputs = new ConcurrentHashMap<>();
 
     /**
+     * The IN flow ports each node has had an edge arrive at this run — the inbound mirror of
+     * {@link #activatedOutputs}. Accumulated by {@code NodeGraph.Run.schedule} on every arrival,
+     * including ones the node-level dedup then drops, and snapshotted into the node's
+     * {@link ProcessContext} when its {@code process()} is about to run
+     * ({@link ProcessContext#triggeredVia()}). A node that runs only as a pulled data dependency, or
+     * as a run's externally-triggered entry node, has no entry here and so reads as empty.
+     */
+    private final Map<BaseNode, Set<FlowPort>> flowArrivals = new ConcurrentHashMap<>();
+
+    /**
      * Per-node resolution monitors, scoped to this run. Two branch threads of the same run that
      * share a data dependency take the same monitor (so the node resolves once); a data cycle
      * re-enters it on one thread (reentrant) and hits the {@code IN_PROGRESS} check. Crucially the
@@ -117,6 +127,21 @@ public final class ExecutionContext {
     /** The flow-out ports {@code node} fired this run; empty means "fire all" (see {@link BaseNode#activate}). */
     Set<FlowPort> activatedOf(BaseNode node) {
         return activatedOutputs.getOrDefault(node, Set.of());
+    }
+
+    /** Records that a flow edge into {@code port} arrived at {@code node} this run (see the field). */
+    void recordFlowArrival(BaseNode node, FlowPort port) {
+        flowArrivals.computeIfAbsent(node, ignored -> ConcurrentHashMap.newKeySet()).add(port);
+    }
+
+    /**
+     * An immutable snapshot of the IN flow ports that have had an edge arrive at {@code node} so
+     * far this run; empty when none have. Copied rather than exposed live so the set a
+     * {@code process()} sees can't grow under it mid-call.
+     */
+    Set<FlowPort> flowArrivalsOf(BaseNode node) {
+        Set<FlowPort> arrived = flowArrivals.get(node);
+        return arrived == null ? Set.of() : Set.copyOf(arrived);
     }
 
     /** This run's resolution monitor for {@code node} (see the field). */

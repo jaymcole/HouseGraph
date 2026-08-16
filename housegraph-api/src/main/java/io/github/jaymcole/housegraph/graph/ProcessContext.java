@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.graph;
 
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
@@ -21,6 +22,12 @@ import java.util.function.BooleanSupplier;
  *   <li><b>Symmetric reads/writes.</b> {@link #get(NodeVariable)} and {@link #set(NodeVariable, Object)}
  *       so a node can go entirely through the context; both route through the same run value overlay
  *       as {@link NodeVariable#getValue()}/{@link NodeVariable#setValue}.</li>
+ *   <li><b>Which flow-in port fired.</b> {@link #triggeredVia()} / {@link #wasTriggeredVia(FlowPort)}
+ *       name the IN {@link FlowPort}s whose edges brought control to this node, so a node with
+ *       several named entry points can branch on the one that fired — the inbound mirror of
+ *       {@link BaseNode#activate}, which picks the OUT ports control leaves by. Empty when there was
+ *       no flow arrival at all: a {@link BaseNode#beginProcessing() pull}, a node reached as another
+ *       node's data dependency, or a run's externally-triggered entry node.</li>
  * </ul>
  * A context instance is created by the engine for one {@code process()} call and must not be retained
  * past it. Values still flow through {@link NodeVariable}'s overlay-aware accessors, so a node may
@@ -30,10 +37,17 @@ import java.util.function.BooleanSupplier;
 public final class ProcessContext {
 
     private final BooleanSupplier cancelled;
+    private final Set<FlowPort> triggeredVia;
 
     /** Package-private: only the engine (same package) constructs a context for a {@code process()} call. */
-    ProcessContext(BooleanSupplier cancelled) {
+    ProcessContext(BooleanSupplier cancelled, Set<FlowPort> triggeredVia) {
         this.cancelled = cancelled;
+        this.triggeredVia = triggeredVia;
+    }
+
+    /** A context for a firing with no flow arrival behind it (a pull, or a test). */
+    ProcessContext(BooleanSupplier cancelled) {
+        this(cancelled, Set.of());
     }
 
     /**
@@ -42,7 +56,8 @@ public final class ProcessContext {
      * or a caller that wants a node's transform without a flow cascade). The engine builds its own
      * cancellation-aware contexts; use this only when there is nothing to cancel.
      *
-     * @return a context whose {@link #isCancelled()} is always false
+     * @return a context whose {@link #isCancelled()} is always false and whose
+     *         {@link #triggeredVia()} is empty (no run, so no flow arrival)
      */
     public static ProcessContext uncancelled() {
         return new ProcessContext(() -> false);
@@ -72,6 +87,45 @@ public final class ProcessContext {
         if (cancelled.getAsBoolean()) {
             throw new CancellationException("Node processing was cancelled");
         }
+    }
+
+    /**
+     * The IN {@link FlowPort}s whose {@link FlowEdge}s brought control to this node for this firing —
+     * how a node with more than one named entry point tells them apart. The inbound counterpart to
+     * {@link BaseNode#activate(FlowPort)}: that picks which OUT ports control leaves by, this reports
+     * which IN ports it came in through.
+     * <p>
+     * Empty when no flow edge was involved: a {@link BaseNode#beginProcessing()} pull, a node resolved
+     * as another node's data dependency, or the node a run was triggered on directly (its trigger came
+     * from outside the graph, not along an edge). A node with exactly one flow-in port that only ever
+     * does one thing can ignore this entirely.
+     * <p>
+     * Ordinarily a single port, since a node fires once per run: the first arrival fires it and later
+     * ones are deduped away. Several ports appear when they genuinely arrived together — a
+     * {@link BaseNode#isFlowJoin() flow join}, which fires only once every incoming edge has arrived,
+     * or concurrent sibling branches reaching two of the node's ports before it ran. A port fed by
+     * several edges (fan-in) contributes itself once however many of those edges arrive.
+     * <p>
+     * <b>Do not use two ports on one node as two behaviours within a single run.</b> The node still
+     * fires once, so only the arrivals recorded by the time that firing starts are visible and the
+     * rest are dropped. Genuinely distinct behaviours — a Start port and a Stop port — belong to
+     * distinct triggers, and so to distinct runs, where each sees exactly its own port.
+     *
+     * @return the IN ports control arrived through, immutable and possibly empty
+     */
+    public Set<FlowPort> triggeredVia() {
+        return triggeredVia;
+    }
+
+    /**
+     * Whether control reached this node through {@code port} for this firing — the readable form of
+     * {@code triggeredVia().contains(port)} for the usual "which entry point fired?" branch.
+     *
+     * @param port one of this node's IN flow ports
+     * @return true if an edge into {@code port} triggered this firing
+     */
+    public boolean wasTriggeredVia(FlowPort port) {
+        return triggeredVia.contains(port);
     }
 
     /**

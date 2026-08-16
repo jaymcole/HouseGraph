@@ -123,6 +123,36 @@ class GraphFileIOTest {
     }
 
     @Test
+    void roundTripsTwoFlowEdgesFanningIntoOnePort() {
+        AddNode a = new AddNode();
+        AddNode b = new AddNode();
+        AddNode target = new AddNode();
+
+        // A flow-in port takes any number of edges, so a save has to keep both rather than
+        // collapsing them to the one that happens to be written last.
+        GraphSnapshot snapshot = new GraphSnapshot(
+                List.of(
+                        new ClipboardNode(a, 0.0, 0.0),
+                        new ClipboardNode(b, 0.0, 60.0),
+                        new ClipboardNode(target, 80.0, 30.0)),
+                List.of(),
+                List.of(
+                        new ClipboardFlowEdge(0, 0, 2, 0, List.of()),
+                        new ClipboardFlowEdge(1, 0, 2, 0, List.of())));
+
+        GraphSnapshot roundTripped = roundTrip(snapshot);
+
+        assertEquals(2, roundTripped.flowEdges().size(), "both edges into the shared port survive");
+        for (ClipboardFlowEdge edge : roundTripped.flowEdges()) {
+            assertEquals(2, edge.targetNodeIndex());
+            assertEquals(0, edge.targetPortIndex(), "both still target the same flow-in port");
+        }
+        assertEquals(List.of(0, 1),
+                roundTripped.flowEdges().stream().map(ClipboardFlowEdge::sourceNodeIndex).sorted().toList(),
+                "and they still come from the two different upstream nodes");
+    }
+
+    @Test
     void unknownNodeTypeLoadsAsAPlaceholderRatherThanFailingTheWholeLoad() {
         JSONObject root = new JSONObject();
         root.put("nodes", List.of(unknownNodeJson(7.0, 9.0)));

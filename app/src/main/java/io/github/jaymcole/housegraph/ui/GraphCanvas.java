@@ -639,29 +639,54 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return best;
     }
 
+    /**
+     * Whether a drag from {@code a} to {@code b} may become a flow edge: opposite directions on
+     * different nodes, and not a pair these two ports are already joined by. A flow-in port accepts
+     * any number of edges (see {@link NodeGraph}), so the only thing left to rule out is wiring the
+     * very same pair twice, which would add a second identical edge that changes nothing but does
+     * inflate a flow join's arrival count. Mirrors {@link #findFlowEdge}, the same way the data-port
+     * drag check mirrors {@code NodeGraph.attachEdge}.
+     */
     private boolean isValidFlowConnection(FlowPortView a, FlowPortView b) {
-        return a.getOwner() != b.getOwner() && a.getDirection() != b.getDirection();
+        return a.getOwner() != b.getOwner()
+                && a.getDirection() != b.getDirection()
+                && findFlowEdge(a, b) == null;
     }
 
-    /** The live flow edge currently feeding a given flow-in port, if any - see findEdgeViewTargeting(). */
-    public FlowEdgeView findFlowEdgeViewTargeting(FlowPortView port) {
+    /**
+     * The live flow edge joining this exact pair of ports, or null. Direction-agnostic in its
+     * arguments, like {@link #createFlowEdge}. This is a pair lookup, not a "what feeds this port"
+     * one: several edges may legitimately target a single flow-in port.
+     */
+    private FlowEdgeView findFlowEdge(FlowPortView a, FlowPortView b) {
+        FlowPortView outPort = a.getDirection() == FlowPort.Direction.OUT ? a : b;
+        FlowPortView inPort = a.getDirection() == FlowPort.Direction.OUT ? b : a;
         for (FlowEdgeView flowEdgeView : flowEdgeViews.values()) {
-            if (flowEdgeView.hasTarget(port)) {
+            if (flowEdgeView.getSourcePort() == outPort && flowEdgeView.getTargetPort() == inPort) {
                 return flowEdgeView;
             }
         }
         return null;
     }
 
+    /**
+     * Wires {@code a} to {@code b} as a flow edge, in either argument order, and returns its view.
+     * <p>
+     * A flow-in port may be fed by several edges — two triggers wired into one Start port, either
+     * one firing it — so a new edge is added <em>alongside</em> whatever already feeds the port
+     * rather than replacing it. (A data input keeps its one-source restriction: its value has to
+     * come from somewhere unambiguous, which a valueless flow port has no equivalent of.) Wiring the
+     * identical pair twice is still pointless, so an existing edge between exactly these two ports
+     * is returned as-is rather than duplicated; the drag-time {@link #isValidFlowConnection} check
+     * already refuses that gesture, leaving this for the load/paste/rebuild paths.
+     */
     public FlowEdgeView createFlowEdge(FlowPortView a, FlowPortView b) {
         FlowPortView outPort = a.getDirection() == FlowPort.Direction.OUT ? a : b;
         FlowPortView inPort = a.getDirection() == FlowPort.Direction.OUT ? b : a;
 
-        // A flow-in can only ever be fed by one edge; wiring a new one replaces the old.
-        for (FlowEdgeView existing : new ArrayList<>(flowEdgeViews.values())) {
-            if (existing.hasTarget(inPort)) {
-                existing.delete();
-            }
+        FlowEdgeView duplicate = findFlowEdge(outPort, inPort);
+        if (duplicate != null) {
+            return duplicate;
         }
 
         FlowEdge flowEdge = new FlowEdge(

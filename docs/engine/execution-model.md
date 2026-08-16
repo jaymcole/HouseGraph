@@ -14,6 +14,13 @@ opposite directions.
 Keeping them separate means flow ports carry no value or type machinery, and data
 ports carry no control-only special cases.
 
+**Cardinality differs, for that reason.** A data input is fed by **at most one**
+`Edge` — its value has to be pulled from one unambiguous source, so
+`NodeGraph.attachEdge` throws on a second. A flow-in port is fed by **any number**
+of `FlowEdge`s, because it carries no value and so has nothing to disambiguate: two
+triggers wired into one `Start` port both trigger it. `registerFlowEdge` has no
+cardinality gate.
+
 ## resolve and execute
 
 - **`resolve(node)`** pulls a fresh value through the node's incoming data edges,
@@ -51,6 +58,46 @@ UI and for tests; the engine drives execution off the context copy.
 - A failed `process()` is caught: the node goes `FAILED`, its exception is stored
   in `getLastError()`, and the run continues.
 
+## Which flow ports control came in and went out by
+
+A node's flow ports are named, and the engine tracks both ends of an arrival. Both
+halves live in the run's `ExecutionContext`, so concurrent runs over one node never
+see each other's.
+
+**Out — the node chooses.** `BaseNode.activate(port)`, called from `process()`,
+records a flow-out port on the context (`ExecutionContext.activate`). When
+`Run.fire` cascades, it reads them back (`activatedOf`) and follows only those
+ports' edges. Activating *nothing* fires *all* out-ports, so an ordinary node needs
+no activation call. This is how `IfNode` prunes a branch.
+
+**In — the engine tells the node.** `Run.schedule` records the IN port each
+arriving `FlowEdge` targeted (`ExecutionContext.recordFlowArrival`), and the node
+reads them back through `ProcessContext.triggeredVia()` /
+`wasTriggeredVia(port)`. This is what lets one node expose several named entry
+points that mean different things — a `Start` port and a `Stop` port on one
+resource node, rather than two nodes or a mode input.
+
+`triggeredVia()` is **empty** whenever no flow edge was involved:
+`beginProcessing()`'s pull, a node resolved as another node's data dependency, and
+the node a run was triggered on directly (its trigger came from outside the graph).
+A node with one flow-in port that does one thing can ignore it entirely; nothing
+about single-port nodes changed.
+
+**Recording an arrival is separate from acting on it.** The dedup is untouched: a
+node still fires **once per run**, whether one port is fed by several edges
+(fan-in) or several ports are each fed by one. A port appears once in
+`triggeredVia()` however many of its edges arrive. Several ports appear only when
+they genuinely arrived together — a [flow join](concurrency.md), which fires only
+after every incoming edge has arrived, or concurrent sibling branches reaching two
+ports before the node ran.
+
+The consequence worth knowing: **two ports on one node are not two behaviours
+within a single run.** Only the arrivals recorded by the time the single firing
+starts are visible; a later arrival at another port is deduped away and the node
+never learns of it. Distinct behaviours belong to distinct triggers, and so to
+distinct runs, where each firing sees exactly its own port. That is the shape the
+feature is for.
+
 ## `ProcessContext`
 
 `process(ProcessContext ctx)` receives a fresh context the engine builds for that
@@ -73,6 +120,10 @@ and polls between them. A node that ignores `ctx` runs to completion.
 **Null-safe value access** — `ctx.get(input, fallback)` returns the input's value
 or a fallback when null, plus `ctx.get(var)` and `ctx.set(var, value)` as
 overlay-aware pass-throughs.
+
+**The flow-in ports that triggered this firing** — `ctx.triggeredVia()` and
+`ctx.wasTriggeredVia(port)`, snapshotted when the context is built so the set
+cannot grow under a `process()` mid-call. See the section above.
 
 A node that bails on cancellation — returning early, or letting `checkCancelled()`
 throw — is marked `FAILED` for that run but is **not** logged as an error, since
@@ -109,6 +160,7 @@ The methods the engine calls on a node, all no-ops by default:
 | `releaseResources()` | after `onRemoved()`, on a worker, time-bounded | slow teardown |
 | `onInputEdgeAdded/Removed(edge)` | after a data edge is (un)wired | grow or shrink dynamic ports |
 | `activate(port)` | from within `process()` | branch: fire only the chosen flow-out ports |
+| `ctx.triggeredVia()` | read from within `process()` | tell apart which flow-in port fired this node |
 | `runFlowBranchToCompletion(port, seed)` | from within `process()` | loop: run one branch per item |
 
 Full detail on the teardown pair is in

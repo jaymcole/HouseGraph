@@ -10,9 +10,13 @@ import java.util.Objects;
  * <p>
  * The source port matters because a node may have several out-ports and fire only a
  * subset (see {@link BaseNode#activate}); the engine uses {@link #getSourcePort()} to
- * tell which edges belong to a port that actually fired. The target port is carried
- * symmetrically so a node could later distinguish which entry point it was reached
- * through, though nothing depends on that yet.
+ * tell which edges belong to a port that actually fired. The target port matters
+ * symmetrically: the engine records it on arrival and the target's {@code process()}
+ * reads it back through {@link ProcessContext#triggeredVia()}, so a node with several
+ * named entry points can tell which one it was reached through.
+ * <p>
+ * Several flow edges may target the same IN port — unlike a data input, a flow port has
+ * no value and so no ambiguous source to resolve. See {@link NodeGraph}'s class Javadoc.
  */
 public class FlowEdge {
 

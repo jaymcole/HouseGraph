@@ -181,8 +181,16 @@ public abstract class BaseNode {
      * (without it, cancellation only takes effect between nodes) — plus null-safe input reads
      * ({@link ProcessContext#get(NodeVariable, Object)}). A node that ignores {@code ctx} entirely
      * still runs correctly; a throwing {@code process()} is caught and marks the node FAILED.
+     * <p>
+     * A node with more than one flow-in port tells them apart through
+     * {@link ProcessContext#wasTriggeredVia(FlowPort)} — the entry-side mirror of {@link #activate}'s
+     * exit-side choice — which is what lets one node carry, say, a Start port and a Stop port. It
+     * reads as empty when nothing arrived along a flow edge (a {@link #beginProcessing()} pull, a
+     * data-dependency resolve, or the node a run was triggered on), so a single-flow-in node needs no
+     * changes and can ignore it.
      *
-     * @param ctx this invocation's context: cancellation checks and null-safe value accessors
+     * @param ctx this invocation's context: cancellation checks, null-safe value accessors, and the
+     *            flow-in ports control arrived through
      */
     public abstract void process(ProcessContext ctx);
     public abstract void configureInputs();
@@ -388,7 +396,8 @@ public abstract class BaseNode {
      * fires <em>all</em> its flow-out ports (so ordinary nodes need no activation call
      * and keep triggering everything downstream, exactly as before flow ports could
      * branch); a node that activates one or more ports fires only those. See
-     * {@link NodeGraph}'s cascade logic.
+     * {@link NodeGraph}'s cascade logic. The entry-side mirror is
+     * {@link ProcessContext#triggeredVia()}, which names the IN ports control arrived through.
      *
      * @param port one of this node's own flow-out ports to fire when control cascades out
      * @throws IllegalArgumentException if {@code port} isn't one of this node's own flow-out ports

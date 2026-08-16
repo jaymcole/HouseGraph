@@ -1,8 +1,8 @@
 # Branching, joining and looping
 
-Flow edges define execution order. A node's flow-out ports are anchors control
-leaves through; which of them fire, and how often, is what these three patterns
-control.
+Flow edges define execution order. A node's flow ports are the anchors control
+enters and leaves through; which of them fire, how often, and which one brought
+control in is what these patterns control.
 
 ## Branch: `activate(port)`
 
@@ -29,6 +29,45 @@ never calls it fires every flow-out port it has. Call it more than once to fire
 several.
 
 `graph/nodes/control/IfNode.java` is the canonical example.
+
+## Several entry points: `ctx.triggeredVia(...)`
+
+The mirror of `activate`. A node adds several **named** flow-in ports and asks the
+context which one control arrived through:
+
+```java
+private final FlowPort start = new FlowPort("Start", FlowPort.Direction.IN);
+private final FlowPort stop  = new FlowPort("Stop",  FlowPort.Direction.IN);
+
+@Override public void process(ProcessContext ctx) {
+    if (ctx.wasTriggeredVia(stop)) {
+        shutDown();
+    } else {
+        startUp();
+    }
+}
+
+@Override public void configureFlowInputs() {
+    addFlowInput(start);
+    addFlowInput(stop);
+}
+```
+
+`ctx.triggeredVia()` is the whole set; `ctx.wasTriggeredVia(port)` is the usual
+one-port check. Both read **empty** when no flow edge was involved — a
+`beginProcessing()` pull, a resolve as someone's data dependency, or the node a run
+was triggered on — so give the branch a sensible default rather than assuming a
+port is always present. A node with one flow-in port needs none of this.
+
+**One port per trigger, not two ports per run.** A node fires at most once per run,
+so wiring both ports from the same trigger does not run both branches: the first
+arrival fires the node and the second is deduped away. Start and Stop are different
+events, so they come from different triggers and different runs, and each firing
+sees exactly its own port.
+
+**A flow-in port takes any number of edges.** Two triggers can both feed one
+`Start` port and either fires it — unlike a data input, which accepts one edge. If
+the node is also a join (below), note that the barrier counts edges, not ports.
 
 ## Join: `isFlowJoin()`
 
@@ -75,6 +114,7 @@ The mechanism is described in [`../engine/loops.md`](../engine/loops.md).
 | You want | Use |
 | --- | --- |
 | One of several paths, chosen at runtime | `activate(port)` |
+| Different work depending on which entry point fired | `ctx.wasTriggeredVia(port)` |
 | Continue only after every parallel branch finishes | `isFlowJoin()` |
 | Run a branch once per element | `runFlowBranchToCompletion` |
 | Run something on every arrival, first-wins | nothing — default behaviour |
@@ -82,6 +122,8 @@ The mechanism is described in [`../engine/loops.md`](../engine/loops.md).
 ---
 
 **When you change this, update…** this file whenever you change `activate`,
-the join contract, or the loop seam. The engine side lives in
+the flow-in arrival contract, the join contract, or the loop seam. The engine side
+lives in
+[`../engine/execution-model.md`](../engine/execution-model.md),
 [`../engine/concurrency.md`](../engine/concurrency.md) and
 [`../engine/loops.md`](../engine/loops.md).

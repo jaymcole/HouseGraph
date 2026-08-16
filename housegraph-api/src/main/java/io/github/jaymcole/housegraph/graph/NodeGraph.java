@@ -67,6 +67,23 @@ import java.util.function.BooleanSupplier;
  * a flow-join node (see {@link BaseNode#isFlowJoin()}); the design doc
  * {@code docs/engine/execution-policy.md} covers the whole concurrent-runs model.
  * <p>
+ * <b>Flow ports name both ends of an arrival.</b> On the way out, a node picks which of its OUT
+ * ports fire with {@link BaseNode#activate}, and {@link Run#fire} cascades only along their edges
+ * ({@link ExecutionContext#activatedOf}). On the way in, {@link Run#schedule} records the IN port each
+ * arriving edge targeted, and the node's {@code process()} reads them back through
+ * {@link ProcessContext#triggeredVia()} — so a node can expose several named entry points (a Start
+ * port and a Stop port) and do different work depending on which one fired. Recording an arrival is
+ * separate from acting on it: the dedup is untouched, so a node still fires at most once per run.
+ * <p>
+ * <b>A flow-in port may be fed by any number of edges.</b> Unlike a data input, which
+ * {@link #attachEdge} restricts to a single feeding {@link Edge} so its pulled value has one
+ * unambiguous source, a {@link FlowPort} carries no value and so has nothing to disambiguate: two
+ * triggers may both be wired into one Start port, and either firing triggers the node. Within one run
+ * the node still fires once (the first arrival wins, the rest are deduped), and the port appears once
+ * in {@link ProcessContext#triggeredVia()} however many of its edges arrive. The one place the count
+ * of edges matters is a {@link BaseNode#isFlowJoin() flow join}, whose AND-barrier waits for every
+ * wired incoming <em>edge</em>: fanning two edges into one join port means the join waits for both.
+ * <p>
  * Structural methods (adding/removing nodes and edges, reading the topology) stay
  * {@code synchronized} on this instance for their own brief critical section, but that
  * lock is never held for a whole run — so a UI-thread edit isn't forced to wait out a slow
@@ -463,6 +480,14 @@ public class NodeGraph {
 
     // --- Flow edges -----------------------------------------------------------
 
+    /**
+     * Wires one control-flow connection. Deliberately without {@link #attachEdge}'s cardinality gate:
+     * a flow-in port may be fed by any number of edges, because a {@link FlowPort} carries no value
+     * and so has no ambiguous source to resolve. See the class Javadoc for what fan-in means at run
+     * time (one firing per run either way; a flow join counts edges, not ports).
+     *
+     * @param edge the flow edge to wire; both its nodes must already be in this graph
+     */
     public synchronized void registerFlowEdge(FlowEdge edge) {
         Objects.requireNonNull(edge, "edge");
         requireRegistered(edge.getSourceNode());
@@ -753,7 +778,9 @@ public class NodeGraph {
         // can be stopped — the engine's own cancellation checks only fire between nodes.
         BooleanSupplier cancelled = () ->
                 timedOut.get() || context.isCancelled() || Thread.currentThread().isInterrupted();
-        ProcessContext processContext = new ProcessContext(cancelled);
+        // Snapshotted here rather than read live, so the set process() sees is fixed for the call.
+        // Empty for a node pulled as a data dependency — nothing arrived along a flow edge.
+        ProcessContext processContext = new ProcessContext(cancelled, context.flowArrivalsOf(node));
 
         try {
             node.process(processContext);
@@ -931,7 +958,8 @@ public class NodeGraph {
                 log.error("Trigger preparation for \"{}\" failed: {}", entry.getName(), rootCause(e));
             }
             // Always schedule, even if prepare threw, so the run reaches onComplete and balances its beginPass().
-            schedule(entry);
+            // No arrival port: the entry node's trigger came from outside the graph, not along an edge.
+            schedule(entry, null);
         }
 
         /**
@@ -968,7 +996,7 @@ public class NodeGraph {
                         continue;
                     }
                     callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
-                    schedule(flowEdge.getTargetNode());
+                    schedule(flowEdge.getTargetNode(), flowEdge.getTargetPort());
                 }
             } finally {
                 if (pending.decrementAndGet() == 0) {
@@ -978,13 +1006,26 @@ public class NodeGraph {
         }
 
         /**
-         * Handles one flow arrival at {@code node}. An ordinary node fires on its first arrival and
-         * is deduped thereafter; a {@link BaseNode#isFlowJoin() flow join} instead records the arrival
-         * and fires only once all its wired incoming edges have arrived (an AND-barrier). A join whose
-         * branches don't all arrive this run simply never fires — no firing task is left pending, so
-         * the run still quiesces.
+         * Handles one flow arrival at {@code node}, reached through its IN port {@code arrivedAt}
+         * ({@code null} for the run's entry node, triggered from outside the graph rather than along
+         * an edge). An ordinary node fires on its first arrival and is deduped thereafter; a
+         * {@link BaseNode#isFlowJoin() flow join} instead records the arrival and fires only once all
+         * its wired incoming edges have arrived (an AND-barrier). A join whose branches don't all
+         * arrive this run simply never fires — no firing task is left pending, so the run still
+         * quiesces.
+         * <p>
+         * Every arrival's port is recorded in the context <em>before</em> the dedup, including the
+         * ones the dedup then drops, and the node's {@code process()} reads them back through
+         * {@link ProcessContext#triggeredVia()}. So the dedup is unchanged — one firing per node per
+         * run, whether a port is fed by one edge or several (fan-in), and whether one port or several
+         * are fed — but that firing can now tell which entry point(s) brought it control. An arrival
+         * landing after the firing has already begun is still dropped and invisible to it; see
+         * {@link ProcessContext#triggeredVia()} for why two ports are not two behaviours within one run.
          */
-        private void schedule(BaseNode node) {
+        private void schedule(BaseNode node, FlowPort arrivedAt) {
+            if (arrivedAt != null) {
+                context.recordFlowArrival(node, arrivedAt);
+            }
             if (node.isFlowJoin()) {
                 int arrived = context.recordJoinArrival(node);
                 if (arrived >= getIncomingFlowEdges(node).size() && context.markFlowVisited(node)) {
@@ -1050,7 +1091,7 @@ public class NodeGraph {
                         break;
                     }
                     callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
-                    schedule(flowEdge.getTargetNode());
+                    schedule(flowEdge.getTargetNode(), flowEdge.getTargetPort());
                 }
             } catch (RuntimeException e) {
                 log.error("Triggered execution of \"{}\" failed: {}", node.getName(), rootCause(e));

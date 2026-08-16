@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -915,6 +917,165 @@ class NodeGraphTest {
         // still quiesce rather than hang waiting for the branch that will never come.
         assertDoesNotThrow(graph::awaitIdle);
         assertEquals(0, sink.processCount.get(), "an AND-join with a pruned branch does not fire");
+    }
+
+    // --- Which flow-in port triggered a firing --------------------------------------------------
+
+    @Test
+    void aNodeTellsApartWhichOfItsFlowInPortsTriggeredIt() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode startTrigger = new TriggerNode();
+        TriggerNode stopTrigger = new TriggerNode();
+        TwoEntryNode node = new TwoEntryNode(false);
+        graph.addNode(startTrigger);
+        graph.addNode(stopTrigger);
+        graph.addNode(node);
+
+        graph.registerFlowEdge(new FlowEdge(startTrigger, startTrigger.getFlowOutputs().get(0), node, node.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(stopTrigger, stopTrigger.getFlowOutputs().get(0), node, node.getFlowInputs().get(1)));
+
+        startTrigger.execute();
+        graph.awaitIdle();
+        assertEquals(List.of(Set.of("Start")), node.arrivals, "the Start trigger's run reports only the Start port");
+        assertEquals(1, node.viaStartCount.get(), "wasTriggeredVia agrees with triggeredVia");
+
+        stopTrigger.execute();
+        graph.awaitIdle();
+        assertEquals(List.of(Set.of("Start"), Set.of("Stop")), node.arrivals,
+                "each run reports the port it actually arrived through, not the node's whole port list");
+        assertEquals(1, node.viaStartCount.get(), "the Stop run did not report the Start port");
+    }
+
+    @Test
+    void aFlowInPortFedByTwoEdgesIsTriggeredByEither() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode first = new TriggerNode();
+        TriggerNode second = new TriggerNode();
+        TwoEntryNode node = new TwoEntryNode(false);
+        graph.addNode(first);
+        graph.addNode(second);
+        graph.addNode(node);
+
+        // Fan-in: both triggers wired into the same Start port, which a data input would refuse.
+        graph.registerFlowEdge(new FlowEdge(first, first.getFlowOutputs().get(0), node, node.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(second, second.getFlowOutputs().get(0), node, node.getFlowInputs().get(0)));
+
+        first.execute();
+        graph.awaitIdle();
+        second.execute();
+        graph.awaitIdle();
+
+        assertEquals(List.of(Set.of("Start"), Set.of("Start")), node.arrivals,
+                "either upstream edge triggers the node, and both name the one port they feed");
+    }
+
+    @Test
+    void twoEdgesArrivingAtOnePortInOneRunStillFireTheNodeOnce() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        GateNode left = new GateNode(new CountDownLatch(0));
+        GateNode right = new GateNode(new CountDownLatch(0));
+        TwoEntryNode node = new TwoEntryNode(false);
+        graph.addNode(trigger);
+        graph.addNode(left);
+        graph.addNode(right);
+        graph.addNode(node);
+
+        // One trigger fans out to two branches that reconverge on the same flow-in port.
+        graph.registerFlowEdge(flowEdge(trigger, left));
+        graph.registerFlowEdge(flowEdge(trigger, right));
+        graph.registerFlowEdge(new FlowEdge(left, left.getFlowOutputs().get(0), node, node.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(right, right.getFlowOutputs().get(0), node, node.getFlowInputs().get(0)));
+
+        trigger.execute();
+        graph.awaitIdle();
+
+        assertEquals(List.of(Set.of("Start")), node.arrivals,
+                "the per-run dedup is unchanged by fan-in: one firing, and the port appears once however many of its edges arrive");
+    }
+
+    @Test
+    void aFlowJoinReportsEveryPortThatFedIt() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        GateNode left = new GateNode(new CountDownLatch(0));
+        GateNode right = new GateNode(new CountDownLatch(0));
+        TwoEntryNode join = new TwoEntryNode(true);
+        graph.addNode(trigger);
+        graph.addNode(left);
+        graph.addNode(right);
+        graph.addNode(join);
+
+        graph.registerFlowEdge(flowEdge(trigger, left));
+        graph.registerFlowEdge(flowEdge(trigger, right));
+        graph.registerFlowEdge(new FlowEdge(left, left.getFlowOutputs().get(0), join, join.getFlowInputs().get(0)));
+        graph.registerFlowEdge(new FlowEdge(right, right.getFlowOutputs().get(0), join, join.getFlowInputs().get(1)));
+
+        trigger.execute();
+        graph.awaitIdle();
+
+        assertEquals(List.of(Set.of("Start", "Stop")), join.arrivals,
+                "a join fires only once every branch has arrived, so it reports both ports");
+    }
+
+    @Test
+    void aPulledNodeAndAnEntryNodeReportNoFlowArrival() {
+        NodeGraph graph = new NodeGraph();
+        TwoEntryNode node = new TwoEntryNode(false);
+        graph.addNode(node);
+
+        node.beginProcessing();
+        assertEquals(List.of(Set.of()), node.arrivals, "a pull involves no flow edge, so nothing arrived");
+
+        node.execute();
+        graph.awaitIdle();
+        assertEquals(List.of(Set.of(), Set.of()), node.arrivals,
+                "a run's entry node was triggered from outside the graph, not along an edge");
+    }
+
+    /**
+     * Two named flow-in ports, recording the ports each firing arrived through - the node shape
+     * per-port arrival info exists for (a Start entry and a Stop entry doing different work).
+     */
+    private static final class TwoEntryNode extends BaseNode {
+        final List<Set<String>> arrivals = Collections.synchronizedList(new ArrayList<>());
+        final AtomicInteger viaStartCount = new AtomicInteger();
+        private final boolean join;
+
+        TwoEntryNode(boolean join) {
+            this.join = join;
+        }
+
+        @Override
+        public void process(ProcessContext ctx) {
+            Set<String> names = new TreeSet<>();
+            for (FlowPort port : ctx.triggeredVia()) {
+                names.add(port.name);
+            }
+            arrivals.add(names);
+            if (ctx.wasTriggeredVia(getFlowInputs().get(0))) {
+                viaStartCount.incrementAndGet();
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("Start", FlowPort.Direction.IN));
+            addFlowInput(new FlowPort("Stop", FlowPort.Direction.IN));
+        }
+
+        @Override
+        public boolean isFlowJoin() {
+            return join;
+        }
     }
 
     /** Has a flow-in (so the structural default says "not an entry point") but overrides to true anyway. */
