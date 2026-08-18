@@ -1,6 +1,9 @@
 package io.github.jaymcole.housegraph.graph.nodes.loader;
 
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.ProcessContext;
@@ -43,6 +46,9 @@ import java.util.function.Consumer;
  * same-name sharing is consistent. The document is never written into the graph save file.
  */
 @Display.Name("Data Store")
+@Display.Description("Reads and writes values in the shared document store, so data outlives a single run.")
+@Kind(NodeKind.ACTION)
+@Keywords({"store", "database", "persist", "save", "load", "document", "json", "state", "memory", "remember"})
 public class DataStoreNode extends BaseNode implements NodeContentProvider {
 
     private static final Logger log = Log.get(DataStoreNode.class);

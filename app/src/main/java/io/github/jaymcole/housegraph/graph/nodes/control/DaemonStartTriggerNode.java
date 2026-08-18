@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.sdk.AutoStartable;
@@ -24,6 +27,9 @@ import javafx.scene.control.Label;
  * fires on every load under the supervisor and never otherwise.
  */
 @Display.Name("On Daemon Start")
+@Display.Description("Fires once when the daemon starts, so a graph can run unattended on a server.")
+@Kind(NodeKind.CONTROL)
+@Keywords({"startup", "boot", "launch", "daemon", "server", "autostart", "entry point"})
 public class DaemonStartTriggerNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     @Override

@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -29,6 +32,9 @@ import java.util.Map;
  * Start for the user (see {@link AutoStartable}).
  */
 @Display.Name("Repeating Trigger")
+@Display.Description("Starts a run over and over on a timer.")
+@Kind(NodeKind.CONTROL)
+@Keywords({"timer", "interval", "schedule", "poll", "periodic", "cron", "repeat", "every"})
 public class TriggerRepeatingNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true).required();

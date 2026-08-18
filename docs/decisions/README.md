@@ -23,3 +23,4 @@ Do not write one for an ordinary implementation choice.
 | [0007](0007-sync-resets-rather-than-pulls.md) | The git sync resets rather than pulls |
 | [0008](0008-integrations-are-out-of-tree.md) | Integrations live in out-of-tree node libraries |
 | [0009](0009-supervised-graphs-run-in-a-window.md) | Supervised graphs run in the real windowed app |
+| [0010](0010-node-search-is-ranked-not-filtered.md) | Node search is ranked, and does not index ports |

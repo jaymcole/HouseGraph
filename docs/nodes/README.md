@@ -12,6 +12,7 @@ registration step anywhere.
 | --- | --- |
 | Write your first node | [first-node.md](first-node.md) |
 | Know what makes a good node | [guidelines.md](guidelines.md) |
+| Make your node findable in search | [guidelines.md#tag-your-node-so-it-can-be-found](guidelines.md#tag-your-node-so-it-can-be-found) |
 | Declare inputs, outputs and flow ports | [ports-and-values.md](ports-and-values.md) |
 | Branch, join, or loop | [flow-control.md](flow-control.md) |
 | Give a node its own inline UI | [inline-ui.md](inline-ui.md) |
@@ -41,6 +42,11 @@ first-party libraries live in
 
 The folder name becomes the node's menu category. Add a new category folder only
 when a node genuinely does not fit an existing one, and note it here when you do.
+
+A node's **category** is its folder, and therefore its position in the Add-Node menu.
+That is separate from its **kind** (`@Node.Kind`), which is the role it plays and cuts
+across folders. See [guidelines.md](guidelines.md#tag-your-node-so-it-can-be-found) and
+[`../engine/node-search.md`](../engine/node-search.md).
 
 ## API stability
 

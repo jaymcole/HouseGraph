@@ -34,6 +34,39 @@ the connection *is* what is being managed. Treat that as a named exception, not 
 precedent for fusing scheduling into an ordinary action node. See
 [long-lived-resources.md](long-lived-resources.md).
 
+## Tag your node so it can be found
+
+A node nobody can find may as well not ship. The Add-Node menu only helps someone who
+already knows which folder to look in, so three annotations carry the rest:
+
+```java
+@Display.Name("Add")
+@Display.Description("Adds two numbers together.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"plus", "sum", "+", "arithmetic"})
+public class AddNode extends BaseNode { ... }
+```
+
+- **`@Node.Keywords` is the one that earns its keep.** It is how someone finds a node
+  whose name they could never have guessed — the synonyms, symbols and near-misses they
+  reach for first. `Add` is found by "plus" and "+" only because it says so.
+- **`@Display.Description` is written for someone who has not found the node yet.**
+  "Joins a list into a single string, one entry per line" earns its place; "List to
+  string node" repeats the name and does not.
+- **`@Node.Kind` is the node's role, not its folder.** `ACTION`, `CONTROL`, `RESOURCE`
+  or `DATA` — the same four this page describes above. A library's nodes usually share
+  one category and split across several kinds.
+
+A node that declares no kind matches no `kind:` search at all. Nothing is inferred from
+the folder name, because an out-of-tree library's category path is arbitrary, and a
+wrong kind is worse than none: a user who filters by it never sees the node and has no
+way to tell why. The one exception is `AutoStartable`, which implies `RESOURCE` when
+nothing was declared.
+
+Search is ranked, so a misspelling still finds the node — but only across text the node
+actually carries. Ports are not indexed. See
+[`../engine/node-search.md`](../engine/node-search.md).
+
 ## Never persist a computed or secret value
 
 Only manually-authored, non-secret, non-transient values reach a save file.
@@ -124,6 +157,7 @@ New nodes ship with a test mirroring the nearest existing one. See
 - [ ] Does one thing; no mode dropdown that changes its identity
 - [ ] Control-oriented or action-oriented, not both (unless it owns a connection)
 - [ ] `@Display.Name` set; port names readable, with units
+- [ ] `@Node.Kind`, `@Display.Description` and `@Node.Keywords` set, so search can find it
 - [ ] No computed or secret value persisted; secrets marked `markSecret()`
 - [ ] Inputs that must have a value are `required()`; the rest have defaults
 - [ ] No hardcoded paths

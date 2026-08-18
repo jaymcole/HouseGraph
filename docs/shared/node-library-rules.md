@@ -70,7 +70,32 @@ name. Two things follow:
 
 You cannot fix either after the fact without asking users to hand-edit save files.
 
-## 5. Apply the JavaFX Gradle plugin
+## 5. Tag every node so search can find it
+
+```java
+@Display.Name("Send Message")
+@Display.Description("Posts a message to a Discord channel.")
+@Node.Kind(NodeKind.ACTION)
+@Node.Keywords({"discord", "post", "chat", "say", "notify"})
+```
+
+HouseGraph ranks nodes by their name, class name, description, keywords, category and
+library. Skip these and your node is findable only by someone who already knows what it
+is called — which, in a list of every installed library's nodes, is nobody.
+
+- **`@Node.Keywords` does the most work.** It is what surfaces your node to a user
+  searching for the words they would use rather than the words you chose.
+- **`@Node.Kind` is the node's role** — `ACTION`, `CONTROL`, `RESOURCE` or `DATA` — not
+  its category. Category is your `categoryPrefix` and menu position; kind cuts across it.
+
+**A node with no `@Node.Kind` matches no `kind:` search at all.** Nothing is inferred
+from your category path, because it is yours to name and means nothing to the host. The
+only fallback is `AutoStartable`, which implies `RESOURCE`.
+
+Note the same `javafx.scene.Node` collision that bites `@Node.Type` (see rule 4 and the
+section below) applies to `@Node.Kind` and `@Node.Keywords`.
+
+## 6. Apply the JavaFX Gradle plugin
 
 ```groovy
 plugins { id 'org.openjfx.javafxplugin' version '...' }
@@ -81,7 +106,7 @@ purpose, so a release built on Linux cannot pin the wrong natives into your buil
 The consequence is that the unclassified artifacts OpenJFX publishes are ~300-byte
 stubs. Without the plugin you get `package javafx.scene does not exist`.
 
-## 6. Exclude `slf4j-api` from every dependency that pulls it
+## 7. Exclude `slf4j-api` from every dependency that pulls it
 
 ```groovy
 implementation('net.dv8tion:JDA:5.x') {
@@ -101,11 +126,13 @@ another. Check with `gradlew :yourlib:dependencies` before you build.
 
 ## Things that will bite you otherwise
 
-**Do not import `javafx.scene.Node`.** `@Node.Type` comes from
-`io.github.jaymcole.housegraph.annotations.Node`, and
+**Do not import `javafx.scene.Node`.** `@Node.Type`, `@Node.Kind` and
+`@Node.Keywords` all come from `io.github.jaymcole.housegraph.annotations.Node`, and
 `NodeContentProvider.createNodeContent()` returns `javafx.scene.Node`. Both are
-named `Node`. Write `javafx.scene.Node` fully qualified at each use. This only bites
-when a node combines the two, so it is easy to miss until it happens.
+named `Node`. Write `javafx.scene.Node` fully qualified at each use, or import the
+nested annotation types directly (`import ...annotations.Node.Kind;`) and write
+`@Kind(...)`. This only bites when a node combines the two, so it is easy to miss until
+it happens — and now that every node should be tagged, it happens more often.
 
 **A node's static initializer runs at first instantiation, not at discovery.** The
 host loads classes with `initialize = false`. So a type registered from a static
@@ -141,7 +168,7 @@ Everything in `housegraph-api`:
 | Package | Provides |
 | --- | --- |
 | `graph` | `BaseNode`, `NodeVariable`, `FlowPort`, `Edge`, `ProcessContext`, `ExecutionPolicy`, `TypeConverters` |
-| `annotations` | `@Display.Name`, `@Node.Type`, `@Node.Disabled` |
+| `annotations` | `@Display.Name`, `@Display.Description`, `@Node.Type`, `@Node.Kind`, `@Node.Keywords`, `@Node.Disabled` |
 | `sdk` | `NodeContentProvider` (inline JavaFX UI), `AutoStartable` (resume on load), `ValueEditors`, `Secrets` |
 | `logging` | `Log.get(YourClass.class)` — lands in HouseGraph's own log window and file |
 | `resource` | `ResourceRegistry` — long-lived resources referenced by name rather than wired |
@@ -210,6 +237,7 @@ not need.
 - [ ] Every bundled dependency has a `relocate` line
 - [ ] `mergeServiceFiles()` kept
 - [ ] Every node has `@Node.Type`, prefixed with the library id
+- [ ] Every node has `@Node.Kind`, `@Display.Description` and `@Node.Keywords`
 - [ ] `org.openjfx.javafxplugin` applied
 - [ ] `slf4j-api` excluded from every dependency with a path to it
 - [ ] `javafx.scene.Node` never imported

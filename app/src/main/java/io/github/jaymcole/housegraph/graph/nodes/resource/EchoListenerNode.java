@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.resource;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -26,6 +29,9 @@ import java.util.Map;
  * listener works no matter where it sits relative to the resource.
  */
 @Display.Name("Echo Listener")
+@Display.Description("Starts a run whenever a named echo resource publishes an event.")
+@Kind(NodeKind.CONTROL)
+@Keywords({"listen", "subscribe", "event", "receive", "trigger", "echo", "incoming", "entry point"})
 public class EchoListenerNode extends BaseNode implements NodeContentProvider {
 
     private final NodeVariable<String> message = new NodeVariable<>("Message", String.class);

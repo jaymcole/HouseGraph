@@ -2,11 +2,16 @@ package io.github.jaymcole.housegraph.graph.nodes.converters;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 @Display.Name("Double to String")
+@Display.Description("Turns a double-precision number into text.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"double", "string", "text", "convert", "cast", "number", "to string"})
 public class DoubleToStringNode extends BaseNode {
 
     private final NodeVariable<Double> in = new NodeVariable<>("in", Double.class, false).required();

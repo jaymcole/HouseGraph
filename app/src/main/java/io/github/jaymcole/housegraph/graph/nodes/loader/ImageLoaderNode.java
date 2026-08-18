@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.loader;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
@@ -22,6 +25,9 @@ import java.io.File;
  * not reloaded from disk on every process() call.
  */
 @Display.Name("Image Loader")
+@Display.Description("Loads an image from a file on disk.")
+@Kind(NodeKind.ACTION)
+@Keywords({"image", "file", "picture", "png", "jpg", "photo", "open", "read", "load", "disk"})
 public class ImageLoaderNode extends BaseNode implements NodeContentProvider {
 
     private static final double PREVIEW_SIZE = 80;

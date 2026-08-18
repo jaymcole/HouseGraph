@@ -2,6 +2,8 @@ package io.github.jaymcole.housegraph.graph.nodes.debug;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -33,6 +35,9 @@ import java.util.Random;
  * {@link BaseNode} whose {@code configure*} hooks happen to add a random number of ports.
  */
 @Display.Name("Chaos Anchors (debug)")
+@Display.Description("Builds a random number of ports every time it is created, to exercise the load path's handling of edges that no longer resolve.")
+@Node.Kind(NodeKind.ACTION)
+@Node.Keywords({"debug", "test", "random", "chaos", "ports", "anchors", "resilience"})
 public class ChaosAnchorNode extends BaseNode {
 
     /** Upper bound on each anchor group's random size; a wider range makes reload breakage more likely. */

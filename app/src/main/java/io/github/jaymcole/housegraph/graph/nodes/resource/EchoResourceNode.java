@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.resource;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.sdk.AutoStartable;
@@ -35,6 +38,9 @@ import java.util.Map;
  * for the user (see {@link AutoStartable}).
  */
 @Display.Name("Echo Resource")
+@Display.Description("Hosts a named echo resource that other nodes publish to and listen on.")
+@Kind(NodeKind.RESOURCE)
+@Keywords({"echo", "resource", "connection", "server", "host", "publish", "broadcast", "named"})
 public class EchoResourceNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     private String resourceName = "echo";

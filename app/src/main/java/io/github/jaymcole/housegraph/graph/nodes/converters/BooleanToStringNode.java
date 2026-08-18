@@ -2,11 +2,16 @@ package io.github.jaymcole.housegraph.graph.nodes.converters;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 @Display.Name("Boolean to String")
+@Display.Description("Turns a true/false value into text.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"boolean", "string", "text", "convert", "cast", "to string"})
 public class BooleanToStringNode extends BaseNode {
 
     private final NodeVariable<Boolean> in = new NodeVariable<>("in", Boolean.class, false).required();

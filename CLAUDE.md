@@ -118,7 +118,8 @@ Honour it. Beyond that:
 | Secret storage, crypto, on-disk locations | `SecretsStore`/`AppDirectories` Javadoc + [storage.md](docs/engine/storage.md) |
 | Logging levels, sinks, bootstrap | `LogManager`/`Logging` Javadoc + [logging.md](docs/engine/logging.md) |
 | Anything user-facing | `README.md` and [`docs/guides/`](docs/guides/) |
-| Add a node type | Nothing to register. A new **category folder** goes in [`docs/nodes/README.md`](docs/nodes/README.md) |
+| Add a node type | Nothing to register, but tag it (`@Node.Kind`, `@Display.Description`, `@Node.Keywords`). A new **category folder** goes in [`docs/nodes/README.md`](docs/nodes/README.md) |
+| Node metadata, the searchable fields, or ranking | `NodeMetadata`/`NodeSearchIndex` Javadoc + [node-search.md](docs/engine/node-search.md) |
 | Make a new value type editable | `sdk.ValueEditors` static block + [type-system.md](docs/engine/type-system.md) |
 | Add a package | Add a `package-info.java` |
 

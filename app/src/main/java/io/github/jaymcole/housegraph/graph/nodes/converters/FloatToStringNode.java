@@ -2,11 +2,16 @@ package io.github.jaymcole.housegraph.graph.nodes.converters;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 @Display.Name("Float to String")
+@Display.Description("Turns a decimal number into text.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"float", "string", "text", "convert", "cast", "number", "to string"})
 public class FloatToStringNode extends BaseNode {
 
     private final NodeVariable<Float> in = new NodeVariable<>("in", Float.class, false).required();

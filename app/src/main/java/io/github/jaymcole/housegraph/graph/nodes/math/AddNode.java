@@ -2,11 +2,16 @@ package io.github.jaymcole.housegraph.graph.nodes.math;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 @Display.Name("Add")
+@Display.Description("Adds two numbers together.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"add", "plus", "sum", "+", "arithmetic", "math", "total", "number"})
 public class AddNode extends BaseNode {
 
     private final NodeVariable<Float> v1 = new NodeVariable<>("V1", Float.class);

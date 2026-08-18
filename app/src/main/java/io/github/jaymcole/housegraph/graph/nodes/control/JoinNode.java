@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
@@ -26,6 +29,9 @@ import java.util.Map;
  * Join simply doesn't fire that run: an AND isn't satisfied. The run still finishes.
  */
 @Display.Name("Join")
+@Display.Description("Waits for every incoming branch to arrive before carrying on.")
+@Kind(NodeKind.CONTROL)
+@Keywords({"barrier", "wait", "merge", "sync", "gather", "all", "rendezvous"})
 public class JoinNode extends BaseNode implements NodeContentProvider {
 
     private static final int MIN_INPUTS = 2;

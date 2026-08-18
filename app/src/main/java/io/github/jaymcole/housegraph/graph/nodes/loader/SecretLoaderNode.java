@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.loader;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.logging.Log;
@@ -29,6 +32,9 @@ import java.util.Map;
  * flow ports either.
  */
 @Display.Name("Secret Loader")
+@Display.Description("Resolves a stored secret by name at run time, so no credential is written into the graph.")
+@Kind(NodeKind.ACTION)
+@Keywords({"secret", "password", "token", "credential", "key", "api key", "auth", "login"})
 public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
 
     private static final Logger log = Log.get(SecretLoaderNode.class);

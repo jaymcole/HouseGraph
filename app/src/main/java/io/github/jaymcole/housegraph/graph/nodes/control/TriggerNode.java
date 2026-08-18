@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
@@ -14,6 +17,9 @@ import javafx.scene.control.Button;
  * {@link #execute()} directly — see {@link NodeContentProvider}.
  */
 @Display.Name("Trigger")
+@Display.Description("Starts a run when you press its button.")
+@Kind(NodeKind.CONTROL)
+@Keywords({"start", "run", "fire", "button", "manual", "entry point"})
 public class TriggerNode extends BaseNode implements NodeContentProvider {
 
     @Override

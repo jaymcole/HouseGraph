@@ -2,6 +2,9 @@ package io.github.jaymcole.housegraph.graph.nodes.viewers;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node.Keywords;
+import io.github.jaymcole.housegraph.annotations.Node.Kind;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -16,6 +19,9 @@ import javafx.scene.control.Label;
  * {@link #onExecuted()}; nothing else in the codebase needs to change.
  */
 @Display.Name("Text Viewer")
+@Display.Description("Shows a text value on the canvas.")
+@Kind(NodeKind.ACTION)
+@Keywords({"text", "view", "display", "show", "print", "output", "log", "string"})
 public class TextViewerNode extends BaseNode implements NodeContentProvider {
 
     private final NodeVariable<String> value = new NodeVariable<>("Value", String.class).required();

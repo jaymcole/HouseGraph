@@ -2,6 +2,8 @@ package io.github.jaymcole.housegraph.graph.nodes.object;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowPort;
@@ -30,6 +32,9 @@ import java.util.Map;
  * of the order edges are recreated in.
  */
 @Display.Name("Object Decomposer")
+@Display.Description("Splits an object into one output port per property.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"decompose", "split", "destructure", "fields", "properties", "unpack", "extract", "object"})
 public class ObjectDecomposerNode extends BaseNode {
 
     private static final Logger log = Log.get(ObjectDecomposerNode.class);

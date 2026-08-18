@@ -2,6 +2,8 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -16,6 +18,9 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
  * before wiring anything into it.
  */
 @Display.Name("If")
+@Display.Description("Compares two values and sends flow down the branch that matches.")
+@Node.Kind(NodeKind.CONTROL)
+@Node.Keywords({"branch", "conditional", "compare", "switch", "else", "condition", "equals"})
 public class IfNode extends BaseNode {
 
     private final NodeVariable<Float> condition = new NodeVariable<>("Condition", Float.class, true).required();

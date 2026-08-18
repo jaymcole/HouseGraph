@@ -28,7 +28,7 @@ Out-of-tree node libraries sit beside `app`, depending only on `housegraph-api`.
 | Module | Contains | Published |
 | --- | --- | --- |
 | `housegraph-api` | `graph/`, `sdk/`, `annotations/`, `logging/`, `resource/`, `storage/`, `store/` | Yes — node libraries compile against it |
-| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `plugin/`, `cli/`, `remote/` | No |
+| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
 
 `graph/` is in the api module while `graph/nodes/` is in `app`. Distinct packages,
 not a split package.
@@ -58,6 +58,8 @@ not a split package.
 | `Edge` | A data connection: source output → target input. |
 | `FlowPort` / `FlowEdge` | A control-flow anchor / connection, carrying no value. |
 | `NodeRegistry` | Discovers node classes across `ScanRoot`s; instantiates and duplicates them. |
+| `NodeMetadata` | What a node type declares about itself: description, keywords, `NodeKind`. |
+| `NodeSearchIndex` | Ranked search over the discovered node types. |
 | `MissingNode` | Placeholder for a node whose library isn't installed, preserving it verbatim. |
 | `PluginCatalog` / `PluginLoader` | What is installed, and the shared class loader serving it. |
 | `GraphCanvas` | The JavaFX canvas hosting node and edge views. |

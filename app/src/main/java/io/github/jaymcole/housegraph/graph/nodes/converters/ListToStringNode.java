@@ -2,6 +2,8 @@ package io.github.jaymcole.housegraph.graph.nodes.converters;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -17,6 +19,9 @@ import java.util.StringJoiner;
  * {@code "null"}. A null or empty list yields an empty string.
  */
 @Display.Name("List to String")
+@Display.Description("Joins a list into one piece of text, one entry per line.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"list", "string", "text", "join", "convert", "lines", "collection", "concatenate"})
 public class ListToStringNode extends BaseNode {
 
     @SuppressWarnings("unchecked")

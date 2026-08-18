@@ -49,4 +49,36 @@ public @interface Node {
         /** Additional ids that still resolve to this type (e.g. a previous id or class name). */
         String[] aliases() default {};
     }
+
+    /**
+     * The node's semantic role, used to filter and group search results. See {@link NodeKind} for
+     * the four values and why they are orthogonal to a node's category folder.
+     * <p>
+     * Declaring this is optional but not cosmetic: a node with no kind matches no kind-filtered
+     * search, because guessing a kind from structure or folder name would be wrong often enough
+     * to be worse than leaving it out. An out-of-tree library in particular has an arbitrary
+     * category path, so nothing can be inferred from it.
+     */
+    @Target(ElementType.TYPE)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface Kind {
+        /** The role this node plays. */
+        NodeKind value();
+    }
+
+    /**
+     * Extra terms a user might search for that the node's own name does not contain — synonyms,
+     * symbols, and the words someone reaches for before they know what the node is called.
+     * {@code AddNode} declaring {@code {"plus", "sum", "+"}} is the shape of it.
+     * <p>
+     * This is the main lever for <em>discovering</em> a node rather than re-finding one. Search
+     * ranks a keyword hit just below a display-name hit, so a well-chosen keyword surfaces a node
+     * to someone who could never have guessed its name.
+     */
+    @Target(ElementType.TYPE)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface Keywords {
+        /** Search terms for this node type. */
+        String[] value();
+    }
 }

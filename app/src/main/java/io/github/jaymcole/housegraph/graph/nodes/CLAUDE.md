@@ -19,6 +19,9 @@ in the Add-Node menu automatically. The folder name is its menu category.
 
 ```java
 @Display.Name("My Node")
+@Display.Description("What it does, for someone who has not found it yet.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"synonyms", "symbols", "near misses"})
 public class MyNode extends BaseNode {
     private final NodeVariable<Float> in  = new NodeVariable<>("In", Float.class);
     private final NodeVariable<Float> out = new NodeVariable<>("Out", Float.class);
@@ -52,6 +55,14 @@ Then, as needed:
 
 ## Rules
 
+- **Tag it.** `@Node.Kind` (`ACTION`/`CONTROL`/`RESOURCE`/`DATA` — the role, not the
+  folder), `@Display.Description` and `@Node.Keywords`. Without keywords a node is
+  findable only by someone who already knows its name; without a kind it matches no
+  `kind:` search at all. See
+  [`docs/engine/node-search.md`](../../../../../../../../../../docs/engine/node-search.md).
+- **In a file that imports `javafx.scene.Node`, `@Node.Kind` will not resolve** — both
+  are named `Node`. Import the nested types (`import ...annotations.Node.Kind;`) and
+  write `@Kind(...)`, as the `control/`, `loader/`, `resource/` and `viewers/` nodes do.
 - A `NodeVariable` value is saved only if `manuallyEditable && !secret &&
   !transient`. Mark secrets with `markSecret()`, live handles with
   `transientValue()`.

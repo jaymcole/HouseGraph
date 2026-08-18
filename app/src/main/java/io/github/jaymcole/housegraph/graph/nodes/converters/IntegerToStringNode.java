@@ -2,11 +2,16 @@ package io.github.jaymcole.housegraph.graph.nodes.converters;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 
 @Display.Name("Integer to String")
+@Display.Description("Turns a whole number into text.")
+@Node.Kind(NodeKind.DATA)
+@Node.Keywords({"integer", "int", "string", "text", "convert", "cast", "number", "to string"})
 public class IntegerToStringNode extends BaseNode {
 
     private final NodeVariable<Integer> in = new NodeVariable<>("in", Integer.class, false).required();

@@ -55,6 +55,7 @@ avoids the rebuild — a preference, not a guarantee.
 | [node-lifecycle.md](node-lifecycle.md) | lifecycle hooks, two-phase teardown, shutdown budgets |
 | [save-format.md](save-format.md) | the graph JSON format and its compatibility rules |
 | [ui-layer.md](ui-layer.md) | canvas, views, undo, the FX-thread rule |
+| [node-search.md](node-search.md) | what is indexed, the scoring model, query syntax, `NodeKind` |
 | [plugin-runtime.md](plugin-runtime.md) | module split, class loading, catalog, discovery |
 | [remote-runtime.md](remote-runtime.md) | git sync, process supervision, exit codes, shutdown |
 | [storage.md](storage.md) | on-disk layout, secrets, preferences |

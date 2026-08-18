@@ -2,6 +2,8 @@ package io.github.jaymcole.housegraph.graph.nodes.control;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -32,6 +34,9 @@ import java.util.List;
  * strongly-typed input may therefore need a converter.
  */
 @Display.Name("For Each")
+@Display.Description("Runs its body once per entry in a list, then carries on.")
+@Node.Kind(NodeKind.CONTROL)
+@Node.Keywords({"loop", "iterate", "each", "repeat", "list", "for each"})
 public class ForEachNode extends BaseNode {
 
     @SuppressWarnings("unchecked")

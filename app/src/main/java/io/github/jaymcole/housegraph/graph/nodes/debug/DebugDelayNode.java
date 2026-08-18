@@ -2,6 +2,8 @@ package io.github.jaymcole.housegraph.graph.nodes.debug;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.annotations.Node;
+import io.github.jaymcole.housegraph.annotations.NodeKind;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
@@ -19,6 +21,9 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
  * short instead of running out the full duration — the canonical example of cooperative cancellation.
  */
 @Display.Name("Debug Delay")
+@Display.Description("Holds the flow for a set time before carrying on.")
+@Node.Kind(NodeKind.CONTROL)
+@Node.Keywords({"delay", "sleep", "wait", "pause", "debug", "timing", "throttle"})
 public class DebugDelayNode extends BaseNode {
 
     private static final long SLICE_MILLIS = 50;
