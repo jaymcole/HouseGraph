@@ -34,18 +34,25 @@ import io.github.jaymcole.housegraph.graph.TypeConverters;
 import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.search.NodeDescriptor;
+import io.github.jaymcole.housegraph.search.NodeSearchIndex;
+import io.github.jaymcole.housegraph.search.SearchResult;
 import javafx.application.Platform;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
 import javafx.scene.Group;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.TextField;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
@@ -71,7 +78,9 @@ import java.util.function.Function;
  * <p>
  * Panning: middle-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
  * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges;
- * right-click opens the "Add Node" menu. Delete/Backspace removes the current
+ * right-click opens a menu led by a ranked node search box — focused immediately, so
+ * typing narrows the list without an extra click — with the categorised "Add Node" menu
+ * kept below it for browsing. Delete/Backspace removes the current
  * selection; Ctrl/Cmd+C and Ctrl/Cmd+V copy and paste it; Ctrl/Cmd+Z and
  * Ctrl/Cmd+Shift+Z undo and redo (currently: adding a node via the menu, and deleting
  * nodes/connections - see {@link UndoManager}). Data edges are created by dragging from
@@ -119,7 +128,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private Point2D selectionStartContent;
 
     private final ContextMenu contextMenu;
+    private final TextField nodeSearchField;
     private final NodeRegistry nodeRegistry;
+    private final NodeSearchIndex nodeSearchIndex;
+    private Menu addNodeMenu;
     private Point2D pendingDropPoint = Point2D.ZERO;
 
     private List<ClipboardNode> clipboardNodes = List.of();
@@ -129,9 +141,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     private final UndoManager undoManager = new UndoManager();
 
-    public GraphCanvas(NodeGraph graph, NodeRegistry nodeRegistry) {
+    /**
+     * @param libraryNames maps a node library's id to its human name, for the node search box; see
+     *                     {@link NodeSearchIndex}. May be null.
+     */
+    public GraphCanvas(NodeGraph graph, NodeRegistry nodeRegistry, Function<String, String> libraryNames) {
         this.graph = graph;
         this.nodeRegistry = nodeRegistry;
+        this.nodeSearchIndex = new NodeSearchIndex(nodeRegistry, libraryNames);
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
         setFocusTraversable(true);
@@ -145,6 +162,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         // The menu object is built once and kept, but its contents are not fixed for the life of
         // the session: installing or removing a node library changes the set of node types, and
         // reloadNodeTypes() refills it in place.
+        addNodeMenu = buildAddNodeMenu();
+        nodeSearchField = new TextField();
+        nodeSearchField.setPromptText("Search nodes…");
+        // Rebuilds the result rows below the search field on every keystroke. The field's own
+        // CustomMenuItem is never recreated (see buildContextMenu), so retyping never steals focus
+        // from itself the way rebuilding the whole menu each keystroke would.
+        nodeSearchField.textProperty().addListener((obs, oldText, newText) -> updateSearchResults(newText));
+        nodeSearchField.addEventHandler(KeyEvent.KEY_PRESSED, this::handleSearchFieldKeyPressed);
         contextMenu = buildContextMenu();
         // ContextMenu's built-in autoHide is focus-based and doesn't reliably fire for
         // clicks elsewhere in the same window, and NodeView/PortView consume their own
@@ -1264,13 +1289,28 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /**
-     * Root right-click menu. Node types live under a single "Add Node" submenu rather
-     * than at the top level, so other unrelated actions can be added alongside it here
-     * later without getting mixed in among the (potentially long) list of node types.
+     * Root right-click menu: a ranked node search box, its live results, then the categorised
+     * "Add Node" menu underneath for browsing by folder. The search field's {@link CustomMenuItem}
+     * is created once and kept at index 0 for the life of the menu — {@link #updateSearchResults}
+     * only ever replaces the items after it, never that one, because rebuilding it would tear the
+     * live {@link TextField} out of the scene graph and drop its focus on every keystroke.
      */
     private ContextMenu buildContextMenu() {
         ContextMenu menu = new ContextMenu();
-        menu.getItems().add(buildAddNodeMenu());
+        CustomMenuItem searchItem = new CustomMenuItem(nodeSearchField);
+        // Otherwise clicking into the field to position the caret closes the menu.
+        searchItem.setHideOnClick(false);
+        menu.getItems().add(searchItem);
+
+        // Reset to a fresh, unfiltered browse of every node type each time the menu is (re)opened,
+        // and hand keyboard focus straight to the search field so typing works immediately.
+        menu.setOnShowing(event -> {
+            nodeSearchField.clear();
+            updateSearchResults("");
+        });
+        menu.setOnShown(event -> Platform.runLater(nodeSearchField::requestFocus));
+
+        updateSearchResultsIn(menu, "");
         return menu;
     }
 
@@ -1280,12 +1320,68 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /**
-     * Rebuilds the Add-Node menu from the node registry. Call after a node library is installed,
-     * updated, removed, enabled or disabled — the set of node types is no longer fixed for the life
-     * of the session, which is the only reason this method exists.
+     * Rebuilds the node search index and the Add-Node menu from the node registry. Call after a
+     * node library is installed, updated, removed, enabled or disabled — the set of node types is
+     * no longer fixed for the life of the session, which is the only reason this method exists.
      */
     public void reloadNodeTypes() {
-        contextMenu.getItems().setAll(buildAddNodeMenu());
+        nodeSearchIndex.invalidate();
+        addNodeMenu = buildAddNodeMenu();
+        updateSearchResults(nodeSearchField.getText());
+    }
+
+    /**
+     * Re-ranks the search results shown below the search field against {@code query}, keeping the
+     * search field itself and the trailing Add-Node menu in place.
+     */
+    private void updateSearchResults(String query) {
+        updateSearchResultsIn(contextMenu, query);
+    }
+
+    private void updateSearchResultsIn(ContextMenu menu, String query) {
+        List<MenuItem> items = new ArrayList<>();
+        items.add(menu.getItems().get(0));
+        List<SearchResult> results = nodeSearchIndex.search(query);
+        for (SearchResult result : results) {
+            items.add(buildSearchResultItem(result.node()));
+        }
+        if (results.isEmpty()) {
+            MenuItem none = new MenuItem("(no matching nodes)");
+            none.setDisable(true);
+            items.add(none);
+        }
+        items.add(new SeparatorMenuItem());
+        items.add(addNodeMenu);
+        menu.getItems().setAll(items);
+    }
+
+    private MenuItem buildSearchResultItem(NodeDescriptor descriptor) {
+        MenuItem item = new MenuItem(descriptor.displayName());
+        item.setOnAction(event -> addNodeFromRegistry(descriptor.nodeClass()));
+        return item;
+    }
+
+    /** Enter adds the top-ranked result and closes the menu; Escape just closes it. */
+    private void handleSearchFieldKeyPressed(KeyEvent event) {
+        if (event.getCode() == KeyCode.ENTER) {
+            List<SearchResult> results = nodeSearchIndex.search(nodeSearchField.getText());
+            if (!results.isEmpty()) {
+                addNodeFromRegistry(results.get(0).node().nodeClass());
+            }
+            contextMenu.hide();
+            event.consume();
+        } else if (event.getCode() == KeyCode.ESCAPE) {
+            contextMenu.hide();
+            event.consume();
+        }
+    }
+
+    private void addNodeFromRegistry(Class<? extends BaseNode> nodeClass) {
+        BaseNode instance = NodeRegistry.instantiate(nodeClass);
+        if (instance != null) {
+            NodeView nodeView = new NodeView(instance, content, this);
+            undoManager.execute(new AddNodeCommand(this, nodeView, pendingDropPoint.getX(), pendingDropPoint.getY()));
+        }
     }
 
     /**
@@ -1327,29 +1423,23 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     private Menu buildAddNodeMenu() {
-        Menu addNodeMenu = new Menu("Add Node");
+        Menu menu = new Menu("Add Node");
         Map<String, Menu> categoryMenus = new TreeMap<>();
 
         for (NodeRegistry.Entry entry : nodeRegistry.discover()) {
             MenuItem item = new MenuItem(entry.displayName());
-            item.setOnAction(event -> {
-                BaseNode instance = NodeRegistry.instantiate(entry.nodeClass());
-                if (instance != null) {
-                    NodeView nodeView = new NodeView(instance, content, this);
-                    undoManager.execute(new AddNodeCommand(this, nodeView, pendingDropPoint.getX(), pendingDropPoint.getY()));
-                }
-            });
+            item.setOnAction(event -> addNodeFromRegistry(entry.nodeClass()));
 
-            Menu categoryMenu = resolveCategoryMenu(addNodeMenu, categoryMenus, entry.categoryPath());
-            (categoryMenu == null ? addNodeMenu.getItems() : categoryMenu.getItems()).add(item);
+            Menu categoryMenu = resolveCategoryMenu(menu, categoryMenus, entry.categoryPath());
+            (categoryMenu == null ? menu.getItems() : categoryMenu.getItems()).add(item);
         }
 
-        if (addNodeMenu.getItems().isEmpty()) {
+        if (menu.getItems().isEmpty()) {
             MenuItem none = new MenuItem("(no node types found)");
             none.setDisable(true);
-            addNodeMenu.getItems().add(none);
+            menu.getItems().add(none);
         }
-        return addNodeMenu;
+        return menu;
     }
 
     /** Finds (creating as needed) the Menu for a dot-separated category path, nesting under its parent categories. */

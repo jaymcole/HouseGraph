@@ -56,8 +56,11 @@ flash nodes and edges as they fire), and `EdgeInteractionListener`.
 Interactions, with the class Javadoc as the authoritative list:
 
 - Middle-drag on empty space pans; scroll zooms, anchored at the cursor.
-- Left-drag on empty space rubber-band selects; right-click opens the Add-Node
-  menu, built from `NodeRegistry.discover()` and grouped by category folder.
+- Left-drag on empty space rubber-band selects; right-click opens the canvas
+  context menu — a ranked node search box, focused immediately so typing
+  narrows the list without an extra click, then the Add-Node menu below it
+  for browsing by category folder (`NodeRegistry.discover()`, grouped by
+  `categoryPath`). See "Node search box" below.
 - Delete/Backspace removes the selection; `Ctrl/Cmd+C`/`V` copy and paste;
   `Ctrl/Cmd+Z` and `Shift+Z` undo and redo.
 - Dragging between port circles makes a data edge; dragging between the triangular
@@ -69,6 +72,23 @@ that connection would be. `GraphCanvas.connectionSafety` calls
 (`CAUTIOUS`), orange (`RISKY`) or red (`INCOMPATIBLE`). A drag may only land on a
 non-red port, mirroring `NodeGraph.attachEdge`. See
 [type-system.md](type-system.md).
+
+### Node search box
+
+The context menu's first row is a `CustomMenuItem` wrapping a `TextField`, backed by
+`NodeSearchIndex` (see [node-search.md](node-search.md)). `GraphCanvas` builds it once
+and keeps that same `CustomMenuItem` instance for the life of the session —
+`updateSearchResults` only ever replaces the rows *after* it via
+`ContextMenu.getItems().setAll`. Recreating the search row itself on every keystroke
+would tear the live `TextField` out of the scene graph and drop its focus mid-type.
+
+Opening the menu (`setOnShowing`) clears the field and re-runs the search with an
+empty query, which `NodeSearchIndex` treats as a browse: every node type,
+alphabetical, up to its `DEFAULT_LIMIT`. `setOnShown` then focuses the field so
+typing works immediately. Each keystroke re-ranks the rows below it; Enter adds the
+top-ranked result and closes the menu, Escape just closes it. The categorised
+Add-Node menu stays underneath as a fallback for browsing by folder, and
+`reloadNodeTypes()` calls `NodeSearchIndex.invalidate()` alongside rebuilding it.
 
 ## Views
 
