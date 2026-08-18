@@ -43,7 +43,7 @@ repositories {
 
 dependencies {
     // compileOnly is required, not stylistic -- see the shared rules.
-    compileOnly 'com.github.jaymcole:HouseGraph:v0.2.0'
+    compileOnly 'com.github.jaymcole:HouseGraph:v1.1.1'
 }
 ```
 
@@ -51,8 +51,8 @@ dependencies {
 `com.github.<user>.<repo>:<module>:<tag>`, and `housegraph-api/build.gradle`
 publishes under exactly that name. JitPack found only one artifact in the build and
 relocated it to the repository-level coordinate, so
-`com.github.jaymcole.HouseGraph:housegraph-api:v0.2.0` returns 404 while
-`com.github.jaymcole:HouseGraph:v0.2.0` resolves.
+`com.github.jaymcole.HouseGraph:housegraph-api:v1.1.1` returns 404 while
+`com.github.jaymcole:HouseGraph:v1.1.1` resolves.
 
 The artifact named `HouseGraph` *is* `housegraph-api`; `:app` has no publication. If
 a second module is ever published from this repository, JitPack switches to

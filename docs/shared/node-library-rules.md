@@ -20,7 +20,7 @@ collected rather than left to be rediscovered.
 ## 1. `compileOnly` the API — never `implementation`
 
 ```groovy
-compileOnly 'com.github.jaymcole:HouseGraph:v0.2.0'
+compileOnly 'com.github.jaymcole:HouseGraph:v1.1.1'
 ```
 
 HouseGraph supplies `housegraph-api` and its transitive `org.json` and `slf4j-api`
@@ -91,6 +91,9 @@ is called — which, in a list of every installed library's nodes, is nobody.
 **A node with no `@Node.Kind` matches no `kind:` search at all.** Nothing is inferred
 from your category path, because it is yours to name and means nothing to the host. The
 only fallback is `AutoStartable`, which implies `RESOURCE`.
+
+These three annotations landed in **v1.1.0**. Against an earlier API they will not
+compile — check the version you pinned in rule 1.
 
 Note the same `javafx.scene.Node` collision that bites `@Node.Type` (see rule 4 and the
 section below) applies to `@Node.Kind` and `@Node.Keywords`.
