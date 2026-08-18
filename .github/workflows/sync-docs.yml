@@ -52,9 +52,8 @@ jobs:
             git config user.email "actions@github.com"
             git checkout -B docs-sync
             git add docs/shared
-            git commit -m "docs: sync shared documentation from HouseGraph
-
-Source: https://github.com/jaymcole/HouseGraph/commit/${{ github.sha }}"
+            git commit -m "docs: sync shared documentation from HouseGraph" \
+                       -m "Source: https://github.com/jaymcole/HouseGraph/commit/${{ github.sha }}"
             git push -f origin docs-sync
 
             EXISTING_PR=$(gh pr list --repo "jaymcole/${{ matrix.target }}" \
