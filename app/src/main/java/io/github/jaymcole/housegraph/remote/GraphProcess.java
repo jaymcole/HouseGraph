@@ -75,6 +75,12 @@ public final class GraphProcess {
             if (home != null && !home.isBlank()) {
                 command.add("-Dhousegraph.home=" + home);
             }
+            // Lets a node distinguish "the supervisor opened me" from "a person opened me" via
+            // sdk.RuntimeMode - see DaemonStartTriggerNode. Unconditional, unlike housegraph.home
+            // above: every graph this launcher starts is supervised, so there is nothing to read
+            // from the parent - the daemon process itself is not "a daemon graph", only the
+            // children it spawns are.
+            command.add("-Dhousegraph.daemon=true");
             command.addAll(List.of("-jar", jar.toString(),
                     "run", graph.toString()));
             log.info("Starting {}", graph.getFileName());

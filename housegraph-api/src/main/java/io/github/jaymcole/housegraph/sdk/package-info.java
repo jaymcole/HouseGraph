@@ -11,6 +11,8 @@
  *       inline JavaFX UI. This is why the api module depends on JavaFX at all.</li>
  *   <li>{@link io.github.jaymcole.housegraph.sdk.AutoStartable} — resume a node's running state
  *       when a saved graph is reopened.</li>
+ *   <li>{@link io.github.jaymcole.housegraph.sdk.RuntimeMode} — tell a supervised daemon graph
+ *       apart from one a person opened by hand.</li>
  *   <li>{@link io.github.jaymcole.housegraph.sdk.ValueEditors} — make a custom value type
  *       manually editable in a node's inline field.</li>
  *   <li>{@link io.github.jaymcole.housegraph.sdk.Secrets} — read a credential by reference.</li>
