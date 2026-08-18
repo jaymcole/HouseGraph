@@ -181,7 +181,12 @@ Two practical consequences, both called out in the runbook:
 - **The supervisor opens a graph; it never presses Start.** `AutoStartable` resumes
   a node only if it was running when the graph was saved. That is the correct
   semantics — liveness is user-driven — but it means a graph saved with its trigger
-  stopped deploys successfully and then does nothing.
+  stopped deploys successfully and then does nothing. A node that should run only
+  under the supervisor, never on a desktop editing session, uses
+  `sdk.RuntimeMode.isDaemon()` instead of a saved running flag — see
+  [`../nodes/state-and-startup.md`](../nodes/state-and-startup.md). `GraphProcess`'s
+  child launcher sets the `housegraph.daemon` system property on every process it
+  spawns; that is the only place it is set.
 
 ## Commands
 

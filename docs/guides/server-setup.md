@@ -105,6 +105,15 @@ and search for `running`.
 > Copy/paste deliberately does not carry this flag, so duplicating a running node
 > in the editor never gives you a second one that auto-starts. Only save/load does.
 
+**If a node binds a port or holds a connection**, leaving it running just to
+survive a save has a sharper problem than forgetting a step: your desktop editor
+and the deployed server are on the same LAN, so pressing Start locally to save the
+graph starts a second copy fighting the server over the same port. For that case,
+use an **`On Daemon Start`** trigger node (`control/`) instead of pressing Start
+by hand. It has no running flag to forget — it fires only when the daemon's
+supervisor opens the graph, never when you have it open to edit, so it is safe to
+leave downstream nodes wired to it and just save normally.
+
 ---
 
 ## 3. Build it on the server
