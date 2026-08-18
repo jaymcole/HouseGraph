@@ -134,7 +134,11 @@ public class App extends Application {
 
         graph = new NodeGraph();
         nodeRegistry = new NodeRegistry(pluginLoader.scanRoots());
-        canvas = new GraphCanvas(graph, nodeRegistry);
+        // The node search box resolves a library id to its human name through the same catalog
+        // the toolbar's library window edits, so a renamed or reinstalled library is reflected
+        // without the canvas needing its own copy of that mapping.
+        canvas = new GraphCanvas(graph, nodeRegistry,
+                id -> pluginCatalog.byId(id).map(PluginCatalog.Installed::name).orElse(null));
 
         // Quick Save writes straight to the current file with no dialog. Until one has been
         // chosen (fresh session, never saved), it falls back to the Save-As flow.
