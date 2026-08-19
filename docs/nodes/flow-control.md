@@ -69,6 +69,23 @@ sees exactly its own port.
 `Start` port and either fires it — unlike a data input, which accepts one edge. If
 the node is also a join (below), note that the barrier counts edges, not ports.
 
+**If the node also has a flow-out, arriving via one of these entry points still
+fires it by default** — `activate`'s "never call it, fire everything" default
+applies here too. That's wrong for an arm/disarm pair like Start/Stop on
+`TriggerRepeatingNode`: the timer's own periodic tick should fire the flow-out, not
+the Start or Stop signal that armed or disarmed it. Call `activateNone()` for those
+firings to suppress the cascade entirely:
+
+```java
+@Override public void process(ProcessContext ctx) {
+    if (ctx.wasTriggeredVia(start) || ctx.wasTriggeredVia(stop)) {
+        activateNone();      // arm/disarm only - never cascades
+    }
+    // ... a periodic self-triggered execute() call takes neither branch here,
+    // so it falls through to the ordinary "fire everything" default.
+}
+```
+
 ## Join: `isFlowJoin()`
 
 A run is fire-and-forget — a node schedules its downstream nodes and does not wait
@@ -115,6 +132,7 @@ The mechanism is described in [`../engine/loops.md`](../engine/loops.md).
 | --- | --- |
 | One of several paths, chosen at runtime | `activate(port)` |
 | Different work depending on which entry point fired | `ctx.wasTriggeredVia(port)` |
+| Suppress this firing's cascade entirely | `activateNone()` |
 | Continue only after every parallel branch finishes | `isFlowJoin()` |
 | Run a branch once per element | `runFlowBranchToCompletion` |
 | Run something on every arrival, first-wins | nothing — default behaviour |

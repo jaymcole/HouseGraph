@@ -69,11 +69,14 @@ import java.util.function.BooleanSupplier;
  * <p>
  * <b>Flow ports name both ends of an arrival.</b> On the way out, a node picks which of its OUT
  * ports fire with {@link BaseNode#activate}, and {@link Run#fire} cascades only along their edges
- * ({@link ExecutionContext#activatedOf}). On the way in, {@link Run#schedule} records the IN port each
- * arriving edge targeted, and the node's {@code process()} reads them back through
- * {@link ProcessContext#triggeredVia()} — so a node can expose several named entry points (a Start
- * port and a Stop port) and do different work depending on which one fired. Recording an arrival is
- * separate from acting on it: the dedup is untouched, so a node still fires at most once per run.
+ * ({@link ExecutionContext#activatedOf}); {@link BaseNode#activateNone} is the other end of that
+ * default — it fires none of them, for a firing that must not cascade at all. On the way in,
+ * {@link Run#schedule} records the IN port each arriving edge targeted, and the node's
+ * {@code process()} reads them back through {@link ProcessContext#triggeredVia()} — so a node can
+ * expose several named entry points (a Start port and a Stop port) and do different work depending
+ * on which one fired, typically pairing that with {@code activateNone()} when neither should also
+ * fire the node's own flow-out. Recording an arrival is separate from acting on it: the dedup is
+ * untouched, so a node still fires at most once per run.
  * <p>
  * <b>A flow-in port may be fed by any number of edges.</b> Unlike a data input, which
  * {@link #attachEdge} restricts to a single feeding {@link Edge} so its pulled value has one
@@ -1081,10 +1084,12 @@ public class NodeGraph {
                 }
 
                 // Which out-ports fired: whatever process() activated, or - if it activated nothing
-                // - all of them (see BaseNode.activate). A branch node narrows the cascade this way.
+                // - all of them (see BaseNode.activate); an explicit activateNone() fires none at all.
+                // A branch node narrows the cascade this way; an arm/disarm entry point stops it here.
                 Set<FlowPort> activated = context.activatedOf(node);
+                boolean firesNothing = context.activatesNone(node);
                 for (FlowEdge flowEdge : getOutgoingFlowEdges(node)) {
-                    if (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort())) {
+                    if (firesNothing || (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort()))) {
                         continue;
                     }
                     if (token.isCancelled()) {

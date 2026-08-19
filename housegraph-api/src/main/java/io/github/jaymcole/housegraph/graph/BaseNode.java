@@ -187,7 +187,9 @@ public abstract class BaseNode {
      * exit-side choice — which is what lets one node carry, say, a Start port and a Stop port. It
      * reads as empty when nothing arrived along a flow edge (a {@link #beginProcessing()} pull, a
      * data-dependency resolve, or the node a run was triggered on), so a single-flow-in node needs no
-     * changes and can ignore it.
+     * changes and can ignore it. If such a port must arm/disarm the node without also firing its own
+     * flow-out, call {@link #activateNone()} for that firing rather than leaving {@code activate}
+     * uncalled (which fires every out-port).
      *
      * @param ctx this invocation's context: cancellation checks, null-safe value accessors, and the
      *            flow-in ports control arrived through
@@ -412,6 +414,21 @@ public abstract class BaseNode {
         ExecutionContext context = ExecutionContext.current();
         if (context != null) {
             context.activate(this, port);
+        }
+    }
+
+    /**
+     * From within {@link #process(ProcessContext) process()}, marks this firing as activating
+     * <em>none</em> of this node's flow-out ports — the run's cascade stops here, rather than
+     * {@link #activate}'s default of firing every out-port when it is never called. For a node
+     * whose IN ports don't all mean "now also fire out" (see {@link ProcessContext#wasTriggeredVia}):
+     * e.g. an arm/disarm pair of entry points where only the node's own periodic firing should
+     * reach its flow-out, not the Start/Stop signal that armed or disarmed it.
+     */
+    protected void activateNone() {
+        ExecutionContext context = ExecutionContext.current();
+        if (context != null) {
+            context.activateNone(this);
         }
     }
 

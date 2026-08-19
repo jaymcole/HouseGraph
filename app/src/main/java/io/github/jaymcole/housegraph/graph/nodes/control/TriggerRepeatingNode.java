@@ -27,6 +27,14 @@ import java.util.Map;
  * of once per click: Start begins calling execute() every Interval seconds, Stop
  * cancels it. Purely a flow source - no data outputs of its own.
  * <p>
+ * The Start/Stop buttons have flow-in counterparts of the same name, so another node's cascade
+ * can arm or disarm the timer (see {@link ProcessContext#wasTriggeredVia}). Arriving through
+ * either port never fires this node's own flow-out itself — only the periodic tick does — so
+ * {@link #process(ProcessContext)} calls {@link #activateNone()} for those firings; the actual
+ * button-equivalent work happens in {@link #onExecuted()} once it's back on the FX thread, since
+ * {@code process()} runs on a background execution thread and can't touch the {@link Timeline}
+ * or controls directly.
+ * <p>
  * If the timer was running when the graph was saved, it resumes automatically on load: the
  * running flag rides along in {@link #saveState()} and {@link #autoStartIfWasRunning()} presses
  * Start for the user (see {@link AutoStartable}).
@@ -38,6 +46,8 @@ import java.util.Map;
 public class TriggerRepeatingNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
     private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true).required();
+    private final FlowPort startFlowInput = new FlowPort("Start", FlowPort.Direction.IN);
+    private final FlowPort stopFlowInput = new FlowPort("Stop", FlowPort.Direction.IN);
 
     private Timeline timeline;
     private Button startButton;
@@ -47,9 +57,35 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
     private int remainingSeconds;
     /** True when the timer was running at the moment the loaded graph was saved; drives {@link #autoStartIfWasRunning()}. */
     private boolean wasRunning;
+    /** Set in {@link #process(ProcessContext)}, consumed in {@link #onExecuted()} once control is back on the FX thread. */
+    private volatile FlowPort pendingFlowAction;
 
     @Override
     public void process(ProcessContext ctx) {
+        if (ctx.wasTriggeredVia(startFlowInput)) {
+            pendingFlowAction = startFlowInput;
+            activateNone();
+        } else if (ctx.wasTriggeredVia(stopFlowInput)) {
+            pendingFlowAction = stopFlowInput;
+            activateNone();
+        } else {
+            pendingFlowAction = null;
+        }
+    }
+
+    @Override
+    protected void onExecuted() {
+        // The node's own incoming data edges (intervalSeconds's, if wired) were already pulled as
+        // part of this same firing's resolution, and committed back onto the variable before this
+        // callback ran - so, unlike the Start button (which fires outside any resolution), no
+        // beginProcessing() is needed here before reading intervalSeconds.
+        FlowPort action = pendingFlowAction;
+        pendingFlowAction = null;
+        if (action == startFlowInput) {
+            armTimer();
+        } else if (action == stopFlowInput) {
+            stop();
+        }
     }
 
     @Override
@@ -88,8 +124,24 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
     }
 
     @Override
+    public void configureFlowInputs() {
+        addFlowInput(startFlowInput);
+        addFlowInput(stopFlowInput);
+    }
+
+    @Override
     public void configureFlowOutputs() {
         addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
+    }
+
+    /**
+     * Structurally this now has a flow-in (Start/Stop), so the default would say it can only run
+     * when reached along an edge. It is still self-triggering: the buttons call {@link #start()}/
+     * {@link #stop()} directly, and the countdown calls {@link #execute()} on itself every interval.
+     */
+    @Override
+    public boolean isExecutionEntryPoint() {
+        return true;
     }
 
     @Override
@@ -112,13 +164,23 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
     }
 
     private void start() {
-        if (timeline != null) {
-            return;
-        }
         // Pull the interval through its data edge (if any) before reading it - a
         // connected value only gets copied into intervalSeconds when the graph
         // actually resolves this node, which nothing has done yet at this point.
         beginProcessing();
+        armTimer();
+    }
+
+    /**
+     * The actual timer setup, assuming {@link #intervalSeconds} already holds this run's resolved
+     * value: {@link #start()} (the button) resolves it first via {@link #beginProcessing()}; the
+     * flow-triggered path in {@link #onExecuted()} doesn't need to, since the engine already
+     * resolved this node's own inputs before calling {@link #process}.
+     */
+    private void armTimer() {
+        if (timeline != null) {
+            return;
+        }
         Integer seconds = intervalSeconds.getValue();
         if (seconds == null || seconds <= 0) {
             statusLabel.setText("Enter a positive interval first");

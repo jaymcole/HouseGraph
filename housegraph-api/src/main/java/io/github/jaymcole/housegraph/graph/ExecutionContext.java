@@ -62,6 +62,15 @@ public final class ExecutionContext {
     private final Map<BaseNode, Set<FlowPort>> activatedOutputs = new ConcurrentHashMap<>();
 
     /**
+     * Nodes that explicitly activated <em>no</em> flow-out port this run via
+     * {@link BaseNode#activateNone()} — the opposite of the default (an absent
+     * {@link #activatedOutputs} entry, which means "fire all"). Kept as its own set rather than an
+     * empty {@link #activatedOutputs} entry so the two "nothing recorded" states stay
+     * distinguishable: never calling {@code activate} at all still fires every out-port.
+     */
+    private final Set<BaseNode> noActivation = ConcurrentHashMap.newKeySet();
+
+    /**
      * The IN flow ports each node has had an edge arrive at this run — the inbound mirror of
      * {@link #activatedOutputs}. Accumulated by {@code NodeGraph.Run.schedule} on every arrival,
      * including ones the node-level dedup then drops, and snapshotted into the node's
@@ -127,6 +136,19 @@ public final class ExecutionContext {
     /** The flow-out ports {@code node} fired this run; empty means "fire all" (see {@link BaseNode#activate}). */
     Set<FlowPort> activatedOf(BaseNode node) {
         return activatedOutputs.getOrDefault(node, Set.of());
+    }
+
+    /** Records that {@code node} activates none of its flow-out ports this run (see {@link BaseNode#activateNone}). */
+    void activateNone(BaseNode node) {
+        noActivation.add(node);
+    }
+
+    /**
+     * Whether {@code node} explicitly activated no flow-out port this run — distinct from a node
+     * that never called {@code activate} at all, which fires every out-port (see {@link #activatedOf}).
+     */
+    boolean activatesNone(BaseNode node) {
+        return noActivation.contains(node);
     }
 
     /** Records that a flow edge into {@code port} arrived at {@code node} this run (see the field). */

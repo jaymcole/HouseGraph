@@ -1033,6 +1033,84 @@ class NodeGraphTest {
                 "a run's entry node was triggered from outside the graph, not along an edge");
     }
 
+    // --- activateNone() suppresses this firing's cascade -----------------------------------------
+
+    @Test
+    void activateNoneStopsTheCascadeEvenThoughTheNodeHasAFlowOutput() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode startTrigger = new TriggerNode();
+        ArmDisarmNode armDisarm = new ArmDisarmNode();
+        CountingSinkNode sink = new CountingSinkNode();
+        graph.addNode(startTrigger);
+        graph.addNode(armDisarm);
+        graph.addNode(sink);
+
+        graph.registerFlowEdge(new FlowEdge(startTrigger, startTrigger.getFlowOutputs().get(0), armDisarm, armDisarm.getFlowInputs().get(0)));
+        graph.registerFlowEdge(flowEdge(armDisarm, sink));
+
+        startTrigger.execute();
+        graph.awaitIdle();
+
+        assertEquals(0, sink.processCount.get(),
+                "arriving through Start called activateNone(), so the node's own flow-out never fired");
+    }
+
+    @Test
+    void aPlainTriggerOfTheSameNodeStillFiresItsFlowOutput() {
+        NodeGraph graph = new NodeGraph();
+        ArmDisarmNode armDisarm = new ArmDisarmNode();
+        CountingSinkNode sink = new CountingSinkNode();
+        graph.addNode(armDisarm);
+        graph.addNode(sink);
+
+        graph.registerFlowEdge(flowEdge(armDisarm, sink));
+
+        // Triggered directly (as TriggerRepeatingNode's own countdown does), not along an edge into
+        // Start/Stop - so process() takes neither branch and the ordinary "activate nothing means
+        // fire all" default applies.
+        armDisarm.execute();
+        graph.awaitIdle();
+
+        assertEquals(1, sink.processCount.get(), "a firing that isn't via Start/Stop still cascades normally");
+    }
+
+    /** Start/Stop flow-in ports that arm/disarm without firing the node's own flow-out; shaped after TriggerRepeatingNode. */
+    private static final class ArmDisarmNode extends BaseNode {
+        private final FlowPort startPort = new FlowPort("Start", FlowPort.Direction.IN);
+        private final FlowPort stopPort = new FlowPort("Stop", FlowPort.Direction.IN);
+
+        @Override
+        public void process(ProcessContext ctx) {
+            if (ctx.wasTriggeredVia(startPort) || ctx.wasTriggeredVia(stopPort)) {
+                activateNone();
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(startPort);
+            addFlowInput(stopPort);
+        }
+
+        @Override
+        public void configureFlowOutputs() {
+            addFlowOutput(new FlowPort("", FlowPort.Direction.OUT));
+        }
+
+        @Override
+        public boolean isExecutionEntryPoint() {
+            return true;
+        }
+    }
+
     /**
      * Two named flow-in ports, recording the ports each firing arrived through - the node shape
      * per-port arrival info exists for (a Start entry and a Stop entry doing different work).

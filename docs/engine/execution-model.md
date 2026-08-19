@@ -67,8 +67,17 @@ see each other's.
 **Out — the node chooses.** `BaseNode.activate(port)`, called from `process()`,
 records a flow-out port on the context (`ExecutionContext.activate`). When
 `Run.fire` cascades, it reads them back (`activatedOf`) and follows only those
-ports' edges. Activating *nothing* fires *all* out-ports, so an ordinary node needs
-no activation call. This is how `IfNode` prunes a branch.
+ports' edges. Activating *nothing* (never calling `activate`) fires *all*
+out-ports, so an ordinary node needs no activation call. This is how `IfNode`
+prunes a branch.
+
+`BaseNode.activateNone()` is the other end of that default: it records the node as
+having explicitly fired *no* out-port this run (`ExecutionContext.activateNone` /
+`activatesNone`), for a firing that must not cascade at all. This is distinct from
+never calling `activate` — that still means "fire all" — so a node needs
+`activateNone()` when one of its IN ports arms/disarms it without meaning "now also
+fire out" (see below). `TriggerRepeatingNode`'s Start/Stop ports use it: they must
+not fire the node's own periodic trigger port.
 
 **In — the engine tells the node.** `Run.schedule` records the IN port each
 arriving `FlowEdge` targeted (`ExecutionContext.recordFlowArrival`), and the node
@@ -160,6 +169,7 @@ The methods the engine calls on a node, all no-ops by default:
 | `releaseResources()` | after `onRemoved()`, on a worker, time-bounded | slow teardown |
 | `onInputEdgeAdded/Removed(edge)` | after a data edge is (un)wired | grow or shrink dynamic ports |
 | `activate(port)` | from within `process()` | branch: fire only the chosen flow-out ports |
+| `activateNone()` | from within `process()` | arm/disarm: fire no flow-out port at all this run |
 | `ctx.triggeredVia()` | read from within `process()` | tell apart which flow-in port fired this node |
 | `runFlowBranchToCompletion(port, seed)` | from within `process()` | loop: run one branch per item |
 
