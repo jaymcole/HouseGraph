@@ -57,10 +57,10 @@ Interactions, with the class Javadoc as the authoritative list:
 
 - Middle-drag on empty space pans; scroll zooms, anchored at the cursor.
 - Left-drag on empty space rubber-band selects; right-click opens the canvas
-  context menu — a ranked node search box, focused immediately so typing
-  narrows the list without an extra click, then the Add-Node menu below it
-  for browsing by category folder (`NodeRegistry.discover()`, grouped by
-  `categoryPath`). See "Node search box" below.
+  context menu — a ranked node search box, focused immediately and showing no
+  results until you type, then the Add-Node menu below it for browsing by
+  category folder (`NodeRegistry.discover()`, grouped by `categoryPath`). See
+  "Node search box" below.
 - Delete/Backspace removes the selection; `Ctrl/Cmd+C`/`V` copy and paste;
   `Ctrl/Cmd+Z` and `Shift+Z` undo and redo.
 - Dragging between port circles makes a data edge; dragging between the triangular
@@ -83,12 +83,14 @@ and keeps that same `CustomMenuItem` instance for the life of the session —
 would tear the live `TextField` out of the scene graph and drop its focus mid-type.
 
 Opening the menu (`setOnShowing`) clears the field and re-runs the search with an
-empty query, which `NodeSearchIndex` treats as a browse: every node type,
-alphabetical, up to its `DEFAULT_LIMIT`. `setOnShown` then focuses the field so
-typing works immediately. Each keystroke re-ranks the rows below it; Enter adds the
-top-ranked result and closes the menu, Escape just closes it. The categorised
-Add-Node menu stays underneath as a fallback for browsing by folder, and
-`reloadNodeTypes()` calls `NodeSearchIndex.invalidate()` alongside rebuilding it.
+empty query — deliberately zero result rows, not `NodeSearchIndex`'s browse-everything
+reading of a blank query, since with a large or multi-library registry that would turn
+every right-click into a scrollable wall of nodes. `setOnShown` then focuses the field
+so typing works immediately. Each keystroke re-ranks the rows below it; Enter adds the
+top-ranked result and closes the menu (a no-op on a still-blank query), Escape just
+closes it. The categorised Add-Node menu stays underneath as the way to browse by
+folder, and `reloadNodeTypes()` calls `NodeSearchIndex.invalidate()` alongside
+rebuilding it.
 
 ## Views
 
