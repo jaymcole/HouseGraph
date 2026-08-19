@@ -78,9 +78,9 @@ import java.util.function.Function;
  * <p>
  * Panning: middle-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
  * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges;
- * right-click opens a menu led by a ranked node search box — focused immediately, so
- * typing narrows the list without an extra click — with the categorised "Add Node" menu
- * kept below it for browsing. Delete/Backspace removes the current
+ * right-click opens a menu led by a ranked node search box, focused immediately; it shows
+ * no results until you type, with the categorised "Add Node" menu kept below it for
+ * browsing. Delete/Backspace removes the current
  * selection; Ctrl/Cmd+C and Ctrl/Cmd+V copy and paste it; Ctrl/Cmd+Z and
  * Ctrl/Cmd+Shift+Z undo and redo (currently: adding a node via the menu, and deleting
  * nodes/connections - see {@link UndoManager}). Data edges are created by dragging from
@@ -1302,8 +1302,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         searchItem.setHideOnClick(false);
         menu.getItems().add(searchItem);
 
-        // Reset to a fresh, unfiltered browse of every node type each time the menu is (re)opened,
-        // and hand keyboard focus straight to the search field so typing works immediately.
+        // Reset to an empty query (and so no result rows) each time the menu is (re)opened, and
+        // hand keyboard focus straight to the search field so typing works immediately.
         menu.setOnShowing(event -> {
             nodeSearchField.clear();
             updateSearchResults("");
@@ -1338,17 +1338,24 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         updateSearchResultsIn(contextMenu, query);
     }
 
+    /**
+     * A blank query shows no result rows at all — an empty query is a browse-everything result in
+     * {@link NodeSearchIndex}, and with a large or multi-library registry that turns the menu into
+     * a scrollable wall of nodes on every right-click. Typing is what asks for results.
+     */
     private void updateSearchResultsIn(ContextMenu menu, String query) {
         List<MenuItem> items = new ArrayList<>();
         items.add(menu.getItems().get(0));
-        List<SearchResult> results = nodeSearchIndex.search(query);
-        for (SearchResult result : results) {
-            items.add(buildSearchResultItem(result.node()));
-        }
-        if (results.isEmpty()) {
-            MenuItem none = new MenuItem("(no matching nodes)");
-            none.setDisable(true);
-            items.add(none);
+        if (!query.isBlank()) {
+            List<SearchResult> results = nodeSearchIndex.search(query);
+            for (SearchResult result : results) {
+                items.add(buildSearchResultItem(result.node()));
+            }
+            if (results.isEmpty()) {
+                MenuItem none = new MenuItem("(no matching nodes)");
+                none.setDisable(true);
+                items.add(none);
+            }
         }
         items.add(new SeparatorMenuItem());
         items.add(addNodeMenu);
@@ -1364,9 +1371,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     /** Enter adds the top-ranked result and closes the menu; Escape just closes it. */
     private void handleSearchFieldKeyPressed(KeyEvent event) {
         if (event.getCode() == KeyCode.ENTER) {
-            List<SearchResult> results = nodeSearchIndex.search(nodeSearchField.getText());
-            if (!results.isEmpty()) {
-                addNodeFromRegistry(results.get(0).node().nodeClass());
+            String query = nodeSearchField.getText();
+            // A blank query has no result rows shown, so Enter on one must not silently add
+            // whatever the browse-everything result would have ranked first.
+            if (!query.isBlank()) {
+                List<SearchResult> results = nodeSearchIndex.search(query);
+                if (!results.isEmpty()) {
+                    addNodeFromRegistry(results.get(0).node().nodeClass());
+                }
             }
             contextMenu.hide();
             event.consume();
