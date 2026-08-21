@@ -12,6 +12,13 @@ this node is wired or unwired, dispatched through the engine's callback executor
 one output per property of whatever type is wired into its `Object` input, deriving
 the properties with `ObjectProperties`.
 
+`onOutputEdgeAdded(edge)` / `onOutputEdgeRemoved(edge)` are the mirror pair, firing
+on the edge's *source*. Use them — or `getOutgoingDataEdges()`, matching
+`edge.getSourceVariable()` against the port you care about — when a node's behaviour
+depends on whether one of its own outputs is consumed at all, such as choosing a
+different default for work that only makes sense if something downstream will read
+the result.
+
 ## Reacting to settings
 
 Call `reconfigure()` or `rebuildPorts()` to rebuild the port lists after a setting

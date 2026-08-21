@@ -147,7 +147,9 @@ use.
 
 - `BaseNode.onExecuted()` and the `GraphExecutionListener` callbacks
   (`onNodeStarted`, `onNodeExecuted`, `onDataEdgeTraversed`, `onFlowEdgeTraversed`),
-- the data-edge wiring hooks `onInputEdgeAdded` / `onInputEdgeRemoved`.
+- the data-edge wiring hooks `onInputEdgeAdded` / `onInputEdgeRemoved` on the edge's
+  target and `onOutputEdgeAdded` / `onOutputEdgeRemoved` on its source, each
+  dispatched as its own task so one throwing does not suppress the other.
 
 The default is `Runnable::run`, firing inline on the calling thread, which is what
 tests use. The app supplies `Platform::runLater`, so callbacks that touch JavaFX
@@ -167,7 +169,8 @@ The methods the engine calls on a node, all no-ops by default:
 | `onActivated()` | when added to a live graph, including on load | register or subscribe by name |
 | `onRemoved()` | when it leaves a live graph, on the removing thread | fast, thread-affine teardown |
 | `releaseResources()` | after `onRemoved()`, on a worker, time-bounded | slow teardown |
-| `onInputEdgeAdded/Removed(edge)` | after a data edge is (un)wired | grow or shrink dynamic ports |
+| `onInputEdgeAdded/Removed(edge)` | after a data edge into the node is (un)wired | grow or shrink dynamic ports |
+| `onOutputEdgeAdded/Removed(edge)` | after a data edge out of the node is (un)wired | react to whether an output is consumed |
 | `activate(port)` | from within `process()` | branch: fire only the chosen flow-out ports |
 | `activateNone()` | from within `process()` | arm/disarm: fire no flow-out port at all this run |
 | `ctx.triggeredVia()` | read from within `process()` | tell apart which flow-in port fired this node |

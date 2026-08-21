@@ -419,14 +419,16 @@ public class NodeGraph {
 
     public void registerEdge(Edge edge) {
         Objects.requireNonNull(edge, "edge");
-        // The onInputEdgeAdded hook is dispatched through the callback executor rather than
-        // called inline. A node reacting to the wiring may rebuild its ports (and thus its
+        // The wiring hooks are dispatched through the callback executor rather than called
+        // inline. A node reacting to the wiring may rebuild its ports (and thus its
         // on-canvas view); the UI's executor (Platform.runLater) defers that to the next FX
         // pulse, so it can't tear down and rebuild the view while the caller (e.g.
         // GraphCanvas.createEdge) is still mid-wiring and holding now-stale PortView
-        // references. Headless (Runnable::run) still fires it synchronously.
+        // references. Headless (Runnable::run) still fires it synchronously. Both ends are
+        // told, each in its own task so one throwing can't swallow the other's notification.
         if (attachEdge(edge)) {
             callbackExecutor.execute(() -> edge.getTargetNode().onInputEdgeAdded(edge));
+            callbackExecutor.execute(() -> edge.getSourceNode().onOutputEdgeAdded(edge));
         }
     }
 
@@ -464,6 +466,7 @@ public class NodeGraph {
         // Deferred through the callback executor for the same reason as registerEdge.
         if (detachEdge(edge)) {
             callbackExecutor.execute(() -> edge.getTargetNode().onInputEdgeRemoved(edge));
+            callbackExecutor.execute(() -> edge.getSourceNode().onOutputEdgeRemoved(edge));
         }
     }
 

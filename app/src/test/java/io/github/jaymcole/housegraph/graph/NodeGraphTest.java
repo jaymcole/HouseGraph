@@ -376,13 +376,69 @@ class NodeGraphTest {
         assertEquals(1, sink.removed, "cascading an edge removal via node deletion still notifies the target");
     }
 
-    /** A node with a single Object input that records its edge-hook calls. */
+    @Test
+    void registeringAndRemovingAnEdgeFiresTheSourcesOutputEdgeHooks() {
+        NodeGraph graph = new NodeGraph();
+        EdgeHookNode source = new EdgeHookNode();
+        EdgeHookNode sink = new EdgeHookNode();
+        graph.addNode(source);
+        graph.addNode(sink);
+
+        Edge edge = new Edge(source, source.anyOutput, sink, sink.anyInput);
+        graph.registerEdge(edge);
+        assertEquals(1, source.outAdded, "onOutputEdgeAdded fires when an edge out of the node is registered");
+        assertEquals(edge, source.lastOutAdded);
+        assertEquals(0, source.added, "the source is not told about its own edge as an input");
+        assertEquals(1, sink.added, "the target still gets its input hook");
+
+        graph.removeEdge(edge);
+        assertEquals(1, source.outRemoved, "onOutputEdgeRemoved fires when that edge is removed");
+        assertEquals(edge, source.lastOutRemoved);
+    }
+
+    @Test
+    void deletingATargetNodeFiresTheSourcesOutputEdgeRemovedHook() {
+        NodeGraph graph = new NodeGraph();
+        EdgeHookNode source = new EdgeHookNode();
+        EdgeHookNode sink = new EdgeHookNode();
+        graph.addNode(source);
+        graph.addNode(sink);
+        graph.registerEdge(new Edge(source, source.anyOutput, sink, sink.anyInput));
+
+        graph.removeNode(sink);
+
+        assertEquals(1, source.outRemoved, "cascading an edge removal via node deletion still notifies the source");
+    }
+
+    @Test
+    void aNodeSeesWhetherItsOutputIsWired() {
+        NodeGraph graph = new NodeGraph();
+        EdgeHookNode source = new EdgeHookNode();
+        EdgeHookNode sink = new EdgeHookNode();
+        graph.addNode(source);
+        graph.addNode(sink);
+        assertTrue(source.wiredOutputs().isEmpty(), "an unwired output has no outgoing data edges");
+
+        Edge edge = new Edge(source, source.anyOutput, sink, sink.anyInput);
+        graph.registerEdge(edge);
+        assertEquals(Set.of(edge), source.wiredOutputs());
+
+        graph.removeEdge(edge);
+        assertTrue(source.wiredOutputs().isEmpty(), "the edge is gone once removed");
+    }
+
+    /** A node with one Object input and one Object output that records its edge-hook calls. */
     private static final class EdgeHookNode extends BaseNode {
         final NodeVariable<Object> anyInput = new NodeVariable<>("Any", Object.class);
+        final NodeVariable<Object> anyOutput = new NodeVariable<>("Out", Object.class);
         int added = 0;
         int removed = 0;
+        int outAdded = 0;
+        int outRemoved = 0;
         Edge lastAdded;
         Edge lastRemoved;
+        Edge lastOutAdded;
+        Edge lastOutRemoved;
 
         @Override
         public void process(ProcessContext ctx) {
@@ -395,6 +451,7 @@ class NodeGraphTest {
 
         @Override
         public void configureOutputs() {
+            addOutput(anyOutput);
         }
 
         @Override
@@ -407,6 +464,23 @@ class NodeGraphTest {
         protected void onInputEdgeRemoved(Edge edge) {
             removed++;
             lastRemoved = edge;
+        }
+
+        @Override
+        protected void onOutputEdgeAdded(Edge edge) {
+            outAdded++;
+            lastOutAdded = edge;
+        }
+
+        @Override
+        protected void onOutputEdgeRemoved(Edge edge) {
+            outRemoved++;
+            lastOutRemoved = edge;
+        }
+
+        /** Exposes the protected accessor so the test can read it from outside the node. */
+        Set<Edge> wiredOutputs() {
+            return getOutgoingDataEdges();
         }
     }
 
