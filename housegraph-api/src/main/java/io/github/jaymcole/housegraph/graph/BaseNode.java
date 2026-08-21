@@ -317,6 +317,42 @@ public abstract class BaseNode {
     }
 
     /**
+     * Called by {@link NodeGraph} right after a data edge whose <em>source</em> is this node is
+     * registered — the output-side mirror of {@link #onInputEdgeAdded}. No-op by default; a node
+     * whose behaviour depends on whether an output is actually consumed overrides this. Runs on
+     * whatever thread performed the wiring (the UI thread for user edits), outside the graph's
+     * structural lock.
+     *
+     * @param edge the data edge that was just wired out of this node
+     */
+    protected void onOutputEdgeAdded(Edge edge) {
+    }
+
+    /**
+     * Called by {@link NodeGraph} right after a data edge whose <em>source</em> is this node is
+     * removed (an explicit disconnect, the target's input being rewired, the target node being
+     * deleted, or a view rebuild). No-op by default; the counterpart to
+     * {@link #onOutputEdgeAdded}.
+     *
+     * @param edge the data edge that was just removed from this node's outputs
+     */
+    protected void onOutputEdgeRemoved(Edge edge) {
+    }
+
+    /**
+     * The data edges currently leaving this node, or empty if it isn't in a graph — the mirror of
+     * {@link #getIncomingDataEdges()}. Lets a node ask whether one of its own outputs is wired to
+     * anything downstream (match {@link Edge#getSourceVariable()} against the output in question),
+     * which is the reliable way to read <em>current</em> wiring rather than trust a single hook's
+     * edge argument when those hooks are dispatched asynchronously.
+     *
+     * @return this node's current outgoing data edges, or empty if it isn't in a graph
+     */
+    protected Set<Edge> getOutgoingDataEdges() {
+        return graph == null ? Set.of() : graph.getOutgoingDataEdges(this);
+    }
+
+    /**
      * The node's {@link NodeVariable#required() required} inputs that currently have no value
      * source — no incoming data edge and no non-null manually-authored value. An empty list means
      * the node is configured; a non-empty one means it's <em>misconfigured</em> and the UI flags it
