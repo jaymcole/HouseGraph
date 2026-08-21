@@ -6,8 +6,11 @@ import io.github.jaymcole.housegraph.plugin.GitHubReleases;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
+import io.github.jaymcole.housegraph.ui.widget.TaskProgressBar;
 import javafx.application.Platform;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
@@ -99,6 +102,9 @@ public final class PluginWindow {
         private final PluginCatalog.Installed installed;
         private final SimpleStringProperty latest = new SimpleStringProperty("—");
         private final SimpleStringProperty state = new SimpleStringProperty("");
+        /** Non-null while an update is downloading for this row; the Status cell shows its progress
+         *  instead of {@link #state} for as long as this is set. */
+        private final SimpleObjectProperty<Task<Void>> activeInstall = new SimpleObjectProperty<>();
 
         Row(PluginCatalog.Installed installed) {
             this.installed = installed;
@@ -135,6 +141,10 @@ public final class PluginWindow {
         public SimpleStringProperty stateProperty() {
             return state;
         }
+
+        public SimpleObjectProperty<Task<Void>> activeInstallProperty() {
+            return activeInstall;
+        }
     }
 
     /** One row of {@link AddFromUrlDialog}'s results table: a release asset and whether it's installed. */
@@ -142,6 +152,9 @@ public final class PluginWindow {
         private final GitHubReleases.Asset asset;
         private final SimpleStringProperty status;
         private boolean installed;
+        /** Non-null while this asset is downloading; the Status cell shows its progress instead of
+         *  {@link #status} for as long as this is set. */
+        private final SimpleObjectProperty<Task<Void>> activeInstall = new SimpleObjectProperty<>();
 
         AssetRow(GitHubReleases.Asset asset, boolean installed) {
             this.asset = asset;
@@ -192,9 +205,10 @@ public final class PluginWindow {
             TableColumn<AssetRow, String> sizeCol = new TableColumn<>("Size");
             sizeCol.setPrefWidth(90);
             sizeCol.setCellValueFactory(data -> new SimpleStringProperty(formatSize(data.getValue().asset.sizeBytes())));
-            TableColumn<AssetRow, String> statusCol = new TableColumn<>("Status");
-            statusCol.setPrefWidth(110);
-            statusCol.setCellValueFactory(data -> data.getValue().status);
+            TableColumn<AssetRow, AssetRow> statusCol = new TableColumn<>("Status");
+            statusCol.setPrefWidth(130);
+            statusCol.setCellValueFactory(data -> new SimpleObjectProperty<>(data.getValue()));
+            statusCol.setCellFactory(col -> statusCell(row -> row.status, row -> row.activeInstall));
             TableColumn<AssetRow, Void> actionCol = new TableColumn<>("");
             actionCol.setPrefWidth(80);
             actionCol.setCellFactory(col -> new TableCell<>() {
@@ -274,8 +288,8 @@ public final class PluginWindow {
             confirmThenInstall(dialogStage, repositoryUrl, release, row.asset, () -> {
                 row.installed = true;
                 row.status.set("Installed");
-                assetTable.refresh();
-            });
+                assetTable.refresh(); // the Add button in the action column keys off row.installed
+            }, row);
         }
     }
 
@@ -388,6 +402,10 @@ public final class PluginWindow {
         table.setItems(rows);
         table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        TableColumn<Row, Row> statusCol = new TableColumn<>("Status");
+        statusCol.setPrefWidth(200);
+        statusCol.setCellValueFactory(data -> new SimpleObjectProperty<>(data.getValue()));
+        statusCol.setCellFactory(col -> statusCell(Row::stateProperty, Row::activeInstallProperty));
         table.getColumns().setAll(
                 column("Id", 170, row -> new SimpleStringProperty(row.getId())),
                 column("Name", 150, row -> new SimpleStringProperty(row.getName())),
@@ -396,7 +414,7 @@ public final class PluginWindow {
                 column("Latest", 90, Row::latestProperty),
                 column("API", 60, row -> new SimpleStringProperty(row.getApiVersion())),
                 column("Enabled", 70, row -> new SimpleStringProperty(row.getEnabled())),
-                column("Status", 200, Row::stateProperty));
+                statusCol);
         // Every column is sortable via its header by default (TableView needs no extra wiring for a
         // String column) — click Repository to group libraries that share one, the way Update and
         // Remove already let you act on a multi-selection of them at once.
@@ -411,6 +429,56 @@ public final class PluginWindow {
         col.setPrefWidth(width);
         col.setCellValueFactory(data -> value.apply(data.getValue()));
         return col;
+    }
+
+    /**
+     * A Status-column cell shared by both tables in this window: normally the row's plain status
+     * text, but a live {@link TaskProgressBar} for as long as {@code taskOf} returns a non-null
+     * {@link Task} for that row — which is how download progress ends up next to the row it belongs
+     * to instead of in one shared bar for the whole window. Watches {@code taskOf}'s property
+     * directly, so it re-renders itself the moment the row starts or finishes downloading; the caller
+     * doesn't need to remember to refresh the table.
+     */
+    private static <T> TableCell<T, T> statusCell(java.util.function.Function<T, SimpleStringProperty> textOf,
+                                                  java.util.function.Function<T, SimpleObjectProperty<Task<Void>>> taskOf) {
+        return new TableCell<>() {
+            private T watched;
+            private final ChangeListener<Task<Void>> listener = (obs, was, now) -> render();
+
+            @Override
+            protected void updateItem(T row, boolean empty) {
+                super.updateItem(row, empty);
+                if (watched != null) {
+                    taskOf.apply(watched).removeListener(listener);
+                    watched = null;
+                }
+                if (!empty && row != null) {
+                    taskOf.apply(row).addListener(listener);
+                    watched = row;
+                }
+                render();
+            }
+
+            private void render() {
+                textProperty().unbind();
+                T row = getItem();
+                if (isEmpty() || row == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+                Task<Void> task = taskOf.apply(row).get();
+                if (task != null) {
+                    TaskProgressBar bar = new TaskProgressBar();
+                    bar.track(task);
+                    setGraphic(bar);
+                    setText(null);
+                } else {
+                    setGraphic(null);
+                    textProperty().bind(textOf.apply(row));
+                }
+            }
+        };
     }
 
     private void refresh() {
@@ -486,8 +554,19 @@ public final class PluginWindow {
      */
     private void confirmThenInstall(Stage owner, String repositoryUrl, GitHubReleases.Release release,
                                     GitHubReleases.Asset asset, Runnable onInstalled) {
+        confirmThenInstall(owner, repositoryUrl, release, asset, onInstalled, null);
+    }
+
+    /**
+     * @param sourceRow the {@link AddFromUrlDialog} row this install came from, so the download's
+     *                  progress can be shown in that row's Status cell; null when there is no such
+     *                  row (the legacy named-install path used by the missing-library prompt), in
+     *                  which case progress simply isn't shown anywhere but the status line's text.
+     */
+    private void confirmThenInstall(Stage owner, String repositoryUrl, GitHubReleases.Release release,
+                                    GitHubReleases.Asset asset, Runnable onInstalled, AssetRow sourceRow) {
         if (skipInstallWarning()) {
-            downloadAndInstall(repositoryUrl, release, asset, onInstalled);
+            downloadAndInstall(repositoryUrl, release, asset, onInstalled, sourceRow);
             return;
         }
 
@@ -516,14 +595,16 @@ public final class PluginWindow {
         if (dontShowAgain.isSelected()) {
             setSkipInstallWarning(true);
         }
-        downloadAndInstall(repositoryUrl, release, asset, onInstalled);
+        downloadAndInstall(repositoryUrl, release, asset, onInstalled, sourceRow);
     }
 
     private void downloadAndInstall(String repositoryUrl, GitHubReleases.Release release,
-                                    GitHubReleases.Asset asset, Runnable onInstalled) {
-        runOffThread("Downloading " + asset.name() + "…", () -> {
-            PluginInstaller.install(repositoryUrl, release, asset, catalog);
-        }, () -> {
+                                    GitHubReleases.Asset asset, Runnable onInstalled, AssetRow sourceRow) {
+        runOffThread("Downloading " + asset.name() + "…", () ->
+                installTracked(sourceRow == null ? null : sourceRow.activeInstall,
+                        progress -> PluginInstaller.install(repositoryUrl, release, asset, catalog,
+                                asset.sizeBytes() > 0 ? progress : PluginInstaller.ProgressListener.NONE)),
+                () -> {
             String id = catalogIdOf(repositoryUrl);
             latestKnown.put(id, release);
             librariesChanged("Installed " + asset.name() + ".", List.of(id));
@@ -677,10 +758,24 @@ public final class PluginWindow {
     private void installAllUpdates(List<UpdatePlan> plans) {
         List<String> installedIds = new ArrayList<>();
         List<String> failedInstalls = new ArrayList<>();
+        // Resolved here, on the FX thread, rather than inside the background loop below: `rows` is
+        // an FX-owned list and the loop's thread has no business reading it directly. A plain loop
+        // rather than Collectors.toMap because a plan's row can legitimately be null (Map.merge,
+        // which toMap uses internally, rejects null values outright).
+        Map<UpdatePlan, Row> rowFor = new HashMap<>();
+        for (UpdatePlan plan : plans) {
+            rowFor.put(plan, findRow(plan.installed().id()));
+        }
+        // Each library gets its own row-bound task, so its progress shows in that row's own Status
+        // cell rather than one bar for the whole batch — libraries are installed one at a time
+        // regardless, so this is just where that already-sequential work reports to.
         runOffThread("Updating " + plans.size() + (plans.size() == 1 ? " library…" : " libraries…"), () -> {
             for (UpdatePlan plan : plans) {
+                Row row = rowFor.get(plan);
                 try {
-                    PluginInstaller.install(plan.installed().repository(), plan.release(), plan.asset(), catalog);
+                    installTracked(row == null ? null : row.activeInstallProperty(), progress ->
+                            PluginInstaller.install(plan.installed().repository(), plan.release(), plan.asset(),
+                                    catalog, plan.asset().sizeBytes() > 0 ? progress : PluginInstaller.ProgressListener.NONE));
                     latestKnown.put(plan.installed().id(), plan.release());
                     installedIds.add(plan.installed().id());
                 } catch (Exception e) {
@@ -786,6 +881,11 @@ public final class PluginWindow {
         alert.showAndWait();
     }
 
+    /** The visible row for an already-installed library, or null if it isn't in the table right now. */
+    private Row findRow(String id) {
+        return rows.stream().filter(row -> row.getId().equals(id)).findFirst().orElse(null);
+    }
+
     private List<Row> selectedRows() {
         List<Row> selected = new ArrayList<>(table.getSelectionModel().getSelectedItems());
         if (selected.isEmpty()) {
@@ -825,13 +925,16 @@ public final class PluginWindow {
     /** Network work never runs on the FX thread; failures surface as an alert, as elsewhere in the UI. */
     private void runOffThread(String startedMessage, Callable work, Runnable onSuccess) {
         status.setText(startedMessage);
-        Task<Void> task = new Task<>() {
+        runTask(new Task<>() {
             @Override
             protected Void call() throws Exception {
                 work.call();
                 return null;
             }
-        };
+        }, onSuccess);
+    }
+
+    private void runTask(Task<Void> task, Runnable onSuccess) {
         task.setOnSucceeded(e -> onSuccess.run());
         task.setOnFailed(e -> {
             Throwable failure = task.getException();
@@ -848,6 +951,51 @@ public final class PluginWindow {
 
     private interface Callable {
         void call() throws Exception;
+    }
+
+    private interface ProgressCallable {
+        void call(PluginInstaller.ProgressListener progress) throws Exception;
+    }
+
+    /**
+     * Runs {@code body} inside its own {@link Task}, purely so it gets a
+     * {@link PluginInstaller.ProgressListener} wired to that task's progress — and, when
+     * {@code trackedBy} is given (a row's {@code activeInstall} property), publishes the task there
+     * so that row's Status cell shows it for as long as it runs. {@code trackedBy} is a JavaFX
+     * property and must only be touched on the FX thread, so it's set and cleared via
+     * {@link Platform#runLater}; the calling thread is always {@link #runOffThread}'s background
+     * thread, which is why the inner task is run synchronously here rather than handed to a thread
+     * of its own — JavaFX marshals a {@code Task}'s own property updates to the FX thread regardless
+     * of which thread drives it. {@code body}'s exception is caught and rethrown by hand rather than
+     * read back via {@code task.getException()} afterward, because that getter — unlike
+     * {@code updateProgress} — is thread-checked and throws off the FX thread.
+     */
+    private void installTracked(SimpleObjectProperty<Task<Void>> trackedBy, ProgressCallable body) throws Exception {
+        Exception[] failure = new Exception[1];
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() {
+                try {
+                    body.call(this::updateProgress);
+                } catch (Exception e) {
+                    failure[0] = e;
+                }
+                return null;
+            }
+        };
+        if (trackedBy != null) {
+            Platform.runLater(() -> trackedBy.set(task));
+        }
+        try {
+            task.run();
+            if (failure[0] != null) {
+                throw failure[0];
+            }
+        } finally {
+            if (trackedBy != null) {
+                Platform.runLater(() -> trackedBy.set(null));
+            }
+        }
     }
 
     private static String formatSize(long bytes) {

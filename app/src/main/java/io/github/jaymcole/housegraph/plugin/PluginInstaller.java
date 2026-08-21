@@ -9,6 +9,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -22,6 +23,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -58,6 +61,22 @@ public final class PluginInstaller {
         public InstallException(String message, Throwable cause) {
             super(message, cause);
         }
+    }
+
+    /**
+     * Reports download progress as it happens, so a caller with a UI can show it. {@code totalBytes}
+     * is the asset size GitHub reported when the release was looked up, not a value read back off
+     * the HTTP response — every caller already has it before the download starts, and a release
+     * asset's size doesn't change out from under a running install.
+     *
+     * <p>{@code totalBytes <= 0} means the size wasn't known; a caller with a determinate progress
+     * bar should treat that as "stay indeterminate" rather than dividing by it.
+     */
+    @FunctionalInterface
+    public interface ProgressListener {
+        ProgressListener NONE = (bytesRead, totalBytes) -> { };
+
+        void onProgress(long bytesRead, long totalBytes);
     }
 
     private PluginInstaller() {
@@ -119,9 +138,21 @@ public final class PluginInstaller {
                                                   GitHubReleases.Release release,
                                                   GitHubReleases.Asset asset,
                                                   PluginCatalog catalog) throws IOException, InterruptedException {
+        return install(repositoryUrl, release, asset, catalog, ProgressListener.NONE);
+    }
+
+    /**
+     * Same as {@link #install(String, GitHubReleases.Release, GitHubReleases.Asset, PluginCatalog)},
+     * reporting download progress to {@code progress} as bytes arrive.
+     */
+    public static PluginCatalog.Installed install(String repositoryUrl,
+                                                  GitHubReleases.Release release,
+                                                  GitHubReleases.Asset asset,
+                                                  PluginCatalog catalog,
+                                                  ProgressListener progress) throws IOException, InterruptedException {
         Path staged = Files.createTempFile("housegraph-plugin-", ".jar.part");
         try {
-            download(asset.downloadUrl(), staged);
+            download(asset.downloadUrl(), staged, asset.sizeBytes(), progress);
 
             PluginManifest manifest = PluginManifest.read(staged)
                     .orElseThrow(() -> new InstallException(
@@ -287,7 +318,8 @@ public final class PluginInstaller {
         }
     }
 
-    private static void download(String url, Path target) throws IOException, InterruptedException {
+    private static void download(String url, Path target, long totalBytes, ProgressListener progress)
+            throws IOException, InterruptedException {
         if (!GitHubReleases.isAllowed(url)) {
             throw new InstallException("Refusing to download from " + url + " — only GitHub is allowed.");
         }
@@ -296,10 +328,53 @@ public final class PluginInstaller {
                 .timeout(Duration.ofMinutes(10))
                 .GET()
                 .build();
-        HttpResponse<Path> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofFile(target));
+        HttpResponse.BodyHandler<Path> handler = responseInfo -> trackingSubscriber(target, totalBytes, progress);
+        HttpResponse<Path> response = CLIENT.send(request, handler);
         if (response.statusCode() != 200) {
             throw new InstallException("Download failed with HTTP " + response.statusCode() + " for " + url);
         }
+    }
+
+    /**
+     * Wraps the stock file-writing subscriber to report cumulative bytes as each chunk arrives,
+     * without changing what actually gets written — every {@code onNext} is forwarded to
+     * {@code delegate} untouched, after being measured. {@code java.net.http}'s only file-writing
+     * subscriber ({@link HttpResponse.BodySubscribers#ofFile}) has no progress hook of its own.
+     */
+    private static HttpResponse.BodySubscriber<Path> trackingSubscriber(Path target, long totalBytes,
+                                                                          ProgressListener progress) {
+        HttpResponse.BodySubscriber<Path> delegate = HttpResponse.BodySubscribers.ofFile(target);
+        long[] received = {0};
+        return new HttpResponse.BodySubscriber<>() {
+            @Override
+            public CompletionStage<Path> getBody() {
+                return delegate.getBody();
+            }
+
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+                delegate.onSubscribe(subscription);
+            }
+
+            @Override
+            public void onNext(List<ByteBuffer> item) {
+                for (ByteBuffer buffer : item) {
+                    received[0] += buffer.remaining();
+                }
+                progress.onProgress(received[0], totalBytes);
+                delegate.onNext(item);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                delegate.onError(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                delegate.onComplete();
+            }
+        };
     }
 
     /**

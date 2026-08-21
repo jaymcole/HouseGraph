@@ -17,6 +17,7 @@ ui/
 ├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
 ├── log/               LogWindow, LogLevelPreferences
 ├── plugin/            PluginWindow (the node-library manager)
+├── widget/            TaskProgressBar (a Task-bound progress bar, reused across windows)
 └── io/                GraphFileIO
 ```
 
@@ -198,7 +199,12 @@ is in [logging.md](logging.md).
 **`plugin/PluginWindow`** manages node libraries. Installing is long and
 network-bound and the user should be able to watch the canvas and log window while
 it runs, which a modal forbids. It is a deliberately thin shell; everything worth
-testing lives in `plugin/`. See [plugin-runtime.md](plugin-runtime.md).
+testing lives in `plugin/`. See [plugin-runtime.md](plugin-runtime.md). A
+downloading row — an add-from-URL asset or an update in progress — shows a
+`widget/TaskProgressBar` in its own Status cell in place of the row's text, rather
+than one shared bar for the whole window; each row's cell watches that row's own
+`activeInstall` property and switches itself, so nothing elsewhere has to remember
+to refresh the table when a download starts or finishes.
 
 ---
 

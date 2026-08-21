@@ -21,6 +21,7 @@ concern.
 | `io/` | save/load (`GraphFileIO`) |
 | `log/` | the log viewer (`LogWindow`) and `LogLevelPreferences` |
 | `plugin/` | the node-library manager (`PluginWindow`) |
+| `widget/` | small controls with no graph-model dependency, reused across windows (`TaskProgressBar`) |
 
 Because these are separate packages, the cross-package API each exposes is
 `public`; keep genuinely package-local helpers package-private. Prefer standalone
