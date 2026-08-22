@@ -29,6 +29,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -391,6 +392,41 @@ class GraphFileIOTest {
     }
 
     @Test
+    void aValueTheNodeSeededForItselfSurvivesALoadThatSavedItAsNull() {
+        // The load-side half of the persistence gate. A transient/computed/secret variable is always
+        // saved as null (only its name is kept), so applying that null back can only destroy what the
+        // node seeded at construction — and nothing re-seeds it, so the variable reads null for the
+        // life of the node. This is exactly how a resource node's handle output (a Discord bot, a
+        // store) came back dead from a loaded graph while a freshly added one worked.
+        JSONObject nodeJson = realNodeJson(SeededHandleHolder.class);
+        nodeJson.put("outputs", List.of(namedValue("Handle", JSONObject.NULL)));
+
+        GraphSnapshot snapshot = fromJson(rootWith(List.of(nodeJson), List.of(), List.of()));
+
+        BaseNode loaded = snapshot.nodes().get(0).node();
+        assertTrue(loaded instanceof SeededHandleHolder, "the fixture type must resolve, not load as a placeholder");
+        assertNotNull(loaded.getOutputs().get(0).getValue(),
+                "a transient value the node seeded for itself must survive a load that couldn't persist it");
+    }
+
+    @Test
+    void anAuthoredValueTheUserClearedStillReloadsCleared() {
+        // The companion guard: the load-side skip keys on the variable being non-persistent, not on
+        // the saved value being null. A persistent input the user emptied must stay empty rather than
+        // springing back to whatever default the node's constructor set — which is what a blanket
+        // "never apply a null" rule would have done.
+        assertEquals("author default", new DefaultedInputHolder().text.getValue(),
+                "the fixture only tests anything if its constructor really does seed a default");
+        JSONObject nodeJson = realNodeJson(DefaultedInputHolder.class);
+        nodeJson.put("inputs", List.of(namedValue("Text", JSONObject.NULL)));
+
+        GraphSnapshot snapshot = fromJson(rootWith(List.of(nodeJson), List.of(), List.of()));
+
+        assertNull(snapshot.nodes().get(0).node().getInputs().get(0).getValue(),
+                "a cleared authored value must stay cleared, not spring back to its author default");
+    }
+
+    @Test
     void dynamicOutputsAreRebuiltFromNodeStateOnLoad() {
         // A decomposer's outputs come from its saved state (the property list), not from
         // any wired edge. On load the state must be restored before the ports are first
@@ -552,14 +588,17 @@ class GraphFileIOTest {
 
     @Test
     void valuesAndEdgesBindByNameRegardlessOfSavedOrder() {
-        // A save whose AddNode inputs are listed in the opposite order to the node's actual port
-        // order, with a data edge pointing at "V2" by name. Name-keying must bind each value and the
-        // edge to the right port regardless of position - the whole point of the format. (A purely
-        // positional format would put V2's value on V1 and wire the edge to the wrong input.)
+        // A save whose inputs are listed in the opposite order to the node's actual port order, with
+        // a data edge pointing at "V2" by name. Name-keying must bind each value and the edge to the
+        // right port regardless of position - the whole point of the format. (A purely positional
+        // format would put V2's value on V1 and wire the edge to the wrong input.) The fixture's
+        // inputs are manually editable because only such values are persisted at all: a file
+        // carrying a value for a wire-only input (AddNode's V1/V2) isn't one this build could write,
+        // and load ignores those entries rather than clobbering what the node set up for itself.
         JSONObject constant = nodeJson(ConstantFloatNode.class,
                 new JSONArray(),
                 new JSONArray(List.of(valueEntry("out", 5.0))));
-        JSONObject add = nodeJson(AddNode.class,
+        JSONObject add = nodeJson(EditableInputsHolder.class,
                 new JSONArray(List.of(valueEntry("V2", 2.0), valueEntry("V1", 1.0))), // reversed vs. configure order
                 new JSONArray(List.of(valueEntry("Sum", JSONObject.NULL))));
 
@@ -850,6 +889,84 @@ class GraphFileIOTest {
         public void configureOutputs() {
             addOutput(plain);
             addOutput(secret);
+        }
+    }
+
+    /**
+     * A node whose transient output carries a handle it seeds for itself at construction — the shape
+     * of every resource node (a Discord bot, a document store). Public so the loader can reflectively
+     * instantiate it by class name.
+     */
+    public static final class SeededHandleHolder extends BaseNode {
+        final NodeVariable<Object> handle = new NodeVariable<>("Handle", Object.class).transientValue();
+
+        public SeededHandleHolder() {
+            handle.setValue(new Object());
+        }
+
+        @Override
+        public void process(ProcessContext ctx) {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+            addOutput(handle);
+        }
+    }
+
+    /**
+     * A two-input node whose inputs can be typed in, so their values are actually persisted — the
+     * shape the name-vs-position binding test needs. Public for the same reason as
+     * {@link SeededHandleHolder}.
+     */
+    public static final class EditableInputsHolder extends BaseNode {
+        final NodeVariable<Float> v1 = new NodeVariable<>("V1", Float.class, true);
+        final NodeVariable<Float> v2 = new NodeVariable<>("V2", Float.class, true);
+        final NodeVariable<Float> sum = new NodeVariable<>("Sum", Float.class);
+
+        @Override
+        public void process(ProcessContext ctx) {
+        }
+
+        @Override
+        public void configureInputs() {
+            addInput(v1);
+            addInput(v2);
+        }
+
+        @Override
+        public void configureOutputs() {
+            addOutput(sum);
+        }
+    }
+
+    /**
+     * A node with one manually-editable input carrying an author default — for checking that a value
+     * the user cleared reloads cleared rather than reverting. Public for the same reason as
+     * {@link SeededHandleHolder}.
+     */
+    public static final class DefaultedInputHolder extends BaseNode {
+        final NodeVariable<String> text = new NodeVariable<>("Text", String.class, true);
+
+        public DefaultedInputHolder() {
+            text.setValue("author default");
+        }
+
+        @Override
+        public void process(ProcessContext ctx) {
+        }
+
+        @Override
+        public void configureInputs() {
+            addInput(text);
+        }
+
+        @Override
+        public void configureOutputs() {
         }
     }
 

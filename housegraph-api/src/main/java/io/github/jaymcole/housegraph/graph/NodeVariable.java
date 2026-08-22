@@ -160,6 +160,12 @@ public class NodeVariable<T> {
      * reaches the writer, and — with the {@link #markSecret() secret}/{@link #transientValue()
      * transient} exclusions still applied on top — makes it impossible for a secret to slip
      * to disk just because some node happened to expose it as an output.
+     * <p>
+     * The gate runs in <em>both</em> directions, and in the copy/paste path too (see
+     * {@code NodeRegistry#duplicate}): a variable whose value isn't written is also not restored on
+     * load. Nothing about it was ever persisted, so writing the file's null back over it could only
+     * destroy what the node seeded for itself at construction — a resource node's live handle, an
+     * output's starting value — for good.
      *
      * @return true if this variable's value should be written to save files
      */

@@ -51,6 +51,12 @@ This rule also governs copy/paste: `NodeRegistry.duplicate` carries across only
 persistent values, so a pasted node never inherits a computed output or a secret
 that was resolved off an edge.
 
+It governs **loading** too, and symmetrically: a value that isn't written isn't
+restored either. That matters if your node seeds one of these variables for itself —
+a resource node whose handle output is set at construction, say — because the load
+would otherwise apply the file's `null` over it and the port would read null for the
+life of that node.
+
 ## Required inputs
 
 `required()` declares that an input must have a value source — an incoming data

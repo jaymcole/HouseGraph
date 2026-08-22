@@ -58,8 +58,9 @@ import java.util.Map;
  * save made with a catalog to hand.
  * <p>
  * <b>Ports are persisted by name, not position.</b> A node's {@code inputs}/{@code outputs} are
- * written as {@code {name, value}} objects (computed and secret values are omitted — see
- * {@link NodeVariable#isPersistentValue}), and a data/flow edge references the variable or port it
+ * written as {@code {name, value}} objects (computed, secret and transient values are written as
+ * null and are not applied back on load — see {@link NodeVariable#isPersistentValue}), and a
+ * data/flow edge references the variable or port it
  * touches by <em>name</em> whenever that name is non-blank and unique on its node (falling back to a
  * positional index for the common unnamed single flow port). On load, values are matched to inputs by
  * name and edges resolved by name. This is what lets a node author reorder or insert a port in a
@@ -523,7 +524,9 @@ public final class GraphFileIO {
     /**
      * Writes each variable as a {@code {name, value}} object so load can match it to an input by name
      * rather than position. Only manually-authored values are written; computed and secret values are
-     * left null and recomputed on load (see {@link NodeVariable#isPersistentValue}).
+     * left null and recomputed on load (see {@link NodeVariable#isPersistentValue}). The entry itself
+     * is still written for such a variable — its name is load-bearing — but {@link #applyValues}
+     * knows not to apply the null back.
      */
     @SuppressWarnings("unchecked")
     private static JSONArray valuesToJson(List<NodeVariable> variables) {
@@ -542,6 +545,18 @@ public final class GraphFileIO {
      * Restores saved values onto a node's variables. New saves store {@code {name, value}} objects,
      * matched to a variable by unique name (falling back to the entry's ordinal position); old saves
      * store bare scalars, applied positionally.
+     * <p>
+     * <b>Only {@link NodeVariable#isPersistentValue() persistent} variables are written to</b> — the
+     * same gate {@link #valuesToJson} applies on the way out, and the one
+     * {@link NodeRegistry#duplicate} applies for copy/paste. A computed, secret or transient variable
+     * is always saved as {@code null} (the entry is kept for its <em>name</em>, which is what
+     * rebuilds a {@link MissingNode}'s ports and matches values by name), so applying it back could
+     * only ever destroy information: it wiped whatever the node had seeded for itself at
+     * construction — a resource node's live handle, an output's starting value — leaving a variable
+     * the node never sets again reading null for the life of that node, with deleting and recreating
+     * the node the only cure. Skipping is deliberately keyed on the variable rather than on the value
+     * being null, so a persistent input the user genuinely cleared still reloads cleared instead of
+     * springing back to its author default.
      */
     @SuppressWarnings("unchecked")
     private static void applyValues(List<NodeVariable> variables, JSONArray values) {
@@ -554,14 +569,18 @@ public final class GraphFileIO {
                 String name = entry.has("name") ? entry.getString("name") : null;
                 Object raw = entry.isNull("value") ? null : entry.get("value");
                 NodeVariable target = resolveVariable(variables, name, i);
-                if (target != null) {
+                if (target != null && target.isPersistentValue()) {
                     target.setValue(coerce(raw, target.type));
                 }
             }
         } else {
             for (int i = 0; i < Math.min(variables.size(), values.length()); i++) {
+                NodeVariable target = variables.get(i);
+                if (!target.isPersistentValue()) {
+                    continue;
+                }
                 Object raw = values.isNull(i) ? null : values.get(i);
-                variables.get(i).setValue(coerce(raw, variables.get(i).type));
+                target.setValue(coerce(raw, target.type));
             }
         }
     }

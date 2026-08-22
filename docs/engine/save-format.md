@@ -78,7 +78,14 @@ mis-binding old saves, which was the failure mode of the earlier positional form
 
 **Only persistent values are written** (`NodeVariable.isPersistentValue`).
 Computed, secret and transient values are written as `null`, keeping stale data and
-credentials out of files.
+credentials out of files. The entry itself is still written, because its *name* is
+what rebuilds a `MissingNode`'s ports and matches values by name — but **load does
+not apply it back**. The same gate runs in both directions: nothing about such a
+variable was ever persisted, so writing the file's `null` over it could only destroy
+what the node seeded for itself at construction (a resource node's live handle, an
+output's starting value), which nothing re-seeds. Skipping is keyed on the variable,
+not on the value being null, so a persistent input the user genuinely cleared still
+reloads cleared instead of reverting to its author default.
 
 **`state` is loaded before ports are touched**, so dynamic-port nodes rebuild their
 ports from state before values are applied.
