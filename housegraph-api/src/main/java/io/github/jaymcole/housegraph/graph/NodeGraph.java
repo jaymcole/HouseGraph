@@ -325,7 +325,7 @@ public class NodeGraph {
      * {@link BaseNode#onRemoved()} and {@link BaseNode#releaseResources()}) and stops the execution
      * threads. Intended for app shutdown; the graph shouldn't be used afterward.
      *
-     * <h2>Two passes, and why the second one is concurrent</h2>
+     * <h4>Two passes, and why the second one is concurrent</h4>
      * The fast, thread-affine half ({@code onRemoved()}) runs first, in order, on the calling
      * thread — the FX thread in the app, which is what lets a node stop a {@code Timeline} or reset
      * a control. Then every node's {@code releaseResources()} runs <em>at once</em> on virtual

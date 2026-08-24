@@ -260,7 +260,7 @@ public abstract class BaseNode {
      * node, immediately after {@link #onRemoved()}, on a worker thread and under a time
      * limit. Must be idempotent, and safe even if the node's UI was never built.
      *
-     * <h2>Why this is separate from {@code onRemoved()}</h2>
+     * <h4>Why this is separate from {@code onRemoved()}</h4>
      * The two halves of teardown want opposite things. Stopping a {@code Timeline} or
      * touching a control <em>must</em> happen on the FX thread; killing a process tree
      * <em>must not</em>, because the app cannot wait on the FX thread for something that
