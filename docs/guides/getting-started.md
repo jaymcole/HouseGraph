@@ -76,6 +76,29 @@ naming the inputs that need a value.
 | Bend an edge | double-click it to add a waypoint |
 | Node options | right-click a node |
 
+## Watching a graph run
+
+Nodes flash as they fire, but a real graph finishes in a blink — the whole cascade
+lights up and clears before you can see which node went first. The toolbar's
+**Watch** control fixes that: pick a pace (0.25s, 0.5s, 1s, 2s) and the engine pauses
+for that long before each node runs, so a trigger visibly walks its way downstream.
+Set it back to **Off** to run at full speed.
+
+Watch what it shows you about how the engine actually works: a node that fans out to
+two branches lights *both* at once and they descend side by side, because branches
+run concurrently rather than one after the other. A join node sits dark until every
+branch feeding it has arrived.
+
+Two things to know before leaning on it:
+
+- **It slows the graph, so timing-dependent graphs behave differently.** A trigger
+  firing faster than the delay will have firings dropped or coalesced, depending on
+  each node's re-entrancy policy. A for-each loop pays the delay on every iteration,
+  so a hundred items at 0.5s is fifty seconds.
+- **It is not saved.** The setting lasts for the session and belongs to the app, not
+  the graph, so it can never follow a graph onto a machine
+  [running unattended](server-operations.md).
+
 ## Saving
 
 **Quick Save** writes to the current file with no dialog. Until there is one it
@@ -132,4 +155,5 @@ A gitignored `.env` file seeds the Secret Loader node's dropdown; see
 ---
 
 **When you change this, update…** this file whenever the build or run commands
-change, the canvas gestures change, or the data directory locations change.
+change, the canvas gestures or toolbar controls change, or the data directory
+locations change.

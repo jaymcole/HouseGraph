@@ -115,6 +115,25 @@ public final class ExecutionContext {
         return cancellationSignal.getAsBoolean();
     }
 
+    /**
+     * Whether this context belongs to a flow-driven run, and so should honour
+     * {@link NodeGraph#setStepDelayMillis the step delay}. False for the context a synchronous
+     * {@link NodeGraph#resolve} pull builds: that call blocks its caller, which may be the FX
+     * application thread (an inline-UI button calling {@link BaseNode#beginProcessing()}), and
+     * pausing there would freeze the UI rather than animate it.
+     */
+    private volatile boolean stepDelayed;
+
+    /** Marks this context as a flow-driven run's, so its node firings honour the step delay. */
+    void setStepDelayed(boolean stepDelayed) {
+        this.stepDelayed = stepDelayed;
+    }
+
+    /** Whether firings in this context should observe the graph's step delay. */
+    boolean isStepDelayed() {
+        return stepDelayed;
+    }
+
     NodeProcessingStatus statusOf(BaseNode node) {
         return statuses.getOrDefault(node, NodeProcessingStatus.NOT_STARTED);
     }

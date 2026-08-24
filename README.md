@@ -26,6 +26,9 @@ design idea:
   GitHub repository and loaded at runtime, with no rebuild. A graph using a library
   you do not have still opens — the node is preserved exactly and offered for
   install, never silently lost. The app never installs on its own.
+- **Watch mode** — the toolbar's **Watch** control slows every run to a set pace, so
+  a cascade can be followed node by node as it fires instead of finishing in a
+  blink. Off by default and never saved with the graph.
 - **Image export** — writes a PNG of each distinct graph on the canvas, so a graph
   can be shared or documented as a picture rather than a screenshot.
 - **Encrypted secret store** (AES-256-GCM) so tokens and passwords never touch save

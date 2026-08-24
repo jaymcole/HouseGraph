@@ -1827,6 +1827,105 @@ class NodeGraphTest {
         }
     }
 
+    @Test
+    void stepDelayIsOffUntilAHostAsksForIt() {
+        NodeGraph graph = new NodeGraph();
+
+        assertEquals(0, graph.getStepDelayMillis(), "runs go at full speed unless a host opts in");
+
+        graph.setStepDelayMillis(-5);
+        assertEquals(0, graph.getStepDelayMillis(), "a negative delay clamps to off rather than throwing");
+    }
+
+    @Test
+    void stepDelayPausesOnceBeforeEachNodeOfAFlowDrivenRun() {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        AddNode first = new AddNode();
+        BaseNode second = new AddNode();
+        graph.addNode(trigger);
+        graph.addNode(first);
+        graph.addNode(second);
+        graph.registerFlowEdge(flowEdge(trigger, first));
+        graph.registerFlowEdge(flowEdge(first, second));
+
+        long delayMillis = 100;
+        graph.setStepDelayMillis(delayMillis);
+
+        long startedAt = System.nanoTime();
+        trigger.execute();
+        graph.awaitIdle();
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        // Three nodes fire in sequence, each paying the delay before its process(). Only the
+        // lower bound is asserted - Thread.sleep guarantees at least its duration, never at
+        // most, so an upper bound would just be a bet on how loaded the machine is.
+        assertTrue(elapsedMillis >= 3 * delayMillis,
+                "a three-node cascade should pause three times, taking at least " + (3 * delayMillis)
+                        + "ms; took " + elapsedMillis + "ms");
+        assertTrue(second.getStatus().isComplete(), "the cascade still completes, just slower");
+    }
+
+    @Test
+    void stepDelayWaitsWithTheNodeAlreadyReportedAsStarted() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        graph.addNode(trigger);
+
+        CountDownLatch started = new CountDownLatch(1);
+        List<BaseNode> executed = Collections.synchronizedList(new ArrayList<>());
+        graph.addExecutionListener(new GraphExecutionListener() {
+            @Override
+            public void onNodeStarted(BaseNode node) {
+                started.countDown();
+            }
+
+            @Override
+            public void onNodeExecuted(BaseNode node) {
+                executed.add(node);
+            }
+        });
+
+        // The whole point of the delay is that a node is visibly lit while it waits, which means
+        // the pause has to fall after onNodeStarted and before onNodeExecuted. Timing alone can't
+        // show that, so this catches the run in the gap: the node has started and, a generous
+        // fraction of the delay later, still hasn't finished.
+        graph.setStepDelayMillis(1_000);
+        trigger.execute();
+
+        assertTrue(started.await(2, TimeUnit.SECONDS), "the node should be reported started before the delay");
+        assertTrue(executed.isEmpty(), "the node should still be mid-delay, not yet executed");
+
+        // A delay already under way runs to its end - the field is read once per firing, not
+        // polled - so this waits it out rather than cutting it short.
+        graph.awaitIdle();
+        assertEquals(List.of(trigger), executed, "and it finishes once the delay elapses");
+    }
+
+    @Test
+    void stepDelayDoesNotStallASynchronousResolvePull() {
+        NodeGraph graph = new NodeGraph();
+        ConstantFloatNode constant = new ConstantFloatNode();
+        AddNode add = new AddNode();
+        graph.addNode(constant);
+        graph.addNode(add);
+        output(constant).setValue(3f);
+        graph.registerEdge(new Edge(constant, output(constant), add, input(add, "V1")));
+
+        // beginProcessing() blocks its caller, and that caller may be the FX application thread
+        // (an inline-UI button pulling a value). Delaying there would freeze the UI rather than
+        // animate it, so the pull path opts out however long the delay is set to.
+        graph.setStepDelayMillis(30_000);
+
+        long startedAt = System.nanoTime();
+        add.beginProcessing();
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        assertEquals(3f, output(add).getValue());
+        assertTrue(elapsedMillis < 5_000,
+                "a pull must not pay the step delay; took " + elapsedMillis + "ms");
+    }
+
     /** A flow edge between two nodes' first (single) flow ports - the common single-flow-port shape. */
     private static FlowEdge flowEdge(BaseNode source, BaseNode target) {
         return new FlowEdge(source, source.getFlowOutputs().get(0), target, target.getFlowInputs().get(0));

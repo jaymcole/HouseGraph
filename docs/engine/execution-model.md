@@ -158,6 +158,36 @@ nodes run on the FX Application Thread.
 **Any new engine-to-UI notification goes through this seam.** Do not import JavaFX
 into `graph/`.
 
+## Watching a run
+
+`NodeGraph.setStepDelayMillis` pauses before each node's `process()` in a flow-driven
+run. A real graph finishes faster than the eye follows, so the callbacks above fire
+and clear in one frame; spacing the firings out is what makes them watchable. Zero —
+the default — runs at full speed.
+
+The pause sits between the `onNodeStarted` notification and `runProcess`. Before it,
+the node is already lit, so it stays lit for the wait. After it come the node's
+concurrency permit and its timeout watchdog, so the delay neither holds a permit it
+isn't using nor spends a node's timeout budget waiting — a node with a 2-second
+timeout doesn't start failing because the delay was set to 3. It waits in slices and
+polls cancellation between them, so a superseding `RESTART` or a `dispose()` drops
+the remainder instead of waiting it out.
+
+**The synchronous `resolve` path is exempt**, because it blocks its caller and that
+caller may be the FX application thread — an inline-UI button calling
+`beginProcessing()`, as `TriggerRepeatingNode`'s Start button does. Pausing there
+would freeze the UI rather than animate it. The run's `ExecutionContext` carries the
+distinction, so a loop body started by `runFlowBranchToCompletion` inherits it from
+the run driving it rather than assuming either answer.
+
+**It changes timing, and so changes behaviour that depends on timing.** Firings that
+used to overlap now queue or are shed by their node's [execution
+policy](execution-policy.md), and a loop body pays the delay per iteration. It is a
+debugging aid, not a throttle — `BaseNode.getMaxConcurrency()` is the throttle. For
+the same reason it is session-scoped and absent from the
+[save format](save-format.md): a graph carries no delay, so a headless deployment of
+it always runs at full speed.
+
 ## Lifecycle hooks
 
 The methods the engine calls on a node, all no-ops by default:

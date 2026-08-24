@@ -121,6 +121,11 @@ import java.util.function.BooleanSupplier;
  * {@code process()}. The driver's {@code process()} blocks on each such call, running iterations
  * sequentially; its own outer run stays non-idle throughout. See {@code ForEachNode}.
  * <p>
+ * <b>A run can be slowed down to be watched.</b> {@link #setStepDelayMillis} pauses before each
+ * node's {@code process()} in a flow-driven run, stretching a cascade out to a pace the execution
+ * callbacks below can actually be seen at. Off by default and never persisted; the synchronous
+ * {@link #resolve} path is exempt because it blocks its caller, which may be the UI thread.
+ * <p>
  * This class never imports anything from JavaFX: node/edge execution callbacks
  * ({@link BaseNode#onExecuted()}, {@link GraphExecutionListener}) are dispatched
  * through an injectable {@link #setCallbackExecutor callback executor}, which defaults
@@ -197,6 +202,26 @@ public class NodeGraph {
     private volatile Executor callbackExecutor = Runnable::run;
 
     /**
+     * How long to pause before each node's {@code process()} in a flow-driven run — the
+     * <em>step delay</em>. Zero (the default) runs at full speed.
+     *
+     * <p>A debugging and demonstration aid: the host already animates a run through
+     * {@link GraphExecutionListener}, but a real graph finishes far faster than the eye follows.
+     * Pausing between firings stretches the cascade out so it can be watched node by node.
+     * Session-scoped and never persisted — a saved graph carries no delay, so a headless
+     * deployment of it always runs at full speed.
+     *
+     * <p>Read live at each firing, so changing it mid-run takes effect from the next node on.
+     */
+    private volatile long stepDelayMillis = 0;
+
+    /**
+     * How long each slice of a step delay sleeps before the wait re-checks for cancellation. Short
+     * enough that a cancelled run drops its remaining delay promptly, long enough not to spin.
+     */
+    private static final long STEP_DELAY_SLICE_MILLIS = 50;
+
+    /**
      * How long {@link #dispose()} waits for {@link BaseNode#releaseResources()}, per node and — since
      * they run concurrently — for the pass as a whole.
      *
@@ -223,6 +248,30 @@ public class NodeGraph {
      */
     public void setCallbackExecutor(Executor callbackExecutor) {
         this.callbackExecutor = Objects.requireNonNull(callbackExecutor, "callbackExecutor");
+    }
+
+    /**
+     * The pause taken before each node's {@code process()} in a flow-driven run.
+     *
+     * @return the step delay in milliseconds; zero when disabled
+     */
+    public long getStepDelayMillis() {
+        return stepDelayMillis;
+    }
+
+    /**
+     * Sets the step delay, slowing flow-driven runs so they can be watched as they progress.
+     * Zero disables it.
+     *
+     * <p>This changes observable timing, so it changes behaviour for graphs whose behaviour
+     * depends on timing: firings that used to overlap now queue or are shed by their node's
+     * {@link ExecutionPolicy}, and a loop body pays the delay once per iteration. It is a
+     * debugging aid, not a throttle — {@link BaseNode#getMaxConcurrency()} is the throttle.
+     *
+     * @param stepDelayMillis milliseconds to pause before each node firing; zero or less disables
+     */
+    public void setStepDelayMillis(long stepDelayMillis) {
+        this.stepDelayMillis = Math.max(0, stepDelayMillis);
     }
 
     /**
@@ -623,7 +672,7 @@ public class NodeGraph {
         Objects.requireNonNull(seed, "seed");
         requireRegistered(source);
         CountDownLatch done = new CountDownLatch(1);
-        Run run = new Run(done::countDown);
+        Run run = new Run(done::countDown, inheritsStepDelay());
         run.startBranch(source, sourcePort, seed);
         try {
             done.await();
@@ -634,13 +683,25 @@ public class NodeGraph {
     }
 
     /**
+     * Whether a sub-run started from the calling thread should honour the step delay: it does when
+     * the run enclosing it does. A loop body driven from a flow-driven run is part of what the user
+     * is watching and is delayed with it; one driven from a synchronous {@link #resolve} pull
+     * inherits that pull's exemption, so a loop reached from a UI-thread
+     * {@link BaseNode#beginProcessing()} doesn't block the UI for the length of the loop.
+     */
+    private static boolean inheritsStepDelay() {
+        ExecutionContext enclosing = ExecutionContext.current();
+        return enclosing != null && enclosing.isStepDelayed();
+    }
+
+    /**
      * Creates a run for {@code node} and submits its start to the run executor, returning its
      * cancellation token (so a RESTART trigger holding {@code state}'s monitor can stop it). The
      * run fires {@code node} and cascades fire-and-forget; when it fully quiesces {@code onComplete}
      * runs (on a run-executor thread).
      */
     private PassToken startRun(BaseNode node, Runnable prepare, Runnable onComplete) {
-        Run run = new Run(onComplete);
+        Run run = new Run(onComplete, true);
         runExecutor.execute(() -> run.start(node, prepare));
         return run.token();
     }
@@ -739,6 +800,11 @@ public class NodeGraph {
             }
 
             callbackExecutor.execute(() -> notifyNodeStarted(node));
+            // After the started notification (so the node is already lit while we wait) and before
+            // runProcess, which is where the node's concurrency permit and timeout watchdog start:
+            // pausing inside those would hold a permit we aren't using and spend the node's timeout
+            // budget on the delay, failing nodes that would otherwise have finished in time.
+            awaitStepDelay(context);
             runProcess(context, node);
             // Mirror this run's computed values onto the node before the (possibly async,
             // off-context) onExecuted callback runs, so it and later observers see them.
@@ -747,6 +813,40 @@ public class NodeGraph {
                 node.onExecuted();
                 notifyNodeExecuted(node);
             });
+        }
+    }
+
+    /**
+     * Pauses for the {@linkplain #setStepDelayMillis step delay} before a node fires, so a run can be
+     * watched as it cascades. Returns immediately when the delay is off, or when {@code context}
+     * belongs to a synchronous {@link #resolve} pull rather than a flow-driven run — that call blocks
+     * its caller, which may be the UI thread.
+     *
+     * <p>Waits in slices, polling for cancellation between them, so a superseding
+     * {@link ExecutionPolicy#RESTART} or a {@link #dispose()} isn't left waiting out a delay that no
+     * longer serves anyone. This is the same cooperative-cancellation shape a well-behaved slow node
+     * uses; see {@link ProcessContext#checkCancelled()}.
+     */
+    private void awaitStepDelay(ExecutionContext context) {
+        long remaining = stepDelayMillis;
+        if (remaining <= 0 || !context.isStepDelayed()) {
+            return;
+        }
+        while (remaining > 0) {
+            if (context.isCancelled() || Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            long slice = Math.min(STEP_DELAY_SLICE_MILLIS, remaining);
+            try {
+                Thread.sleep(slice);
+            } catch (InterruptedException e) {
+                // Restore the flag rather than swallowing an interrupt that wasn't aimed at the
+                // delay: runProcess surfaces it to process() as cancellation, exactly as it would
+                // have had the delay not been here, and clears it afterwards either way.
+                Thread.currentThread().interrupt();
+                return;
+            }
+            remaining -= slice;
         }
     }
 
@@ -944,11 +1044,12 @@ public class NodeGraph {
          */
         private BaseNode entryNode;
 
-        Run(Runnable onComplete) {
+        Run(Runnable onComplete, boolean stepDelayed) {
             this.onComplete = onComplete;
             // A node's process() sees this run's cancellation (a superseding RESTART) through its
             // ProcessContext, which reads it off the context; point the context at this run's token.
             context.setCancellationSignal(token::isCancelled);
+            context.setStepDelayed(stepDelayed);
         }
 
         PassToken token() {

@@ -28,6 +28,8 @@ import javafx.scene.Cursor;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ChoiceBox;
+import javafx.scene.control.Label;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
 import javafx.stage.DirectoryChooser;
@@ -188,8 +190,18 @@ public class App extends Application {
         missingLibrariesNotice.setStyle("-fx-text-fill: #ff6b6b;");
         missingLibrariesNotice.setOnAction(e -> openPluginWindow());
 
+        // Slows every flow-driven run down to something the eye can follow: the canvas already
+        // animates each node and edge as it fires, this just spaces the firings out. Session-only
+        // and off by default — it changes timing, so it's a thing you switch on to look at a graph,
+        // not a setting a graph or a deployment should carry (see NodeGraph.setStepDelayMillis).
+        ChoiceBox<WatchSpeed> watchSpeedChoice = new ChoiceBox<>();
+        watchSpeedChoice.getItems().setAll(WatchSpeed.values());
+        watchSpeedChoice.setValue(WatchSpeed.OFF);
+        watchSpeedChoice.setOnAction(e -> graph.setStepDelayMillis(watchSpeedChoice.getValue().millis()));
+
         ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, exportImagesButton,
-                secretsButton, logsButton, dependenciesButton, missingLibrariesNotice);
+                secretsButton, logsButton, dependenciesButton,
+                new Label("Watch:"), watchSpeedChoice, missingLibrariesNotice);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);
@@ -520,5 +532,35 @@ public class App extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    /**
+     * The step delays the toolbar's Watch control offers, as {@link NodeGraph#setStepDelayMillis}
+     * values. A short list of round numbers rather than a slider: the useful range spans a factor of
+     * ten and the exact figure never matters, only whether a run crawls or flies.
+     */
+    private enum WatchSpeed {
+        OFF("Off", 0),
+        QUARTER_SECOND("0.25s", 250),
+        HALF_SECOND("0.5s", 500),
+        ONE_SECOND("1s", 1000),
+        TWO_SECONDS("2s", 2000);
+
+        private final String label;
+        private final long millis;
+
+        WatchSpeed(String label, long millis) {
+            this.label = label;
+            this.millis = millis;
+        }
+
+        long millis() {
+            return millis;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
     }
 }
