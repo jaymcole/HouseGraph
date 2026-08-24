@@ -97,6 +97,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private static final KeyCodeCombination REDO_COMBO =
             new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
 
+    /** Unzoomed and unpanned — what {@link #withComponentIsolated} renders at. */
+    private static final CameraState IDENTITY_CAMERA = new CameraState(1.0, 0, 0);
+
     private final NodeGraph graph;
     private final Group content = new Group();
     private final List<PortView> ports = new ArrayList<>();
@@ -1514,6 +1517,95 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    /** The graph this canvas hosts. Read-only use — mutate through the canvas so the views stay in step. */
+    public NodeGraph getGraph() {
+        return graph;
+    }
+
+    /**
+     * Runs {@code renderer} against the content group with only {@code component}'s nodes and edges
+     * visible, and puts the canvas back exactly as it was afterwards.
+     *
+     * <p>This is what {@code ui/export} renders one picture per distinct graph through, and each of
+     * the three things it changes is load-bearing:
+     *
+     * <ul>
+     *   <li><b>Non-member views are hidden</b>, not merely cropped around. Nothing constrains two
+     *       disjoint components to occupy separate regions of the canvas — a user may lay one out
+     *       right through the middle of another — so a crop to the component's bounding box would
+     *       pull foreign nodes into its picture. Hiding also shrinks {@link Group#getLayoutBounds()}
+     *       to just what remains, which is what gives the renderer its crop rectangle for free.</li>
+     *   <li><b>The selection is cleared</b>, because {@code NodeView}'s selection border is a child
+     *       of the node and would otherwise render into the image: whatever happened to be selected
+     *       when the user hit Export would come out ringed in amber.</li>
+     *   <li><b>Pan/zoom is reset to 1:1</b>, so the render doesn't depend on where the user had
+     *       scrolled to, and so the content group's local coordinates and its parent's coincide —
+     *       which is what lets the renderer derive its viewport from {@code getLayoutBounds()}.</li>
+     * </ul>
+     *
+     * <p>All three are restored in a {@code finally}, so a renderer that throws still leaves a
+     * usable canvas rather than a half-hidden one.
+     *
+     * <p>FX thread only.
+     *
+     * @param component the nodes to leave visible, typically one {@code GraphComponents} component
+     * @param renderer  receives the content group; its return value is passed straight back
+     */
+    public <T> T withComponentIsolated(Set<BaseNode> component, Function<Group, T> renderer) {
+        List<NodeView> hiddenNodes = new ArrayList<>();
+        List<AbstractEdgeView> hiddenEdges = new ArrayList<>();
+        List<NodeView> wasSelected = new ArrayList<>(selectedNodes);
+        List<ConnectionView> wasSelectedConnections = new ArrayList<>(selectedConnections);
+        CameraState wasCamera = getCameraState();
+
+        try {
+            clearSelection();
+            setCameraState(IDENTITY_CAMERA);
+
+            for (NodeView view : nodeViews) {
+                if (!component.contains(view.getNode())) {
+                    view.setVisible(false);
+                    hiddenNodes.add(view);
+                }
+            }
+            // Testing the source node alone is enough: a component is maximal, so an edge with one
+            // endpoint inside it has both inside it.
+            for (Map.Entry<Edge, EdgeView> entry : edgeViews.entrySet()) {
+                if (!component.contains(entry.getKey().getSourceNode())) {
+                    entry.getValue().setVisible(false);
+                    hiddenEdges.add(entry.getValue());
+                }
+            }
+            for (Map.Entry<FlowEdge, FlowEdgeView> entry : flowEdgeViews.entrySet()) {
+                if (!component.contains(entry.getKey().getSourceNode())) {
+                    entry.getValue().setVisible(false);
+                    hiddenEdges.add(entry.getValue());
+                }
+            }
+
+            // Force the pass that reflects the visibility changes in the group's bounds, rather
+            // than leaving the renderer to measure a stale rectangle.
+            content.applyCss();
+            content.layout();
+
+            return renderer.apply(content);
+        } finally {
+            for (NodeView view : hiddenNodes) {
+                view.setVisible(true);
+            }
+            for (AbstractEdgeView view : hiddenEdges) {
+                view.setVisible(true);
+            }
+            setCameraState(wasCamera);
+            for (NodeView view : wasSelected) {
+                selectNode(view);
+            }
+            for (ConnectionView connection : wasSelectedConnections) {
+                selectConnection(connection);
+            }
+        }
     }
 
     /** The canvas's current pan/zoom, for a save file to carry alongside the graph (see {@code GraphFileIO}). */

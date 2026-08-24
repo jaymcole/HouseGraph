@@ -21,6 +21,7 @@ concern.
 | `io/` | save/load (`GraphFileIO`) |
 | `log/` | the log viewer (`LogWindow`) and `LogLevelPreferences` |
 | `plugin/` | the node-library manager (`PluginWindow`) |
+| `export/` | rendering the canvas to PNGs, one per connected component |
 | `widget/` | small controls with no graph-model dependency, reused across windows (`TaskProgressBar`) |
 
 Because these are separate packages, the cross-package API each exposes is
@@ -51,6 +52,11 @@ matching their concern, and mirror them under the matching test package.
 - **New manually-editable type?** Add one line to the `sdk.ValueEditors` static
   block; nothing in `PortView` changes. Note it in
   [`docs/engine/type-system.md`](../../../../../../../../../docs/engine/type-system.md).
+- **Keep the component split headless.** `export/GraphComponents` is plain graph
+  logic and is unit-tested without a display; only `GraphImageExport` touches
+  pixels. A single whole-canvas `snapshot` is not an option — see the image-export
+  section of
+  [`docs/engine/ui-layer.md`](../../../../../../../../../docs/engine/ui-layer.md).
 
 **When you change canvas interaction, views, commands, editors, or either
 auxiliary window, update

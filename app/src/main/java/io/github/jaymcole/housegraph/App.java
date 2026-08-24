@@ -17,17 +17,20 @@ import io.github.jaymcole.housegraph.logging.Logging;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
+import io.github.jaymcole.housegraph.ui.export.GraphImageExport;
 import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
 import io.github.jaymcole.housegraph.ui.editor.SecretsEditor;
 import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
 import io.github.jaymcole.housegraph.ui.log.LogWindow;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.scene.Cursor;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
@@ -171,6 +174,9 @@ public class App extends Application {
         Button logsButton = new Button("Logs…");
         logsButton.setOnAction(e -> LogWindow.show(preferences));
 
+        Button exportImagesButton = new Button("Export Images…");
+        exportImagesButton.setOnAction(e -> exportImages(stage));
+
         Button dependenciesButton = new Button("Node Libraries…");
         dependenciesButton.setOnAction(e -> openPluginWindow());
 
@@ -182,8 +188,8 @@ public class App extends Application {
         missingLibrariesNotice.setStyle("-fx-text-fill: #ff6b6b;");
         missingLibrariesNotice.setOnAction(e -> openPluginWindow());
 
-        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, secretsButton,
-                logsButton, dependenciesButton, missingLibrariesNotice);
+        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, exportImagesButton,
+                secretsButton, logsButton, dependenciesButton, missingLibrariesNotice);
 
         BorderPane root = new BorderPane();
         root.setTop(toolBar);
@@ -299,6 +305,62 @@ public class App extends Application {
             return;
         }
         saveTo(canvas, file);
+    }
+
+    /**
+     * Prompts for a directory, then writes a PNG of each distinct graph on the canvas into it.
+     *
+     * <p>A canvas commonly holds several unrelated automations side by side, and each gets its own
+     * image — see {@code GraphComponents}. Files are named after the open graph file, so exporting
+     * {@code lights.json} produces {@code lights.png}, or {@code lights-1.png} upward when there is
+     * more than one graph in it.
+     *
+     * <p>Runs on the FX thread, unlike the other long actions in this class, because it renders the
+     * live node views and those may only be touched here. Writing the files afterwards could be
+     * handed to a worker, but only by holding every component's finished image in memory at once —
+     * which is the one cost {@code GraphImageExport} is built to avoid. A wait cursor covers the
+     * pause instead.
+     */
+    private void exportImages(Stage stage) {
+        if (canvas.getGraph().getNodes().isEmpty()) {
+            new Alert(Alert.AlertType.INFORMATION, "There is nothing on the canvas to export.").showAndWait();
+            return;
+        }
+
+        DirectoryChooser chooser = new DirectoryChooser();
+        chooser.setTitle("Export Graph Images");
+        File initial = currentFile != null ? currentFile.getParentFile() : AppDirectories.get().saves().toFile();
+        if (initial != null && initial.isDirectory()) {
+            chooser.setInitialDirectory(initial);
+        }
+        File directory = chooser.showDialog(stage);
+        if (directory == null) {
+            return;
+        }
+
+        stage.getScene().setCursor(Cursor.WAIT);
+        try {
+            List<File> written = GraphImageExport.exportComponents(canvas, directory, exportBaseName());
+            new Alert(Alert.AlertType.INFORMATION,
+                    written.size() == 1
+                            ? "Exported " + written.get(0).getName() + " to " + directory
+                            : "Exported " + written.size() + " images to " + directory).showAndWait();
+        } catch (IOException | RuntimeException ex) {
+            log.error("Image export failed", ex);
+            new Alert(Alert.AlertType.ERROR, "Failed to export images: " + ex.getMessage()).showAndWait();
+        } finally {
+            stage.getScene().setCursor(Cursor.DEFAULT);
+        }
+    }
+
+    /** The open graph's filename without its extension, or a generic name when nothing has been saved yet. */
+    private String exportBaseName() {
+        if (currentFile == null) {
+            return "graph";
+        }
+        String name = currentFile.getName();
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
     }
 
     /** Saves the graph to {@code file} and records it as the current/last file. */

@@ -26,6 +26,8 @@ design idea:
   GitHub repository and loaded at runtime, with no rebuild. A graph using a library
   you do not have still opens — the node is preserved exactly and offered for
   install, never silently lost. The app never installs on its own.
+- **Image export** — writes a PNG of each distinct graph on the canvas, so a graph
+  can be shared or documented as a picture rather than a screenshot.
 - **Encrypted secret store** (AES-256-GCM) so tokens and passwords never touch save
   files.
 - **Logging** with levels and multiple independently-filterable outputs — console,

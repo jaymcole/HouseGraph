@@ -137,6 +137,11 @@ Honour it. Beyond that:
 - **Do not claim more than is true.** No frozen interfaces, no implied install
   base, no "verified" for something that is not checked.
 - **Keep files short.** Over ~200 lines, it is probably two documents.
+- **Javadoc headings: `<h2>` on a class comment, `<h4>` inside a member's.** The
+  doclint config compares each heading against an implicit preceding one — `<h3>`
+  for a member — and fails the build on a level that goes backwards, so an `<h2>`
+  that reads fine on a class breaks the moment it is copied onto a method.
+  `./gradlew javadoc` is what catches it; `compileJava` will not.
 
 ## Extending
 
