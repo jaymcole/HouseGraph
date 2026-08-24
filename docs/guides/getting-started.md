@@ -89,6 +89,23 @@ If a graph uses a node library you do not have installed, **it still opens**. Th
 nodes are preserved exactly as they were, shown as placeholders, and offered for
 install. Nothing is lost, including if you save again.
 
+## Exporting images
+
+**Export Images…** asks for a folder and writes a PNG of the canvas into it, at the
+same 1:1 scale you see on screen — no need to zoom out, and no screenshot cropping.
+
+One canvas often holds several unrelated automations side by side, so **each one is
+exported as its own image**, containing only its own nodes. Two automations laid out
+across each other still come out cleanly separated.
+
+Images are named after the open graph file: `lights.json` exports as `lights.png`,
+or as `lights-1.png`, `lights-2.png` … when the file holds more than one automation,
+numbered top-to-bottom then left-to-right by where they sit on the canvas. An unwired
+node counts as an automation of its own.
+
+Your selection, pan and zoom are untouched — the picture never shows selection
+highlights, whatever was selected when you pressed the button.
+
 ## Next
 
 | Want to… | See |

@@ -17,6 +17,7 @@ ui/
 ├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
 ├── log/               LogWindow, LogLevelPreferences
 ├── plugin/            PluginWindow (the node-library manager)
+├── export/            GraphComponents, GraphImageExport
 ├── widget/            TaskProgressBar (a Task-bound progress bar, reused across windows)
 └── io/                GraphFileIO
 ```
@@ -163,6 +164,59 @@ three stacked lines (Queue), two upright bars (Parallel). `NodeView` renders the
 current one left of the title with a tooltip. To add or restyle an icon, edit
 `ExecutionPolicyIcons`; nothing else changes.
 
+## Image export
+
+`export/` writes a PNG of each **connected component** of the graph — the distinct
+automations one save file can hold. `GraphComponents` does the splitting and
+`GraphImageExport` does the drawing; `App`'s **Export Images…** button is the only
+caller.
+
+`GraphComponents.connectedComponents` treats data and flow edges alike, and ignores
+direction. That is the one place in this codebase where the two kinds are folded
+together, and it is not a violation of [decision 0001](../decisions/0001-separate-data-and-flow-edges.md):
+the question here is "which nodes belong in the same picture", which is about
+reachability on the canvas rather than about how values or execution travel. It is
+free of JavaFX and unit-tested headlessly. Components come back in `getNodes()`
+insertion order, so a component's index — and therefore its filename — is stable.
+
+### Isolating a component
+
+`GraphCanvas.withComponentIsolated(component, renderer)` hides every node and edge
+view outside `component`, clears the selection, resets pan/zoom to 1:1, runs the
+renderer against the content group, and restores all three in a `finally`.
+
+Hiding rather than cropping is the point. Nothing constrains two disjoint components
+to occupy separate regions — a user may lay one out straight through the middle of
+another — so a crop to a bounding box would pull foreign nodes into the picture.
+Hiding also shrinks `Group.getLayoutBounds()` to what remains, which is where the
+renderer gets its crop rectangle. Clearing the selection keeps `NodeView`'s amber
+border out of the image, and the 1:1 reset makes the content group's local
+coordinates coincide with its parent's, which is what lets the viewport be derived
+from `getLayoutBounds()`.
+
+### Why the render is tiled
+
+A single whole-canvas `snapshot` fails above the graphics pipeline's maximum texture
+size — around 8192px square — and fails *inside* the render, as
+`NullPointerException: Cannot invoke "com.sun.prism.Image.getWidth()"`, not as
+anything a caller can interpret. A tidily laid-out graph crosses that at roughly 350
+nodes and a sparse one far sooner, since empty canvas between clusters costs full
+pixels. So the render is always tiled rather than attempted whole with a fallback.
+
+Each tile is a `snapshot` of a 2048px-square window; `SnapshotParameters.setViewport`
+takes its rectangle in **post-transform** pixels, which is what makes the windows line
+up exactly. Tiles are copied into one `BufferedImage` through a reused
+`WritableImage` and `int[]`, and written with `ImageIO` — `javafx.swing` is
+deliberately *not* a dependency, since `PixelReader.getPixels` reaches a
+`BufferedImage` without `SwingFXUtils`.
+
+Two other snapshot behaviours the code depends on: the default fill is opaque
+**white**, not transparent, so `setFill` is set to the canvas background explicitly;
+and rendering is 1:1, because supersampling multiplies the buffer by the square of
+the factor. `MAX_PIXELS` is a backstop for a pathological layout — one node dragged
+tens of thousands of pixels from its component — and reduces the scale rather than
+letting the export run out of memory.
+
 ## Undo/redo
 
 `UndoManager` keeps a linear history of `Command`s, each with `execute()` and
@@ -209,7 +263,7 @@ to refresh the table when a download starts or finishes.
 ---
 
 **When you change this, update…** this file whenever you change canvas
-interactions, add a view type or a `Command`, change the context menu, or change
-either auxiliary window. Save-format changes belong in
+interactions, add a view type or a `Command`, change the context menu, change either
+auxiliary window, or change what image export draws. Save-format changes belong in
 [save-format.md](save-format.md); extension-point changes also touch
 [`../nodes/`](../nodes/).
