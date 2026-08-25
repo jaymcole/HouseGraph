@@ -104,6 +104,20 @@ class PluginCatalogTest {
     }
 
     @Test
+    void toJsonWrapsInstalledLibrariesInAVersionedRoot() {
+        var root = PluginCatalog.toJson(List.of(widgets("1.0.0", true)));
+
+        assertEquals(PluginCatalog.LIST_VERSION, root.getInt("listVersion"));
+        var plugins = root.getJSONArray("plugins");
+        assertEquals(1, plugins.length());
+        var entry = plugins.getJSONObject(0);
+        assertEquals("housegraph-widgets", entry.getString("id"));
+        assertEquals("1.0.0", entry.getString("version"));
+        assertEquals("https://github.com/example/housegraph-widgets", entry.getString("repository"));
+        assertTrue(entry.getBoolean("enabled"));
+    }
+
+    @Test
     void savingIsAtomicSoAnInterruptedWriteCannotLeaveAHalfCatalog(@TempDir Path temp) {
         Path file = temp.resolve("plugins.json");
         PluginCatalog catalog = PluginCatalog.loadFrom(file, temp.resolve("plugins"));
