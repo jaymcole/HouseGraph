@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.cli;
 
 import io.github.jaymcole.housegraph.cli.commands.CheckCommand;
 import io.github.jaymcole.housegraph.cli.commands.DaemonCommand;
+import io.github.jaymcole.housegraph.cli.commands.DiffCommand;
 import io.github.jaymcole.housegraph.cli.commands.DoctorCommand;
 import io.github.jaymcole.housegraph.cli.commands.NodesCommand;
 import io.github.jaymcole.housegraph.cli.commands.PluginsCommand;
@@ -57,6 +58,7 @@ public final class CommandLine {
         register(new NodesCommand(out));
         register(new SchemaCommand(out));
         register(new ValidateCommand(out));
+        register(new DiffCommand(out));
     }
 
     private void register(Command command) {

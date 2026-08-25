@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * Saves/loads a {@link GraphCanvas}'s entire contents to/from a JSON file, reusing the
@@ -94,6 +95,19 @@ import java.util.Map;
  * null-node placeholder (rather than failing the whole load) that holds its index slot so later nodes
  * — and the edges that reference them — stay correctly aligned, and an edge whose named endpoint no
  * longer resolves on its node is dropped rather than mis-wired.
+ * <p>
+ * <b>{@link #toJson} is deterministic.</b> {@code org.json}'s {@code JSONObject} is backed by a
+ * plain {@code HashMap} — it does <em>not</em> preserve insertion order — but its key order is a
+ * pure function of the exact sequence of {@code put} calls and the resulting map's size (proven
+ * out in practice: two maps built from the same keys in a different order can and do serialize
+ * differently once enough entries force a resize). Every object here is built by the same
+ * hand-written, fixed sequence of {@code put} calls on every run, so that is not a hazard for
+ * anything this method writes directly. The one place the sequence comes from outside this method
+ * is a node's {@code state} ({@link BaseNode#saveState()} can hand back any {@code Map}, ordered or
+ * not — {@code ObjectDecomposerNode} hands back a {@code HashMap}), so that one map's keys are
+ * {@code put} in sorted order rather than the map's own iteration order, making the result the
+ * same regardless of what the node returned. This is what keeps an agent's or a script's edit to
+ * one value a small, stable diff instead of an unpredictable rewrite of surrounding keys.
  */
 public final class GraphFileIO {
 
@@ -254,7 +268,16 @@ public final class GraphFileIO {
             }
             Map<String, String> state = node.saveState();
             if (!state.isEmpty()) {
-                nodeJson.put("state", new JSONObject(state));
+                // Keys are put() one at a time, in sorted order, rather than handed to
+                // `new JSONObject(state)` in whatever order the node's own Map iterates them —
+                // see the class Javadoc on why that map-order dependency is a real (not just
+                // theoretical) source of drift between two saves of an unchanged node, the same
+                // reason NodeSignature.of sorts state keys before hashing them.
+                JSONObject stateJson = new JSONObject();
+                for (String key : new TreeSet<>(state.keySet())) {
+                    stateJson.put(key, state.get(key));
+                }
+                nodeJson.put("state", stateJson);
             }
             nodesJson.put(nodeJson);
         }

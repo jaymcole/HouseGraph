@@ -95,6 +95,44 @@ A flow cycle is never reported: the engine's per-run `flowVisited` dedup makes a
 loop back through an already-fired node a well-defined no-op, not a defect — only a
 **data** cycle is a hard runtime failure.
 
+## Dry-run / diff
+
+`housegraph diff <current.json> <proposed.json>` (`GraphDiff`) reports what writing
+`proposed.json` over `current.json` would change, without writing either file —
+a dry run for a harness that generated a candidate graph and wants to review the
+effect before committing to it. Like `validate`, it works from two parsed roots
+(`GraphFileIO.readRoot`) and touches no node class or canvas.
+
+Every difference is an added, removed or modified value, addressed by an RFC 6901
+JSON Pointer the same way a `validate` finding is:
+
+```jsonc
+{
+  "current": "graph.json",
+  "proposed": "graph.proposed.json",
+  "unchanged": false,
+  "changes": [
+    { "type": "MODIFIED", "pointer": "/nodes/2/x", "before": 100.0, "after": 140.0 },
+    { "type": "ADDED", "pointer": "/nodes/3", "before": null, "after": { "type": "AddNode", "x": 0, "y": 0, "...": "..." } }
+  ]
+}
+```
+
+**Nodes are compared by array position**, matching how the format itself addresses
+one — an edge's `sourceNode`/`targetNode` *is* that index. Inserting or removing a
+node anywhere but the end shifts every later index, which shows up as a cascade of
+per-field modifications rather than one clean move; that is a limitation of the
+format's own addressing, not something a diff can paper over. `dataEdges`,
+`flowEdges` and `plugins` carry no such positional meaning — nothing references
+one by its position in those arrays — so they are matched by content (an edge) or
+`id` (a plugin row) instead, meaning reordering one of those arrays alone reports
+no change. A changed edge is reported as one removal and one addition rather than
+a modification, since nothing identifies "the same edge" across a content change
+other than its content.
+
+`--json` emits the report above instead of `+`/`-`/`~` log lines. Exits `0` when
+the two files are equivalent and `1` when a difference was found.
+
 ## Node catalog
 
 A harness that needs to know what node types exist to build or check a graph reads
@@ -172,6 +210,20 @@ reloads cleared instead of reverting to its author default.
 
 **`state` is loaded before ports are touched**, so dynamic-port nodes rebuild their
 ports from state before values are applied.
+
+**Writing is deterministic: an unchanged canvas re-saves to byte-identical JSON.**
+`org.json`'s `JSONObject` is `HashMap`-backed, not insertion-ordered, but its key
+order is a repeatable function of the exact sequence of `put` calls — and every
+object `toJson` writes comes from the same fixed, hand-written sequence on every
+run. The one place that sequence could come from outside this method is a node's
+`state` map (`saveState()` can hand back any `Map`, and `ObjectDecomposerNode`
+hands back a plain `HashMap`, whose iteration order is not part of its contract
+and can in fact depend on insertion order once enough entries force a resize), so
+its keys are written one at a time in sorted order rather than in whatever order
+the node's own map iterates them. This is what keeps an agent's or a script's edit
+to one value a small, stable diff rather than an unpredictable rewrite of
+surrounding keys — preserve it if `toJson` ever builds a `JSONObject` from an
+externally-supplied `Map` again.
 
 **The camera is not part of `GraphSnapshot`.** Pan/zoom is a view concern that copy/
 paste has no use for, so it is read and written directly against the root — `save`
