@@ -32,7 +32,8 @@ Outputs are unconstrained — one output may fan out to many inputs.
 
 `TypeConverters` lives in `graph/`, so it stays headless. It ships a built-in
 matrix interconverting `Integer`, `Double`, `Float` and `Boolean` in both
-directions.
+directions, plus a single `Object` → `Map` entry so an erased per-item output
+(e.g. `ForEachNode`'s `Current Item`) can feed a `Map`-typed input.
 
 Additional converters register at runtime via
 `TypeConverters.register(from, to, safety, fn)` — the extension point for node
@@ -53,7 +54,7 @@ Every converter carries a `ConversionSafety` level, and
 | --- | --- | --- |
 | `SAFE` | assignable, or lossless/widening | `Integer` → `Float`/`Double`, `Boolean` → number |
 | `CAUTIOUS` | predictable loss | `Double`/`Float` → `Integer` truncation, `Double` → `Float` |
-| `RISKY` | drastic loss | number → `Boolean`, collapsing non-zero to `true` |
+| `RISKY` | drastic loss, or a cast that can fail outright | number → `Boolean`; `Object` → `Map` |
 | `INCOMPATIBLE` | no path | — |
 
 **The level is advisory for connecting.** Both gates allow anything that is not

@@ -1,6 +1,8 @@
 package io.github.jaymcole.housegraph.ui;
 
 import io.github.jaymcole.housegraph.ui.command.AddNodeCommand;
+import io.github.jaymcole.housegraph.ui.command.Command;
+import io.github.jaymcole.housegraph.ui.command.CompositeCommand;
 import io.github.jaymcole.housegraph.ui.command.CreateEdgeCommand;
 import io.github.jaymcole.housegraph.ui.command.CreateFlowEdgeCommand;
 import io.github.jaymcole.housegraph.ui.command.MoveNodesCommand;
@@ -77,8 +79,10 @@ import java.util.function.Function;
  * {@link EdgeView}/{@link FlowEdgeView} connections between them.
  * <p>
  * Panning: middle-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
- * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges;
- * right-click opens a menu led by a ranked node search box, focused immediately; it shows
+ * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges,
+ * including individual edge waypoint handles caught by the band — dragging a selected
+ * node then carries any selected waypoints along with it, as one undo step; right-click
+ * opens a menu led by a ranked node search box, focused immediately; it shows
  * no results until you type, with the categorised "Add Node" menu kept below it for
  * browsing. Delete/Backspace removes the current
  * selection; Ctrl/Cmd+C and Ctrl/Cmd+V copy and paste it; Ctrl/Cmd+Z and
@@ -111,6 +115,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     private final Set<NodeView> selectedNodes = new LinkedHashSet<>();
     private final Set<ConnectionView> selectedConnections = new LinkedHashSet<>();
+    /** Edge waypoints currently rubber-band-selected, so they translate along with a node drag. */
+    private final Map<AbstractEdgeView, Set<Integer>> selectedWaypoints = new HashMap<>();
 
     private double zoom = 1.0;
     private double translateX = 0;
@@ -776,6 +782,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private List<NodeView> dragGestureNodes;
     private double[] dragGestureStartX;
     private double[] dragGestureStartY;
+    private Map<AbstractEdgeView, List<Point2D>> dragGestureWaypointsBefore;
 
     @Override
     public void onNodePressed(NodeView node) {
@@ -796,6 +803,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             dragGestureStartX[i] = dragGestureNodes.get(i).getLayoutX();
             dragGestureStartY[i] = dragGestureNodes.get(i).getLayoutY();
         }
+
+        // Any waypoints picked up by a rubber-band alongside these nodes ride along with
+        // the drag too; snapshot their "before" routes the same way, for undo.
+        dragGestureWaypointsBefore = new HashMap<>();
+        for (Map.Entry<AbstractEdgeView, Set<Integer>> entry : selectedWaypoints.entrySet()) {
+            dragGestureWaypointsBefore.put(entry.getKey(), entry.getKey().getWaypoints());
+        }
     }
 
     @Override
@@ -803,6 +817,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         for (NodeView node : selectedNodes) {
             node.setLayoutX(node.getLayoutX() + deltaContentX);
             node.setLayoutY(node.getLayoutY() + deltaContentY);
+        }
+        for (Map.Entry<AbstractEdgeView, Set<Integer>> entry : selectedWaypoints.entrySet()) {
+            entry.getKey().translateWaypoints(entry.getValue(), deltaContentX, deltaContentY);
         }
     }
 
@@ -819,10 +836,24 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             endY[i] = dragGestureNodes.get(i).getLayoutY();
             moved |= endX[i] != dragGestureStartX[i] || endY[i] != dragGestureStartY[i];
         }
+        List<Command> moves = new ArrayList<>();
         if (moved) {
-            undoManager.record(new MoveNodesCommand(dragGestureNodes, dragGestureStartX, dragGestureStartY, endX, endY));
+            moves.add(new MoveNodesCommand(dragGestureNodes, dragGestureStartX, dragGestureStartY, endX, endY));
+        }
+        for (Map.Entry<AbstractEdgeView, List<Point2D>> entry : dragGestureWaypointsBefore.entrySet()) {
+            List<Point2D> before = entry.getValue();
+            List<Point2D> after = entry.getKey().getWaypoints();
+            if (!before.equals(after)) {
+                moves.add(new SetWaypointsCommand(entry.getKey(), before, after));
+            }
+        }
+        if (moves.size() == 1) {
+            undoManager.record(moves.get(0));
+        } else if (moves.size() > 1) {
+            undoManager.record(new CompositeCommand(moves));
         }
         dragGestureNodes = null;
+        dragGestureWaypointsBefore = null;
     }
 
     private void selectNode(NodeView node) {
@@ -866,12 +897,27 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     public void waypointsChanged(AbstractEdgeView edge, List<Point2D> before, List<Point2D> after) {
         // The edge already applied the change live, so just record it as an undo step.
         undoManager.record(new SetWaypointsCommand(edge, before, after));
+        // A structural edit (a waypoint added or removed) shifts indices, so any
+        // rubber-band waypoint selection on this edge no longer points at the right
+        // points - drop it rather than risk it going stale.
+        if (before.size() != after.size() && selectedWaypoints.remove(edge) != null) {
+            edge.clearWaypointSelection();
+        }
     }
 
-    /** Package-visible (not just private) so a Command can make sure whatever it removes doesn't linger in the selection. */
+    /**
+     * Package-visible (not just private) so a Command can make sure whatever it removes
+     * doesn't linger in the selection. Also drops any rubber-band-selected waypoints on
+     * this connection — safe even though {@link #updateLiveSelection} calls this every
+     * frame the curve drifts out of the rubber-band rect, because that same call
+     * re-selects any waypoints still inside the rect right after (see there).
+     */
     public void deselectConnection(ConnectionView connection) {
         if (selectedConnections.remove(connection)) {
             connection.setSelected(false);
+        }
+        if (connection instanceof AbstractEdgeView edgeView && selectedWaypoints.remove(edgeView) != null) {
+            edgeView.clearWaypointSelection();
         }
     }
 
@@ -882,6 +928,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         for (ConnectionView connection : new ArrayList<>(selectedConnections)) {
             deselectConnection(connection);
         }
+        // A connection can hold selected waypoints without the connection itself being
+        // selected (a rubber-band that caught an anchor but not the curve), so this needs
+        // its own sweep rather than riding along with the loop above.
+        for (AbstractEdgeView edge : new ArrayList<>(selectedWaypoints.keySet())) {
+            edge.clearWaypointSelection();
+        }
+        selectedWaypoints.clear();
     }
 
     private List<ConnectionView> allConnections() {
@@ -1493,6 +1546,31 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             } else {
                 deselectConnection(connection);
             }
+            // Recomputed from scratch against the current rect every call, so it doesn't
+            // matter that deselectConnection() above may have just cleared this edge's
+            // waypoint selection - a waypoint still (or newly) inside the rect goes right
+            // back in, independently of whether the curve itself is caught by the band.
+            if (connection instanceof AbstractEdgeView edgeView) {
+                updateWaypointSelection(edgeView, rect);
+            }
+        }
+    }
+
+    /** Reconciles one edge's selected-waypoint indices against the live rubber-band rect. */
+    private void updateWaypointSelection(AbstractEdgeView edge, Bounds rect) {
+        Set<Integer> hits = new LinkedHashSet<>(edge.waypointIndicesIn(rect));
+        Set<Integer> current = selectedWaypoints.getOrDefault(edge, Set.of());
+        int waypointCount = edge.getWaypoints().size();
+        for (int i = 0; i < waypointCount; i++) {
+            boolean shouldSelect = hits.contains(i);
+            if (shouldSelect != current.contains(i)) {
+                edge.setWaypointSelected(i, shouldSelect);
+            }
+        }
+        if (hits.isEmpty()) {
+            selectedWaypoints.remove(edge);
+        } else {
+            selectedWaypoints.put(edge, hits);
         }
     }
 

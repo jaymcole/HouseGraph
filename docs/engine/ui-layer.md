@@ -63,6 +63,13 @@ Interactions, with the class Javadoc as the authoritative list:
   results until you type, then the Add-Node menu below it for browsing by
   category folder (`NodeRegistry.discover()`, grouped by `categoryPath`). See
   "Node search box" below.
+- The rubber-band also catches individual edge waypoint handles (`AbstractEdgeView.
+  waypointIndicesIn`), independently of whether the edge's curve itself is caught.
+  Dragging any selected node then translates every selected waypoint by the same
+  delta (`AbstractEdgeView.translateWaypoints`), so a manually-routed edge keeps its
+  shape when the nodes around it move. `GraphCanvas` owns which waypoints are
+  selected (`selectedWaypoints`, keyed by edge); `AbstractEdgeView` only exposes the
+  hit-test, the highlight, and the translate.
 - Delete/Backspace removes the selection; `Ctrl/Cmd+C`/`V` copy and paste;
   `Ctrl/Cmd+Z` and `Shift+Z` undo and redo.
 - Dragging between port circles makes a data edge; dragging between the triangular
@@ -229,7 +236,10 @@ letting the export run out of memory.
 
 Current commands: `AddNodeCommand`, `RemoveNodesCommand`, `MoveNodesCommand`,
 `CreateEdgeCommand`, `CreateFlowEdgeCommand`, `PasteCommand`,
-`SetWaypointsCommand`.
+`SetWaypointsCommand`, `CompositeCommand` (bundles several already-applied commands
+into one undo step — e.g. a node drag that also carries selected waypoints along
+records a `MoveNodesCommand` plus a `SetWaypointsCommand` per moved edge, wrapped
+together so one undo reverts both).
 
 **Model new reversible canvas mutations as a `Command`** rather than mutating the
 canvas ad hoc, so they participate in undo.

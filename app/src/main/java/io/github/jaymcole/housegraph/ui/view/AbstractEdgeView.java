@@ -16,7 +16,10 @@ import javafx.scene.shape.StrokeLineCap;
 import javafx.util.Duration;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Shared visuals and behaviour of the two edge kinds ({@link EdgeView} for data,
@@ -35,6 +38,12 @@ import java.util.List;
  * (so it can be deleted with the keyboard — there's no longer a delete button); a
  * double-click adds a waypoint. Selection and undo-recording are delegated back to the
  * canvas through an {@link EdgeInteractionListener}, since both are canvas-wide concerns.
+ * <p>
+ * <b>Waypoint selection.</b> A waypoint handle caught by the canvas's rubber-band
+ * (see {@link #waypointIndicesIn}) is highlighted like a selected node and rides
+ * along with the next drag of any selected node ({@link #translateWaypoints}) — the
+ * canvas, not this class, decides which waypoints are selected and drives the group
+ * move; this class only exposes the hit-test, the highlight, and the translate.
  */
 public abstract class AbstractEdgeView extends Group implements ConnectionView {
 
@@ -64,6 +73,8 @@ public abstract class AbstractEdgeView extends Group implements ConnectionView {
     private final Path hitArea = new Path();
     private final Group handleLayer = new Group();
     private final List<Point2D> waypoints = new ArrayList<>();
+    /** Indices into {@link #waypoints} currently picked up by a rubber-band selection; owned by the canvas, mirrored here only for handle styling and group-move. */
+    private final Set<Integer> selectedWaypoints = new HashSet<>();
 
     /** The waypoint list snapshotted at the start of a handle drag, so the whole drag records as one undo step. */
     private List<Point2D> waypointDragBefore;
@@ -235,10 +246,11 @@ public abstract class AbstractEdgeView extends Group implements ConnectionView {
 
     private Circle createHandle(int index) {
         Point2D at = waypoints.get(index);
-        Circle handle = new Circle(at.getX(), at.getY(), HANDLE_RADIUS, baseStroke());
+        Circle handle = new Circle(at.getX(), at.getY(), HANDLE_RADIUS);
         handle.setStroke(HANDLE_STROKE);
         handle.setStrokeWidth(1);
         handle.setCursor(Cursor.MOVE);
+        applyHandleFill(handle, selectedWaypoints.contains(index));
         handle.setOnMousePressed(event -> {
             waypointDragBefore = new ArrayList<>(waypoints);
             event.consume();
@@ -265,6 +277,60 @@ public abstract class AbstractEdgeView extends Group implements ConnectionView {
             event.consume();
         });
         return handle;
+    }
+
+    private void applyHandleFill(Circle handle, boolean selected) {
+        handle.setFill(selected ? SELECTED_STROKE : baseStroke());
+    }
+
+    /** Waypoint indices whose handle falls within {@code rect} (content coordinates), for rubber-band selection. */
+    public List<Integer> waypointIndicesIn(Bounds rect) {
+        List<Integer> hits = new ArrayList<>();
+        for (int i = 0; i < waypoints.size(); i++) {
+            Point2D p = waypoints.get(i);
+            if (p.getX() + HANDLE_RADIUS >= rect.getMinX() && p.getX() - HANDLE_RADIUS <= rect.getMaxX()
+                    && p.getY() + HANDLE_RADIUS >= rect.getMinY() && p.getY() - HANDLE_RADIUS <= rect.getMaxY()) {
+                hits.add(i);
+            }
+        }
+        return hits;
+    }
+
+    /** Marks a single waypoint's handle as selected/unselected — purely visual, driven by the canvas's rubber-band selection. */
+    public void setWaypointSelected(int index, boolean selected) {
+        if (selected) {
+            selectedWaypoints.add(index);
+        } else {
+            selectedWaypoints.remove(index);
+        }
+        if (index < handleLayer.getChildren().size()) {
+            applyHandleFill((Circle) handleLayer.getChildren().get(index), selected);
+        }
+    }
+
+    /** Drops all waypoint selection on this edge — e.g. when the canvas selection is cleared or the waypoint list is structurally edited. */
+    public void clearWaypointSelection() {
+        selectedWaypoints.clear();
+        for (int i = 0; i < handleLayer.getChildren().size(); i++) {
+            applyHandleFill((Circle) handleLayer.getChildren().get(i), false);
+        }
+    }
+
+    /** Shifts every waypoint in {@code indices} by ({@code dx}, {@code dy}) — how selected anchors follow a node drag. */
+    public void translateWaypoints(Collection<Integer> indices, double dx, double dy) {
+        if (indices.isEmpty()) {
+            return;
+        }
+        for (int index : indices) {
+            Point2D moved = waypoints.get(index).add(dx, dy);
+            waypoints.set(index, moved);
+            if (index < handleLayer.getChildren().size()) {
+                Circle handle = (Circle) handleLayer.getChildren().get(index);
+                handle.setCenterX(moved.getX());
+                handle.setCenterY(moved.getY());
+            }
+        }
+        updatePath();
     }
 
     /** Moves the waypoint at {@code index} (and its handle) to a new spot, redrawing the route. */

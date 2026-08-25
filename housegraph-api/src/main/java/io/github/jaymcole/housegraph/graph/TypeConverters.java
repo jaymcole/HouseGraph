@@ -94,6 +94,9 @@ public final class TypeConverters {
         register(Integer.class, Boolean.class, ConversionSafety.RISKY, i -> i != 0);
         register(Double.class, Boolean.class, ConversionSafety.RISKY, d -> d != 0.0);
         register(Float.class, Boolean.class, ConversionSafety.RISKY, f -> f != 0.0f);
+        // Erased Object (e.g. ForEachNode's per-item output) narrowed to Map -> RISKY: throws at
+        // value-handoff time if the item isn't actually a Map.
+        register(Object.class, Map.class, ConversionSafety.RISKY, v -> (Map<?, ?>) v);
     }
 
     private TypeConverters() {
