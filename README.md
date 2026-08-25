@@ -96,6 +96,9 @@ minutes.
 | `plugins list \| install <url> \| update [id...]` | node libraries from the terminal |
 | `check <graph.json>` | which libraries a graph needs, and whether you have them |
 | `doctor` | check git, the data directory, config and installed libraries |
+| `nodes list [--json]` | installed node types, or the full machine-readable catalog |
+| `nodes check <graph.json>` | whether a graph's nodes still match what's installed |
+| `schema [graph\|catalog]` | the JSON Schema for the save format or the node catalog |
 
 Two things worth knowing before you start:
 

@@ -26,6 +26,9 @@ a fresh process.
 | `housegraph plugins list` | Installed node libraries |
 | `housegraph plugins install <url>` | Install one |
 | `housegraph plugins update [id...]` | Update some or all |
+| `housegraph nodes list [--json]` | Installed node types, or the full machine-readable catalog |
+| `housegraph nodes check <graph.json>` | Whether a graph's nodes still match what's installed |
+| `housegraph schema [graph\|catalog]` | The JSON Schema for the save format or the node catalog |
 | `housegraph run <graph>` | Open the editor on one graph |
 
 Global flags: `--home <dir>`, `--help`, `--version`.

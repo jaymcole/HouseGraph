@@ -7,9 +7,11 @@ import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
 import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 
+import io.github.jaymcole.housegraph.catalog.NodeSignature;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.FlowPort;
+import io.github.jaymcole.housegraph.graph.NodeMetadata;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
@@ -46,6 +48,14 @@ import java.util.Map;
  * {@link ExecutionPolicy}), its {@code maxConcurrency} and {@code timeoutMillis} (both written only
  * when non-zero), its persistable input/output values, a {@code requiredInputs} entry, and any
  * node-specific {@code state}.
+ * <p>
+ * Each node also carries a {@code nodeSignature}: a short fingerprint of its ports, flow ports and
+ * default state (see {@link io.github.jaymcole.housegraph.catalog.NodeSignature}), computed from the
+ * live node being saved. It is not compared on load — nothing here needs it — but a harness can
+ * recompute it for the type currently installed and flag one that has drifted since the graph was
+ * saved, catching a node whose ports or params an updated library silently renamed before that
+ * breaks the graph at run time (see {@code SchemaDriftCheck} and the {@code nodes check} CLI command).
+ * Absent on a save written before this field existed; a check simply has nothing to compare there.
  * <p>
  * The root also carries a {@code plugins} table (written only when the graph uses a node type from
  * an out-of-tree library) naming each library this graph depends on: its {@code id}, and — from the
@@ -235,6 +245,7 @@ public final class GraphFileIO {
             if (node.getTimeoutMillis() != 0) {
                 nodeJson.put("timeoutMillis", node.getTimeoutMillis());
             }
+            nodeJson.put("nodeSignature", NodeSignature.of(NodeMetadata.of(node.getClass()).kind(), node));
             nodeJson.put("inputs", valuesToJson(node.getInputs()));
             nodeJson.put("outputs", valuesToJson(node.getOutputs()));
             JSONArray requiredInputs = requiredInputsToJson(node.getInputs());

@@ -727,6 +727,15 @@ class GraphFileIOTest {
     }
 
     @Test
+    void everyRealNodeIsWrittenWithASchemaFingerprint() {
+        JSONObject json = toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0, 0)), List.of(), List.of()));
+
+        String signature = json.getJSONArray("nodes").getJSONObject(0).getString("nodeSignature");
+        assertTrue(signature.matches("^[0-9a-f]{16}$"), signature);
+    }
+
+    @Test
     void aSaveIdentifyingANodeByStableIdLoads() {
         JSONObject node = nodeJson(AddNode.class, new JSONArray(), new JSONArray());
         node.put("type", "AddNode"); // the stable id a new save writes

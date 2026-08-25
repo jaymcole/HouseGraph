@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jaymcole/HouseGraph/main/app/src/main/resources/schema/node-catalog.v1.schema.json",
+  "title": "HouseGraph node catalog (catalogVersion 1)",
+  "description": "The shape of `housegraph nodes list --json` (io.github.jaymcole.housegraph.catalog.NodeCatalog). catalogVersion changes only when a field is renamed or removed; a caller should refuse to parse a catalogVersion it does not recognise rather than guess at the shape.",
+  "type": "object",
+  "required": ["catalogVersion", "nodes"],
+  "properties": {
+    "catalogVersion": { "const": 1 },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nodeType" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "library": {
+      "type": "object",
+      "required": ["id", "name", "version", "repository"],
+      "properties": {
+        "id": {
+          "description": "'core' for a built-in node type.",
+          "type": "string",
+          "minLength": 1
+        },
+        "name": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] },
+        "repository": { "type": ["string", "null"], "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "port": {
+      "type": "object",
+      "required": ["name", "type", "required", "secret", "manuallyEditable"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": {
+          "description": "The port's Java type, fully qualified (e.g. java.lang.Float).",
+          "type": "string"
+        },
+        "required": {
+          "description": "Whether this input must have a value source for the node to be considered configured. Always false for an output.",
+          "type": "boolean"
+        },
+        "secret": { "type": "boolean" },
+        "manuallyEditable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "nodeType": {
+      "type": "object",
+      "required": ["type", "displayName", "category", "kind", "description", "keywords", "library"],
+      "properties": {
+        "type": {
+          "description": "The stable id this node type is written under in a save file (NodeRegistry.persistentTypeId).",
+          "type": "string",
+          "minLength": 1
+        },
+        "displayName": { "type": "string" },
+        "category": {
+          "description": "Dot-separated Add-Node menu category; empty string for the top level.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "The node's declared NodeKind, or null when it declared none.",
+          "enum": ["CONTROL", "ACTION", "RESOURCE", "DATA", null]
+        },
+        "description": { "type": "string" },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "library": { "$ref": "#/$defs/library" },
+        "error": {
+          "description": "Present only when this node type could not be instantiated to read its shape (a broken constructor or static initializer). When present, inputs/outputs/flowInputs/flowOutputs/executionEntryPoint/defaultState/signature are all absent.",
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/port" }
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/port" }
+        },
+        "flowInputs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "flowOutputs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "executionEntryPoint": { "type": "boolean" },
+        "defaultState": {
+          "description": "A freshly-constructed instance's BaseNode.saveState() — the node's default params, for a type whose configuration is more than its input/output values.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "signature": {
+          "description": "Same fingerprint as a save file's per-node 'nodeSignature' (see NodeSignature), computed from this freshly-instantiated node. A save whose recorded signature for a type differs from this one has drifted since it was saved — see 'nodes check'.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

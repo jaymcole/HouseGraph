@@ -3,7 +3,9 @@ package io.github.jaymcole.housegraph.cli;
 import io.github.jaymcole.housegraph.cli.commands.CheckCommand;
 import io.github.jaymcole.housegraph.cli.commands.DaemonCommand;
 import io.github.jaymcole.housegraph.cli.commands.DoctorCommand;
+import io.github.jaymcole.housegraph.cli.commands.NodesCommand;
 import io.github.jaymcole.housegraph.cli.commands.PluginsCommand;
+import io.github.jaymcole.housegraph.cli.commands.SchemaCommand;
 import io.github.jaymcole.housegraph.cli.commands.SyncCommand;
 
 import java.io.PrintStream;
@@ -51,6 +53,8 @@ public final class CommandLine {
         register(new PluginsCommand(out));
         register(new CheckCommand(out));
         register(new DoctorCommand(out));
+        register(new NodesCommand(out));
+        register(new SchemaCommand(out));
     }
 
     private void register(Command command) {

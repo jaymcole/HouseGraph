@@ -161,6 +161,15 @@ best coincidental match for a query naming nothing sits below 0.26, so the cutof
 The scorer lives in `app` rather than `housegraph-api` precisely so that retuning never
 changes a published contract or forces an out-of-tree library to be rebuilt.
 
+## Ports, elsewhere
+
+The `catalog` package (`NodeCatalog`) does read ports, for the machine-readable
+node catalog `housegraph nodes list --json` exports. It can afford what this index
+cannot — instantiating every discovered node type, wrapped in `catch (Throwable)` —
+because building a catalog is always an explicit, on-demand CLI invocation, never
+an implicit side effect of opening a menu or typing into a search box the way this
+index's rebuild is. It does not change anything below; ports remain unindexed here.
+
 ## If ports are ever indexed
 
 The deferred work, and what it touches:

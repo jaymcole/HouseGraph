@@ -25,7 +25,8 @@ The JSON conversion — `toJson` and `fromJson` — is free of any JavaFX or
       "inputs":  [ { "name": "V1", "value": 3.0 } ],   // keyed by port name
       "outputs": [ { "name": "Sum", "value": null } ], // computed values written as null
       "requiredInputs": [ "V1" ],     // names of required inputs; absent when none are
-      "state":   { }                  // optional saveState() map
+      "state":   { },                 // optional saveState() map
+      "nodeSignature": "a1b2c3d4e5f60718" // fingerprint of this node type's shape; see below
     }
   ],
   "dataEdges": [ { "sourceNode": 0, "sourceVariable": "Sum",
@@ -37,6 +38,25 @@ The JSON conversion — `toJson` and `fromJson` — is free of any JavaFX or
   "camera": { "zoom": 1.0, "translateX": 0.0, "translateY": 0.0 } // pan/zoom; absent = default view
 }
 ```
+
+## Formal schema
+
+The shape above is documentation; [`graph-save.v2.schema.json`](../../app/src/main/resources/schema/graph-save.v2.schema.json)
+is the JSON Schema an external tool — an agent harness generating or validating a
+graph, in particular — can actually run against a file, via `housegraph schema` or
+directly from the repository. It describes the canonical shape this build *writes*;
+it is stricter than what this build *reads* (see "Forgiving reads" below), so
+failing validation is not proof an existing older file won't open, only that a
+newly-written one doesn't match the current format.
+
+## Node catalog
+
+A harness that needs to know what node types exist to build or check a graph reads
+`housegraph nodes list --json` rather than the Add-Node menu: every discoverable
+node type's id, category, kind, owning library, and typed inputs/outputs/flow
+ports, as a versioned JSON document (`NodeCatalog.CATALOG_VERSION`). Its schema is
+[`node-catalog.v1.schema.json`](../../app/src/main/resources/schema/node-catalog.v1.schema.json),
+also available via `housegraph schema catalog`.
 
 ## Rules to preserve
 
@@ -67,6 +87,23 @@ name the missing library, not enough to offer to install it. Re-saving on a mach
 that has the library repairs the file. A `MissingNode`'s row is re-emitted verbatim
 and never regenerated, because the file it came from may hold a version or key this
 build does not know.
+
+**Every real node carries a `nodeSignature`** — a 16-character hex fingerprint of
+its kind, inputs, outputs, flow ports and default `saveState()` keys, computed by
+`NodeSignature.of` from the live node being saved (see the
+[`catalog`](../../app/src/main/java/io/github/jaymcole/housegraph/catalog) package).
+Nothing here compares it — it exists so a later check can. `housegraph nodes check
+<graph.json>` recomputes the signature of each node's type as currently installed
+and reports any that no longer matches, which is what catches a library update that
+renamed a port or changed its type before that silently breaks the graph. The same
+fingerprint is what `housegraph nodes list --json`'s `signature` field reports per
+node type. Absent on a save written before this field existed, and on a
+`MissingNode`'s preserved row, since neither has a resolvable class to fingerprint.
+A node whose ports depend on its wiring or saved state (the object decomposer, a
+Discord slash command) reports the shape it *currently* has rather than a fixed
+default, so a mismatch there is advisory — worth a look, not a reason to fail a
+check on its own, the same discipline `GraphDependencyCheck` applies to an
+older-than-saved library.
 
 **Ports are persisted by name, not position.** Values are `{name, value}` objects
 matched to inputs by name on load. A data or flow edge references its
@@ -152,5 +189,9 @@ A reopened graph resumes any node that was running when it was saved — see
 
 **When you change this, update…** this file and the `GraphFileIO` Javadoc whenever
 you change the JSON shape, the versioning or migration seam, the identity rules, or
-the compatibility behaviour. A change to the `plugins` table also touches
-[plugin-runtime.md](plugin-runtime.md).
+the compatibility behaviour, **and** `graph-save.v2.schema.json` in the same change
+— a schema that drifts from what `GraphFileIO` actually writes is worse than no
+schema at all. A change to the `plugins` table also touches
+[plugin-runtime.md](plugin-runtime.md). A change to `NodeSignature` — what it reads
+off a node, or how it hashes — also touches `node-catalog.v1.schema.json` and
+[node-search.md](node-search.md) if it changes what counts as a node's "shape".

@@ -29,6 +29,23 @@ class CommandLineTest {
         assertTrue(commandLine.handles("daemon"));
         assertTrue(commandLine.handles("doctor"));
         assertTrue(commandLine.handles("plugins"));
+        assertTrue(commandLine.handles("nodes"));
+        assertTrue(commandLine.handles("schema"));
+    }
+
+    @Test
+    void schemaPrintsTheGraphSchemaByDefault() {
+        assertEquals(0, commandLine.run("schema"));
+
+        assertTrue(output().contains("\"$schema\""));
+        assertTrue(output().contains("HouseGraph save file"));
+    }
+
+    @Test
+    void schemaRejectsAnUnknownName() {
+        assertNotEquals(0, commandLine.run("schema", "nonsense"));
+
+        assertTrue(output().contains("Unknown schema"));
     }
 
     @Test
