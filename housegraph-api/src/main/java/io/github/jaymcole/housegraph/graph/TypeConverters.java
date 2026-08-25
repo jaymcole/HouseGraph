@@ -80,6 +80,11 @@ public final class TypeConverters {
 
     static {
         // Widening / lossless -> SAFE.
+        register(Double.class, String.class, ConversionSafety.SAFE, i -> i + "");
+        register(Integer.class, String.class, ConversionSafety.SAFE, i -> i + "");
+        register(Float.class, String.class, ConversionSafety.SAFE, i -> i + "");
+        register(Long.class, String.class, ConversionSafety.SAFE, i -> i + "");
+
         register(Integer.class, Double.class, ConversionSafety.SAFE, Integer::doubleValue);
         register(Integer.class, Float.class, ConversionSafety.SAFE, Integer::floatValue);
         register(Float.class, Double.class, ConversionSafety.SAFE, Float::doubleValue);
@@ -90,7 +95,11 @@ public final class TypeConverters {
         register(Double.class, Float.class, ConversionSafety.CAUTIOUS, Double::floatValue);
         register(Double.class, Integer.class, ConversionSafety.CAUTIOUS, Double::intValue);
         register(Float.class, Integer.class, ConversionSafety.CAUTIOUS, Float::intValue);
+        register(Object.class, String.class, ConversionSafety.CAUTIOUS, Object::toString);
         // Collapsing a number to a flag (any non-zero -> true) -> RISKY.
+        register(String.class, Long.class, ConversionSafety.RISKY, Long::parseLong);
+        register(String.class, Integer.class, ConversionSafety.RISKY, Integer::parseInt);
+        register(String.class, Float.class, ConversionSafety.RISKY, Float::parseFloat);
         register(Integer.class, Boolean.class, ConversionSafety.RISKY, i -> i != 0);
         register(Double.class, Boolean.class, ConversionSafety.RISKY, d -> d != 0.0);
         register(Float.class, Boolean.class, ConversionSafety.RISKY, f -> f != 0.0f);
