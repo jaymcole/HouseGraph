@@ -196,7 +196,7 @@ Two practical consequences, both called out in the runbook:
 | `housegraph run <graph>` | opens the editor on one graph; what the supervisor starts |
 | `housegraph daemon [--once]` | sync loop plus supervision |
 | `housegraph sync [--force]` | pull now and report; starts nothing |
-| `housegraph plugins list \| install <url> \| update [id...]` | node libraries from the terminal |
+| `housegraph plugins list [--json] \| install <url> \| update [id...]` | node libraries from the terminal |
 | `housegraph check <graph.json>` | dependency report; non-zero when something is missing |
 | `housegraph doctor` | is this machine ready? |
 

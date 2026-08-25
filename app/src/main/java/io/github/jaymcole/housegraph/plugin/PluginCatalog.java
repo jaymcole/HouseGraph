@@ -45,6 +45,14 @@ public final class PluginCatalog implements PluginDirectory {
     static final String FILE_NAME = "plugins.json";
 
     /**
+     * The format version of {@link #toJson}'s output, independent of the app's version — bump this
+     * when a field is renamed or removed (an addition alone does not need to), so a harness parsing
+     * the JSON can tell whether it understands the shape it received. Mirrors
+     * {@code NodeCatalog.CATALOG_VERSION}.
+     */
+    public static final int LIST_VERSION = 1;
+
+    /**
      * One installed library.
      *
      * @param sha256  the hash of the jar as installed. Recorded so a swapped cached jar <em>can</em>
@@ -173,6 +181,20 @@ public final class PluginCatalog implements PluginDirectory {
     /** Every installed library, in insertion order. */
     public List<Installed> all() {
         return List.copyOf(byId.values());
+    }
+
+    /**
+     * Wraps installed libraries in the versioned root object {@code plugins list --json} prints —
+     * what a harness needs to compare against a graph's declared requirements without opening the
+     * app.
+     */
+    public static JSONObject toJson(List<Installed> installed) {
+        JSONObject root = new JSONObject();
+        root.put("listVersion", LIST_VERSION);
+        JSONArray plugins = new JSONArray();
+        installed.forEach(entry -> plugins.put(entry.toJson()));
+        root.put("plugins", plugins);
+        return root;
     }
 
     /** Only the libraries whose nodes should currently be loaded. */

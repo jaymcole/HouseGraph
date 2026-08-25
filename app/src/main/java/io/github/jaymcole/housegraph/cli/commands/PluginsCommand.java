@@ -43,9 +43,12 @@ public final class PluginsCommand implements Command {
 
     @Override
     public String usage() {
-        return "  plugins list\n"
+        return "  plugins list [--json]\n"
                 + "  plugins install <github-repository-url>\n"
                 + "  plugins update [id...]        (all installed libraries when no id is given)\n\n"
+                + "list --json emits the versioned catalog (listVersion " + PluginCatalog.LIST_VERSION + "): each\n"
+                + "installed library's id, name, version, repository, apiVersion and enabled state —\n"
+                + "what a harness compares against a graph's declared requirements (see `check`).\n\n"
                 + "A library is arbitrary code running with your privileges. Install only what you trust.";
     }
 
@@ -54,7 +57,7 @@ public final class PluginsCommand implements Command {
         String action = args.positional(0).orElse("list");
         PluginCatalog catalog = PluginCatalog.load();
         return switch (action) {
-            case "list" -> list(catalog);
+            case "list" -> list(args, catalog);
             case "install" -> install(args, catalog);
             case "update" -> update(args, catalog);
             default -> {
@@ -65,7 +68,11 @@ public final class PluginsCommand implements Command {
         };
     }
 
-    private int list(PluginCatalog catalog) {
+    private int list(Args args, PluginCatalog catalog) {
+        if (args.isEnabled("json")) {
+            out.println(PluginCatalog.toJson(catalog.all()).toString(2));
+            return 0;
+        }
         if (catalog.all().isEmpty()) {
             out.println("No node libraries installed.");
             return 0;

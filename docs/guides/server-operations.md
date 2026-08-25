@@ -23,7 +23,7 @@ a fresh process.
 | `housegraph sync [--force]` | Pull now and report; starts nothing |
 | `housegraph daemon [--once]` | Sync loop plus supervision |
 | `housegraph check <graph.json>` | Which libraries a graph needs, and whether you have them |
-| `housegraph plugins list` | Installed node libraries |
+| `housegraph plugins list [--json]` | Installed node libraries, or the full machine-readable catalog |
 | `housegraph plugins install <url>` | Install one |
 | `housegraph plugins update [id...]` | Update some or all |
 | `housegraph nodes list [--json]` | Installed node types, or the full machine-readable catalog |

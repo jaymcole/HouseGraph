@@ -52,6 +52,11 @@ From the command line:
 housegraph plugins install https://github.com/jaymcole/housegraph-nodes
 ```
 
+`housegraph plugins list --json` prints what's actually installed as a versioned
+catalog — id, name, version, repository, apiVersion and enabled state per
+library — for a script or agent to compare against what a graph declares it
+needs (see `housegraph check` below).
+
 ## Managing what you have
 
 The library window's table supports multi-selection. **Update**, **Enable/Disable**
