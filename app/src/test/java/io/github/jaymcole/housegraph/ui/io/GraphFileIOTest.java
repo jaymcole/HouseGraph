@@ -23,6 +23,7 @@ import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -466,6 +467,31 @@ class GraphFileIOTest {
     }
 
     @Test
+    void nodeStateSerializesTheSameRegardlessOfTheNodesOwnMapInsertionOrder() {
+        // Same three key/value pairs, inserted into the node's own HashMap in two different
+        // orders. A HashMap's apparent order can depend on insertion sequence once enough entries
+        // force a resize (proven directly against org.json below), so this is a real hazard, not
+        // a theoretical one — the writer must not let it leak into the file.
+        GraphSnapshot forwardOrder = new GraphSnapshot(
+                List.of(new ClipboardNode(new MultiKeyStateHolder(false), 0.0, 0.0)), List.of(), List.of());
+        GraphSnapshot reverseOrder = new GraphSnapshot(
+                List.of(new ClipboardNode(new MultiKeyStateHolder(true), 0.0, 0.0)), List.of(), List.of());
+
+        assertEquals(toJson(forwardOrder).toString(2), toJson(reverseOrder).toString(2));
+    }
+
+    @Test
+    void savingTheSameStateTwiceProducesByteIdenticalJson() {
+        GraphSnapshot first = new GraphSnapshot(
+                List.of(new ClipboardNode(new MultiKeyStateHolder(false), 0.0, 0.0)), List.of(), List.of());
+        GraphSnapshot second = new GraphSnapshot(
+                List.of(new ClipboardNode(new MultiKeyStateHolder(false), 0.0, 0.0)), List.of(), List.of());
+
+        assertEquals(toJson(first).toString(2), toJson(second).toString(2),
+                "an agent re-saving an unchanged node must not see a diff from map ordering alone");
+    }
+
+    @Test
     void executionPolicyRoundTripsAndDefaultsToQueueWhenAbsent() {
         AddNode restarting = new AddNode();
         restarting.setExecutionPolicy(ExecutionPolicy.RESTART);
@@ -879,6 +905,52 @@ class GraphFileIOTest {
         JSONObject row = rewritten.getJSONArray("plugins").getJSONObject(0);
         assertEquals("9.9.9", row.getString("version"), "the file's own row wins over the catalog's");
         assertEquals("https://github.com/example/somewhere-else", row.getString("repository"));
+    }
+
+    /**
+     * A node whose {@code saveState()} returns a plain {@link HashMap} with several entries — the
+     * shape {@code ObjectDecomposerNode} returns — built in one of two insertion orders, used to
+     * check that the writer's output doesn't depend on which order the node happened to use.
+     */
+    private static final class MultiKeyStateHolder extends BaseNode {
+        private final boolean reversed;
+
+        MultiKeyStateHolder(boolean reversed) {
+            this.reversed = reversed;
+        }
+
+        @Override
+        public void process(ProcessContext ctx) {
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public Map<String, String> saveState() {
+            Map<String, String> state = new HashMap<>();
+            String[] keys = {"alpha", "bravo", "charlie", "delta", "echo", "foxtrot",
+                    "golf", "hotel", "india", "juliet", "kilo", "lima", "mike"};
+            if (reversed) {
+                for (int i = keys.length - 1; i >= 0; i--) {
+                    state.put(keys[i], "v");
+                }
+            } else {
+                for (String key : keys) {
+                    state.put(key, "v");
+                }
+            }
+            return state;
+        }
+
+        @Override
+        public void loadState(Map<String, String> state) {
+        }
     }
 
     /** A node with one authored and one authored-secret output, for checking secrets don't get serialised. */
