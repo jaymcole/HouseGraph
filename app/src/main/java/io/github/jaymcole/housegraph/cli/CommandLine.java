@@ -7,6 +7,7 @@ import io.github.jaymcole.housegraph.cli.commands.NodesCommand;
 import io.github.jaymcole.housegraph.cli.commands.PluginsCommand;
 import io.github.jaymcole.housegraph.cli.commands.SchemaCommand;
 import io.github.jaymcole.housegraph.cli.commands.SyncCommand;
+import io.github.jaymcole.housegraph.cli.commands.ValidateCommand;
 
 import java.io.PrintStream;
 import java.util.LinkedHashMap;
@@ -55,6 +56,7 @@ public final class CommandLine {
         register(new DoctorCommand(out));
         register(new NodesCommand(out));
         register(new SchemaCommand(out));
+        register(new ValidateCommand(out));
     }
 
     private void register(Command command) {

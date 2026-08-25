@@ -49,6 +49,52 @@ it is stricter than what this build *reads* (see "Forgiving reads" below), so
 failing validation is not proof an existing older file won't open, only that a
 newly-written one doesn't match the current format.
 
+## Structural validation
+
+The formal schema above catches shape errors — a missing key, a value of the wrong
+JSON type — but says nothing about whether a file *makes sense*: whether an edge's
+`sourceNode`/`targetNode` actually names a node, whether a `sourceVariable`/
+`targetVariable`/`sourcePort`/`targetPort` resolves to a real port on that node,
+whether a data edge's two ends are type-compatible, or whether the data graph
+contains a cycle. Those are exactly the mistakes a hand-written or agent-generated
+graph is most likely to make, and exactly what `GraphFileIO`/`GraphCanvas` are
+forgiving about at load time: a dangling or mistyped data edge is dropped with only
+a log line (see "Forgiving reads" above), and a data cycle loads fine and only
+fails the first time something pulls a node on it, with
+`IllegalStateException` from `NodeGraph.resolveInternal`.
+
+`housegraph validate <graph.json>` (`GraphStructureValidator`) runs those checks
+without a GUI session — dangling node references, unresolved ports, an
+incompatible data connection, more than one data edge feeding one input, and a
+data cycle. Like `nodes check`, it instantiates each resolvable node type to read
+its real ports, so run it once a graph's libraries are installed. A node whose type
+doesn't resolve is skipped for the port/type checks touching it — `check` is what
+reports a missing library.
+
+`--json` emits a report instead of log lines:
+
+```jsonc
+{
+  "file": "graph.json",
+  "valid": false,
+  "findings": [
+    { "code": "type-mismatch", "severity": "ERROR",
+      "message": "a String output cannot feed a Boolean input",
+      "pointer": "/dataEdges/3", "relatedPointers": [] }
+  ]
+}
+```
+
+Every finding's `pointer` is an RFC 6901 JSON Pointer into the save file — `/dataEdges/3`
+names `root.dataEdges[3]` exactly, so a caller maps a finding back to the array
+element to fix without re-deriving indices itself. `relatedPointers` names every
+other location involved (the rest of a reported cycle's edges, or the earlier edge
+a duplicate collides with).
+
+A flow cycle is never reported: the engine's per-run `flowVisited` dedup makes a
+loop back through an already-fired node a well-defined no-op, not a defect — only a
+**data** cycle is a hard runtime failure.
+
 ## Node catalog
 
 A harness that needs to know what node types exist to build or check a graph reads
