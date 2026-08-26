@@ -72,6 +72,13 @@ Interactions, with the class Javadoc as the authoritative list:
   hit-test, the highlight, and the translate.
 - Delete/Backspace removes the selection; `Ctrl/Cmd+C`/`V` copy and paste;
   `Ctrl/Cmd+Z` and `Shift+Z` undo and redo.
+- A paste lands at the pointer: the copied nodes keep their relative layout and the
+  top-left corner of the group goes under the cursor. `GraphCanvas` tracks the pointer
+  with mouse filters rather than handlers, since a `NodeView` or `PortView` consumes
+  the event before it could bubble back up. With the pointer off the canvas there is
+  nothing to aim at, so the paste falls back to a fixed offset from the copied
+  position; either way, repeated pastes without moving the pointer step further each
+  time so they don't stack.
 - Dragging between port circles makes a data edge; dragging between the triangular
   anchors at a node's top corners makes a flow edge.
 
