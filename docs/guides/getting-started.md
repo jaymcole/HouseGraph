@@ -71,7 +71,7 @@ naming the inputs that need a value.
 | Zoom | scroll (anchored at the cursor) |
 | Select | left-drag empty space for a rubber band |
 | Delete selection | Delete or Backspace |
-| Copy / paste | `Ctrl/Cmd+C` / `Ctrl/Cmd+V` |
+| Copy / paste | `Ctrl/Cmd+C` / `Ctrl/Cmd+V` (paste lands at the cursor) |
 | Undo / redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` |
 | Bend an edge | double-click it to add a waypoint |
 | Node options | right-click a node |

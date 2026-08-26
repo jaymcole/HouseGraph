@@ -85,7 +85,7 @@ import java.util.function.Function;
  * opens a menu led by a ranked node search box, focused immediately; it shows
  * no results until you type, with the categorised "Add Node" menu kept below it for
  * browsing. Delete/Backspace removes the current
- * selection; Ctrl/Cmd+C and Ctrl/Cmd+V copy and paste it; Ctrl/Cmd+Z and
+ * selection; Ctrl/Cmd+C copies it and Ctrl/Cmd+V pastes it at the cursor; Ctrl/Cmd+Z and
  * Ctrl/Cmd+Shift+Z undo and redo (currently: adding a node via the menu, and deleting
  * nodes/connections - see {@link UndoManager}). Data edges are created by dragging from
  * one data port's circle to another; flow edges by dragging between the triangular
@@ -100,6 +100,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private static final KeyCodeCombination UNDO_COMBO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination REDO_COMBO =
             new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
+
+    /** Extra offset per repeated paste at the same spot, so stacked pastes stay distinguishable. */
+    private static final double PASTE_CASCADE_STEP = 20;
+    /** Offset used when the pointer is off-canvas and a paste has no cursor to anchor to. */
+    private static final double PASTE_FALLBACK_OFFSET = 30;
 
     /** Unzoomed and unpanned — what {@link #withComponentIsolated} renders at. */
     private static final CameraState IDENTITY_CAMERA = new CameraState(1.0, 0, 0);
@@ -146,7 +151,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private List<ClipboardNode> clipboardNodes = List.of();
     private List<ClipboardDataEdge> clipboardDataEdges = List.of();
     private List<ClipboardFlowEdge> clipboardFlowEdges = List.of();
+    /** How many pastes have already landed at the current anchor - each one steps further, so repeats don't stack. */
     private int pasteOffsetStep = 0;
+    /** Content-coordinate point the last paste anchored to, or null if it fell back to a fixed offset. */
+    private Point2D lastPasteAnchor;
+
+    private double cursorSceneX;
+    private double cursorSceneY;
+    private boolean cursorOverCanvas;
 
     private final UndoManager undoManager = new UndoManager();
 
@@ -202,6 +214,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         clip.widthProperty().bind(widthProperty());
         clip.heightProperty().bind(heightProperty());
         setClip(clip);
+
+        // Where the cursor is, tracked for paste. Filters rather than handlers: the pointer
+        // spends most of its time over a NodeView or a port, whose own handlers consume the
+        // event before it could ever bubble back up to this canvas.
+        addEventFilter(MouseEvent.MOUSE_MOVED, this::recordCursorPosition);
+        addEventFilter(MouseEvent.MOUSE_DRAGGED, this::recordCursorPosition);
+        addEventFilter(MouseEvent.MOUSE_PRESSED, this::recordCursorPosition);
+        // Fires only when the pointer leaves this Pane entirely - moving onto a child sends
+        // MOUSE_EXITED_TARGET instead, which this deliberately doesn't listen for.
+        addEventFilter(MouseEvent.MOUSE_EXITED, event -> cursorOverCanvas = false);
 
         setOnScroll(this::handleZoom);
         setOnMousePressed(this::handleCanvasPressed);
@@ -1223,23 +1245,56 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         clipboardDataEdges = snapshot.dataEdges();
         clipboardFlowEdges = snapshot.flowEdges();
         pasteOffsetStep = 0;
+        lastPasteAnchor = null;
     }
 
     /**
      * Duplicates whatever's on the clipboard (fresh {@link BaseNode} instances, via
-     * {@link NodeRegistry#duplicate}), offset from the original copy position so pastes
-     * don't land exactly on top of their source. Repeated pastes without an intervening
-     * copy step further each time. The pasted nodes become the new selection.
+     * {@link NodeRegistry#duplicate}) at the cursor: the copied nodes keep their layout
+     * relative to each other, and the top-left corner of that group lands under the pointer.
+     * With the pointer off the canvas (say the paste came straight after a copy done from the
+     * keyboard) there is nowhere to aim, so it falls back to a fixed offset from the copy
+     * position - which still keeps the paste off the top of its source. Pasting repeatedly
+     * without moving the pointer steps each copy further, so they don't stack. The pasted
+     * nodes become the new selection.
      */
     private void pasteClipboard() {
         if (clipboardNodes.isEmpty()) {
             return;
         }
-        double offset = 30 + pasteOffsetStep * 20;
+        Point2D anchor = cursorContentPoint();
+        if (anchor != null && !anchor.equals(lastPasteAnchor)) {
+            pasteOffsetStep = 0;
+        }
+        double cascade = pasteOffsetStep * PASTE_CASCADE_STEP;
         pasteOffsetStep++;
+        lastPasteAnchor = anchor;
+
+        double offsetX;
+        double offsetY;
+        if (anchor != null) {
+            double minX = clipboardNodes.stream().mapToDouble(ClipboardNode::x).min().orElse(0);
+            double minY = clipboardNodes.stream().mapToDouble(ClipboardNode::y).min().orElse(0);
+            offsetX = anchor.getX() - minX + cascade;
+            offsetY = anchor.getY() - minY + cascade;
+        } else {
+            offsetX = PASTE_FALLBACK_OFFSET + cascade;
+            offsetY = PASTE_FALLBACK_OFFSET + cascade;
+        }
 
         GraphSnapshot snapshot = new GraphSnapshot(clipboardNodes, clipboardDataEdges, clipboardFlowEdges);
-        undoManager.execute(new PasteCommand(this, snapshot, offset, offset));
+        undoManager.execute(new PasteCommand(this, snapshot, offsetX, offsetY));
+    }
+
+    private void recordCursorPosition(MouseEvent event) {
+        cursorSceneX = event.getSceneX();
+        cursorSceneY = event.getSceneY();
+        cursorOverCanvas = true;
+    }
+
+    /** Where the pointer is in content (canvas) coordinates, or null if it isn't over the canvas. */
+    private Point2D cursorContentPoint() {
+        return cursorOverCanvas ? content.sceneToLocal(cursorSceneX, cursorSceneY) : null;
     }
 
     /** Clears the current selection and selects exactly the given nodes - e.g. what a paste selects afterward. */
