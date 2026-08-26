@@ -256,9 +256,10 @@ class NodeGraphTest {
         graph.addNode(constant);
         graph.addNode(add);
 
-        // A String output into a Float input: no converter bridges the pair, so it stays rejected.
-        // (Integer/Double/Boolean -> Float would now be accepted via a hidden converter.)
-        NodeVariable<String> notAFloat = new NodeVariable<>("bogus", String.class);
+        // A Map output into a Float input: nothing bridges the pair, so it stays rejected.
+        // (Integer/Double/Boolean/String -> Float are all accepted via a hidden converter, so none
+        // of those is a mismatch any more - see TypeConverters.)
+        NodeVariable<Map> notAFloat = new NodeVariable<>("bogus", Map.class);
         Edge edge = new Edge(constant, notAFloat, add, input(add, "V1"));
 
         assertThrows(IllegalArgumentException.class, () -> graph.registerEdge(edge));
