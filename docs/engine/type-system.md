@@ -32,8 +32,15 @@ Outputs are unconstrained — one output may fan out to many inputs.
 
 `TypeConverters` lives in `graph/`, so it stays headless. It ships a built-in
 matrix interconverting `Integer`, `Double`, `Float` and `Boolean` in both
-directions, plus a single `Object` → `Map` entry so an erased per-item output
-(e.g. `ForEachNode`'s `Current Item`) can feed a `Map`-typed input.
+directions, and bridges `String` both ways — a number renders as text, and text
+parses back into an `Integer`, `Long` or `Float`. One further entry narrows
+`Object` → `Map`, so an erased per-item output (e.g. `ForEachNode`'s
+`Current Item`) can feed a `Map`-typed input.
+
+Parsing is the one built-in family that fails outright rather than losing
+precision: an unparseable `String` raises `NumberFormatException` when the value
+propagates, not when the edge is connected. That is what its `RISKY` level
+means — see below.
 
 Additional converters register at runtime via
 `TypeConverters.register(from, to, safety, fn)` — the extension point for node
@@ -43,7 +50,7 @@ value passes through unchanged.
 
 These implicit converters are distinct from the explicit converter **nodes** in
 `graph/nodes/converters/`, which remain for visible, first-class conversions and
-for targets the matrix does not cover, such as `*` → `String`.
+for targets the matrix does not cover.
 
 ## Conversion safety
 
@@ -52,9 +59,9 @@ Every converter carries a `ConversionSafety` level, and
 
 | Level | Meaning | Examples |
 | --- | --- | --- |
-| `SAFE` | assignable, or lossless/widening | `Integer` → `Float`/`Double`, `Boolean` → number |
-| `CAUTIOUS` | predictable loss | `Double`/`Float` → `Integer` truncation, `Double` → `Float` |
-| `RISKY` | drastic loss, or a cast that can fail outright | number → `Boolean`; `Object` → `Map` |
+| `SAFE` | assignable, or lossless/widening | `Integer` → `Float`/`Double`, `Boolean` → number, number → `String` |
+| `CAUTIOUS` | predictable loss | `Double`/`Float` → `Integer` truncation, `Double` → `Float`, `Object` → `String` |
+| `RISKY` | drastic loss, or a cast that can fail outright | number → `Boolean`; `String` → number; `Object` → `Map` |
 | `INCOMPATIBLE` | no path | — |
 
 **The level is advisory for connecting.** Both gates allow anything that is not

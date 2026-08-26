@@ -16,8 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * subtyping <em>or</em> a converter is registered for the {@code (from, to)} pair, and at value-
  * handoff time the registered converter transforms the value transparently — the user never sees
  * or wires the conversion. Explicit converter nodes still exist for conversions the hidden matrix
- * deliberately does not cover (e.g. {@code *}&nbsp;&rarr;&nbsp;{@code String}) and for making a
- * conversion a visible, first-class step in a graph.
+ * does not cover and for making a conversion a visible, first-class step in a graph.
  *
  * <p><b>Conversion safety.</b> Every converter is registered with a {@link ConversionSafety} level
  * describing how faithful the conversion is — {@link ConversionSafety#SAFE SAFE} (lossless or
@@ -33,12 +32,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * each declaring its own safety level. The backing map is a {@link ConcurrentHashMap} because edges
  * are attached from the UI thread while values propagate on the engine's execution threads.
  *
- * <p><b>A note on the built-in numeric/boolean matrix.</b> It interconverts {@link Integer},
- * {@link Double}, {@link Float}, and {@link Boolean} in both directions. Widening / lossless steps
- * are {@code SAFE}; numeric narrowing that truncates ({@code Double}/{@code Float}&nbsp;&rarr;&nbsp;
+ * <p><b>A note on the built-in matrix.</b> It interconverts {@link Integer}, {@link Double},
+ * {@link Float}, and {@link Boolean} in both directions. Widening / lossless steps are
+ * {@code SAFE}; numeric narrowing that truncates ({@code Double}/{@code Float}&nbsp;&rarr;&nbsp;
  * {@code Integer}) and precision loss ({@code Double}&nbsp;&rarr;&nbsp;{@code Float}) are
  * {@code CAUTIOUS}; collapsing a number to a flag (number&nbsp;&rarr;&nbsp;{@code Boolean}, where
  * everything non-zero becomes {@code true}) is {@code RISKY}.
+ *
+ * <p>{@code String} is bridged in both directions too. Rendering a number as text
+ * (number&nbsp;&rarr;&nbsp;{@code String}) is {@code SAFE} and any {@code Object} renders through
+ * {@link Object#toString} as {@code CAUTIOUS}; parsing text back into a number
+ * ({@code String}&nbsp;&rarr;&nbsp;{@code Integer}/{@code Long}/{@code Float}) is {@code RISKY},
+ * because it is the one built-in family that throws rather than losing precision — a value that
+ * doesn't parse raises {@link NumberFormatException} at handoff, not at connect time.
  *
  * <p>This class lives in {@code graph/} and imports no JavaFX, so the compatibility check and the
  * conversions stay headless-testable. The UI ({@code GraphCanvas.isValidConnection} /
@@ -96,10 +102,12 @@ public final class TypeConverters {
         register(Double.class, Integer.class, ConversionSafety.CAUTIOUS, Double::intValue);
         register(Float.class, Integer.class, ConversionSafety.CAUTIOUS, Float::intValue);
         register(Object.class, String.class, ConversionSafety.CAUTIOUS, Object::toString);
-        // Collapsing a number to a flag (any non-zero -> true) -> RISKY.
+        // Parsing text back into a number -> RISKY: unlike every other built-in, it throws
+        // (NumberFormatException) on input it can't read rather than losing precision.
         register(String.class, Long.class, ConversionSafety.RISKY, Long::parseLong);
         register(String.class, Integer.class, ConversionSafety.RISKY, Integer::parseInt);
         register(String.class, Float.class, ConversionSafety.RISKY, Float::parseFloat);
+        // Collapsing a number to a flag (any non-zero -> true) -> RISKY.
         register(Integer.class, Boolean.class, ConversionSafety.RISKY, i -> i != 0);
         register(Double.class, Boolean.class, ConversionSafety.RISKY, d -> d != 0.0);
         register(Float.class, Boolean.class, ConversionSafety.RISKY, f -> f != 0.0f);

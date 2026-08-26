@@ -4,10 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 class TypeConvertersTest {
 
@@ -32,9 +36,20 @@ class TypeConvertersTest {
 
     @Test
     void unconvertiblePairsAreNotCompatible() {
-        assertFalse(TypeConverters.isCompatible(String.class, Float.class));
-        assertFalse(TypeConverters.isCompatible(Float.class, String.class));
+        // Nothing bridges a collection to a number in either direction, and an erased Object
+        // output can't be narrowed to a number - the matrix only narrows Object to Map.
         assertFalse(TypeConverters.isCompatible(Object.class, Float.class));
+        assertFalse(TypeConverters.isCompatible(Map.class, Float.class));
+        assertFalse(TypeConverters.isCompatible(List.class, Boolean.class));
+    }
+
+    @Test
+    void stringIsBridgedToAndFromNumbers() {
+        assertTrue(TypeConverters.isCompatible(Float.class, String.class));
+        assertTrue(TypeConverters.isCompatible(Integer.class, String.class));
+        assertTrue(TypeConverters.isCompatible(String.class, Float.class));
+        assertTrue(TypeConverters.isCompatible(String.class, Integer.class));
+        assertTrue(TypeConverters.isCompatible(String.class, Long.class));
     }
 
     // --- convert: numeric/boolean matrix -------------------------------------------
@@ -76,10 +91,10 @@ class TypeConvertersTest {
 
     @Test
     void noConverterFallsBackToRawValue() {
-        String value = "unconvertible";
-        // No String -> Float converter: the raw value is handed through, preserving the legacy
-        // raw-handoff behavior rather than throwing.
-        assertSame(value, TypeConverters.convert(value, String.class, Float.class));
+        List<String> value = List.of("unconvertible");
+        // No List -> Float converter, by declared type or by runtime class: the raw value is handed
+        // through, preserving the legacy raw-handoff behavior rather than throwing.
+        assertSame(value, TypeConverters.convert(value, List.class, Float.class));
     }
 
     @Test
@@ -129,8 +144,43 @@ class TypeConvertersTest {
 
     @Test
     void classifyReportsIncompatibleWhenNoPathExists() {
-        assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(String.class, Float.class));
-        assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(Float.class, String.class));
         assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(Object.class, Float.class));
+        assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(Map.class, Float.class));
+        assertEquals(ConversionSafety.INCOMPATIBLE, TypeConverters.classify(List.class, Boolean.class));
+    }
+
+    // --- classify/convert: the String row -------------------------------------------
+
+    @Test
+    void classifyReportsSafeForNumberToStringAndCautiousForObjectToString() {
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Float.class, String.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Integer.class, String.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Double.class, String.class));
+        assertEquals(ConversionSafety.SAFE, TypeConverters.classify(Long.class, String.class));
+        assertEquals(ConversionSafety.CAUTIOUS, TypeConverters.classify(Object.class, String.class));
+    }
+
+    @Test
+    void classifyReportsRiskyForParsingStringToNumber() {
+        assertEquals(ConversionSafety.RISKY, TypeConverters.classify(String.class, Float.class));
+        assertEquals(ConversionSafety.RISKY, TypeConverters.classify(String.class, Integer.class));
+        assertEquals(ConversionSafety.RISKY, TypeConverters.classify(String.class, Long.class));
+    }
+
+    @Test
+    void rendersNumbersAsTextAndParsesThemBack() {
+        assertEquals("2.5", TypeConverters.convert(2.5f, Float.class, String.class));
+        assertEquals("7", TypeConverters.convert(7, Integer.class, String.class));
+        assertEquals(2.5f, TypeConverters.convert("2.5", String.class, Float.class));
+        assertEquals(7, TypeConverters.convert("7", String.class, Integer.class));
+    }
+
+    @Test
+    void parsingTextThatIsNotANumberThrowsAtHandoff() {
+        // Why String -> number is RISKY rather than CAUTIOUS: it is the one built-in family that
+        // fails outright instead of losing precision, and the connection is allowed regardless -
+        // the gate is "not INCOMPATIBLE", so this surfaces when a value propagates, not on connect.
+        assertThrows(NumberFormatException.class,
+                () -> TypeConverters.convert("unconvertible", String.class, Float.class));
     }
 }
