@@ -177,8 +177,16 @@ the remainder instead of waiting it out.
 caller may be the FX application thread — an inline-UI button calling
 `beginProcessing()`, as `TriggerRepeatingNode`'s Start button does. Pausing there
 would freeze the UI rather than animate it. The run's `ExecutionContext` carries the
-distinction, so a loop body started by `runFlowBranchToCompletion` inherits it from
-the run driving it rather than assuming either answer.
+distinction, so a branch started by `runFlowBranchToCompletion` inherits it from the
+run driving it rather than assuming either answer.
+
+That inheritance has a third case, because `runFlowBranchToCompletion` is not only a
+loop primitive: an **event source that answers its caller** — a Discord slash command
+or button click, a webhook — drives its own flow output from the thread the event
+arrived on and waits for the branch. There is no enclosing context to inherit from,
+and nothing above it is blocked on the delay, so such a branch **steps**. A run is
+watched whenever it is flow-driven, whether an event source reached it through
+`execute(node, prepare)` or drove a branch itself.
 
 **It changes timing, and so changes behaviour that depends on timing.** Firings that
 used to overlap now queue or are shed by their node's [execution

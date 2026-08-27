@@ -1927,6 +1927,94 @@ class NodeGraphTest {
                 "a pull must not pay the step delay; took " + elapsedMillis + "ms");
     }
 
+    @Test
+    void stepDelayReachesABranchAnEventSourceDrivesItself() throws InterruptedException {
+        NodeGraph graph = new NodeGraph();
+        EventSourceNode source = new EventSourceNode();
+        AddNode first = new AddNode();
+        BaseNode second = new AddNode();
+        graph.addNode(source);
+        graph.addNode(first);
+        graph.addNode(second);
+        graph.registerFlowEdge(flowEdge(source, first));
+        graph.registerFlowEdge(flowEdge(first, second));
+
+        long delayMillis = 100;
+        graph.setStepDelayMillis(delayMillis);
+
+        // An event source that answers its caller runs its branch itself, from the thread the event
+        // arrived on, rather than through execute(). That thread is outside any run, but the branch
+        // is still a trigger cascading through the graph - so it is watched like any other.
+        long startedAt = System.nanoTime();
+        Thread inboundEvent = new Thread(source::driveBranch, "inbound-event");
+        inboundEvent.start();
+        inboundEvent.join();
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        assertTrue(elapsedMillis >= 2 * delayMillis,
+                "the two nodes of the branch should each pause, taking at least " + (2 * delayMillis)
+                        + "ms; took " + elapsedMillis + "ms");
+        assertTrue(second.getStatus().isComplete(), "the branch still completes, just slower");
+    }
+
+    @Test
+    void aBranchDrivenFromASynchronousResolvePullStillSkipsTheStepDelay() {
+        NodeGraph graph = new NodeGraph();
+        EventSourceNode source = new EventSourceNode();
+        AddNode body = new AddNode();
+        source.driveBranchFromProcess = true;
+        graph.addNode(source);
+        graph.addNode(body);
+        graph.registerFlowEdge(flowEdge(source, body));
+
+        // The exemption is the pull's, and a branch driven from inside one inherits it: the caller
+        // beginProcessing() blocks may be the FX application thread, and it stays blocked for the
+        // whole branch (this is the loop-node shape - ForEachNode from an inline-UI button).
+        graph.setStepDelayMillis(30_000);
+
+        long startedAt = System.nanoTime();
+        source.beginProcessing();
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+        assertTrue(elapsedMillis < 5_000,
+                "a branch under a pull must not pay the step delay; took " + elapsedMillis + "ms");
+    }
+
+    /**
+     * An event source shaped like the Discord slash-command and button nodes: no flow-in, one
+     * flow-out, and it drives that branch itself - either from an inbound-event thread outside any
+     * run ({@link #driveBranch()}), or from its own {@code process()} the way a loop node does.
+     */
+    private static class EventSourceNode extends BaseNode {
+        private final FlowPort out = new FlowPort("", FlowPort.Direction.OUT);
+        private boolean driveBranchFromProcess;
+
+        @Override
+        public void process(ProcessContext ctx) {
+            if (driveBranchFromProcess) {
+                driveBranch();
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowOutputs() {
+            addFlowOutput(out);
+        }
+
+        void driveBranch() {
+            runFlowBranchToCompletion(out, () -> {
+            });
+        }
+    }
+
     /** A flow edge between two nodes' first (single) flow ports - the common single-flow-port shape. */
     private static FlowEdge flowEdge(BaseNode source, BaseNode target) {
         return new FlowEdge(source, source.getFlowOutputs().get(0), target, target.getFlowInputs().get(0));

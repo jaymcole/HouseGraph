@@ -123,8 +123,10 @@ import java.util.function.BooleanSupplier;
  * <p>
  * <b>A run can be slowed down to be watched.</b> {@link #setStepDelayMillis} pauses before each
  * node's {@code process()} in a flow-driven run, stretching a cascade out to a pace the execution
- * callbacks below can actually be seen at. Off by default and never persisted; the synchronous
- * {@link #resolve} path is exempt because it blocks its caller, which may be the UI thread.
+ * callbacks below can actually be seen at. Off by default and never persisted. Every flow-driven
+ * run steps, whether a trigger reached it through {@link #execute} or an event source drove one of
+ * its own branches with {@link #runFlowBranchToCompletion}; the synchronous {@link #resolve} path
+ * is the one exemption, because it blocks its caller, which may be the UI thread.
  * <p>
  * This class never imports anything from JavaFX: node/edge execution callbacks
  * ({@link BaseNode#onExecuted()}, {@link GraphExecutionListener}) are dispatched
@@ -661,6 +663,13 @@ public class NodeGraph {
      * The caller is a run-executor virtual thread inside its own {@code process()}, so blocking here
      * is cheap and keeps that outer run non-idle until the whole loop finishes — no separate
      * {@link #beginPass()} is needed for the sub-run.
+     * <p>
+     * It is also how an <em>event source</em> answers one inbound event synchronously: a node that
+     * must reply to whoever triggered it (a Discord button click, a slash command) drives its own
+     * flow output from the thread the event arrived on and waits for the branch's answer. Such a
+     * call has no enclosing run, and the sub-run is then a trigger in its own right — it
+     * {@linkplain #startsStepDelayed() steps} like one, so a watched graph animates whether an event
+     * source uses this or {@link #execute(BaseNode, Runnable)}.
      *
      * @param source     the node whose flow output drives the branch (typically the loop node)
      * @param sourcePort the OUT flow port whose downstream branch to run
@@ -672,7 +681,7 @@ public class NodeGraph {
         Objects.requireNonNull(seed, "seed");
         requireRegistered(source);
         CountDownLatch done = new CountDownLatch(1);
-        Run run = new Run(done::countDown, inheritsStepDelay());
+        Run run = new Run(done::countDown, startsStepDelayed());
         run.startBranch(source, sourcePort, seed);
         try {
             done.await();
@@ -683,15 +692,26 @@ public class NodeGraph {
     }
 
     /**
-     * Whether a sub-run started from the calling thread should honour the step delay: it does when
-     * the run enclosing it does. A loop body driven from a flow-driven run is part of what the user
-     * is watching and is delayed with it; one driven from a synchronous {@link #resolve} pull
-     * inherits that pull's exemption, so a loop reached from a UI-thread
-     * {@link BaseNode#beginProcessing()} doesn't block the UI for the length of the loop.
+     * Whether a sub-run started from the calling thread should honour the step delay. Flow-driven
+     * execution steps; only the synchronous {@link #resolve} pull is exempt, and the exemption is
+     * inherited rather than assumed, because only the enclosing context knows which of the two the
+     * caller is in:
+     * <ul>
+     *   <li><b>Inside a flow-driven run</b> — a loop body driven from {@code process()}. Part of
+     *       what the user is watching, so it is delayed with the run driving it.</li>
+     *   <li><b>Inside a {@link #resolve} pull</b> — that pull blocks its caller, which may be the UI
+     *       thread ({@link BaseNode#beginProcessing()} from an inline-UI button), so a loop reached
+     *       from it inherits the exemption rather than freezing the UI for the loop's length.</li>
+     *   <li><b>No enclosing context at all</b> — an event source driving its own flow output from
+     *       the thread an inbound event arrived on (a Discord slash command or button click, a
+     *       webhook). Nothing above it is blocked on it, and it is a trigger in exactly the sense
+     *       {@link #execute(BaseNode, Runnable)} is, so it steps: an event-triggered branch is
+     *       watchable like every other trigger.</li>
+     * </ul>
      */
-    private static boolean inheritsStepDelay() {
+    private static boolean startsStepDelayed() {
         ExecutionContext enclosing = ExecutionContext.current();
-        return enclosing != null && enclosing.isStepDelayed();
+        return enclosing == null || enclosing.isStepDelayed();
     }
 
     /**

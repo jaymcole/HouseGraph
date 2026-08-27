@@ -39,6 +39,16 @@ seeded onto its `Current Item` and `Index` outputs, then `activate`s its
 
 Authoring guidance is in [`../nodes/flow-control.md`](../nodes/flow-control.md).
 
+## Driven from outside a run
+
+An event source that must answer whoever triggered it uses the same primitive from
+outside any `process()`: it drives its branch on the thread the event arrived on and
+waits for the branch's result. The sub-run is then a trigger in its own right rather
+than an iteration of an enclosing one — it takes the [step
+delay](execution-model.md#watching-a-run) like any other flow-driven run, where a
+loop body instead inherits its driver's. Whoever calls it blocks for the whole
+branch, so an event source calls it off the thread it needs to keep free.
+
 ---
 
 **When you change this, update…** this file and the `NodeGraph` Javadoc whenever
