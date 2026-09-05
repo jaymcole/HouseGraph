@@ -23,19 +23,21 @@ import io.github.jaymcole.housegraph.ui.io.RecentGraphs;
 import io.github.jaymcole.housegraph.ui.editor.SecretsEditor;
 import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
 import io.github.jaymcole.housegraph.ui.log.LogWindow;
+import io.github.jaymcole.housegraph.ui.menu.MainMenuBar;
+import io.github.jaymcole.housegraph.ui.menu.MenuActions;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Cursor;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ChoiceBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.MenuButton;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.Separator;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -67,8 +69,15 @@ import java.util.concurrent.TimeUnit;
  * {@code NodeGraph.dispose()}, so no node's {@code onRemoved()} would run: connections, child
  * processes and timers would all be left to the OS, and the tail of the log would never reach disk.
  * {@link #installShutdownHook} closes that gap.
+ *
+ * <h2>The window's chrome</h2>
+ * A menu bar over a short toolbar over the canvas. The menus are built by
+ * {@link MainMenuBar}, which this class serves as {@link MenuActions}: every command that needs the
+ * stage, the preferences store or the plugin catalog is a method here, and everything that acts on
+ * the open graph the menu bar calls straight on {@link GraphCanvas}. The toolbar is only a shortcut
+ * strip — each of its buttons has a menu item, so nothing lives there alone.
  */
-public class App extends Application {
+public class App extends Application implements MenuActions {
 
     private static final Logger log = Log.get(App.class);
 
@@ -99,6 +108,9 @@ public class App extends Application {
     private PluginLoader pluginLoader;
     private GraphCanvas canvas;
 
+    /** The primary stage, kept so the {@link MenuActions} commands have a parent for their dialogs. */
+    private Stage stage;
+
     /**
      * Shown in the toolbar when the graph that was reopened at startup needs node libraries that
      * aren't installed. A notice rather than a dialog: startup reopen must never block, and this
@@ -109,7 +121,7 @@ public class App extends Application {
      */
     private Hyperlink missingLibrariesNotice;
 
-    /** The file most recently saved to or loaded from; the target for Quick Save. Null until chosen. */
+    /** The file most recently saved to or loaded from; what File ▸ Save writes to. Null until chosen. */
     private File currentFile;
 
     /**
@@ -121,6 +133,7 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) {
+        this.stage = stage;
         // Stand up logging first (console + file + in-memory window buffer) so everything
         // from here on is captured. Idempotent, so a second entry point can call it too.
         Logging.bootstrap(AppDirectories.get().logs());
@@ -144,55 +157,10 @@ public class App extends Application {
         graph = new NodeGraph();
         nodeRegistry = new NodeRegistry(pluginLoader.scanRoots());
         // The node search box resolves a library id to its human name through the same catalog
-        // the toolbar's library window edits, so a renamed or reinstalled library is reflected
+        // the library window edits, so a renamed or reinstalled library is reflected
         // without the canvas needing its own copy of that mapping.
         canvas = new GraphCanvas(graph, nodeRegistry,
                 id -> pluginCatalog.byId(id).map(PluginCatalog.Installed::name).orElse(null));
-
-        // Quick Save writes straight to the current file with no dialog. Until one has been
-        // chosen (fresh session, never saved), it falls back to the Save-As flow.
-        Button quickSaveButton = new Button("Quick Save");
-        quickSaveButton.setOnAction(e -> {
-            if (currentFile == null) {
-                saveAs(stage, canvas);
-                return;
-            }
-            saveTo(canvas, currentFile);
-        });
-
-        Button saveButton = new Button("Save As…");
-        saveButton.setOnAction(e -> saveAs(stage, canvas));
-
-        Button loadButton = new Button("Load");
-        loadButton.setOnAction(e -> {
-            File file = createFileChooser("Load Graph").showOpenDialog(stage);
-            if (file != null) {
-                openGraph(stage, file, true);
-            }
-        });
-
-        // The same list the Load dialog reaches, one click shorter. Rebuilt every time it opens so
-        // it reflects whatever has been saved or loaded since — including by another instance.
-        MenuButton recentButton = new MenuButton("Recent");
-        recentButton.setOnShowing(e -> populateRecentMenu(stage, recentButton));
-        // Populated once up front as well: a MenuButton with no items has no popup to show, so the
-        // first click on a fresh profile would otherwise do nothing at all.
-        populateRecentMenu(stage, recentButton);
-
-        Button secretsButton = new Button("Secrets…");
-        secretsButton.setOnAction(e -> SecretsEditor.show(stage));
-
-        // Opens the standalone log window. It lives in its own top-level stage (not owned by
-        // this one) so it survives independently and can be closed and reopened without
-        // losing history — the buffer keeps capturing while it's shut.
-        Button logsButton = new Button("Logs…");
-        logsButton.setOnAction(e -> LogWindow.show(preferences));
-
-        Button exportImagesButton = new Button("Export Images…");
-        exportImagesButton.setOnAction(e -> exportImages(stage));
-
-        Button dependenciesButton = new Button("Node Libraries…");
-        dependenciesButton.setOnAction(e -> openPluginWindow());
 
         // A non-blocking notice, shown only when the last-opened graph turned out to need libraries
         // that aren't installed. Deliberately not a dialog: see openGraph.
@@ -202,24 +170,11 @@ public class App extends Application {
         missingLibrariesNotice.setStyle("-fx-text-fill: #ff6b6b;");
         missingLibrariesNotice.setOnAction(e -> openPluginWindow());
 
-        // Slows every flow-driven run down to something the eye can follow: the canvas already
-        // animates each node and edge as it fires, this just spaces the firings out. Session-only
-        // and off by default — it changes timing, so it's a thing you switch on to look at a graph,
-        // not a setting a graph or a deployment should carry (see NodeGraph.setStepDelayMillis).
-        ChoiceBox<WatchSpeed> watchSpeedChoice = new ChoiceBox<>();
-        watchSpeedChoice.getItems().setAll(WatchSpeed.values());
-        watchSpeedChoice.setValue(WatchSpeed.OFF);
-        watchSpeedChoice.setOnAction(e -> graph.setStepDelayMillis(watchSpeedChoice.getValue().millis()));
-
-        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, recentButton, exportImagesButton,
-                secretsButton, logsButton, dependenciesButton,
-                new Label("Watch:"), watchSpeedChoice, missingLibrariesNotice);
-
         BorderPane root = new BorderPane();
-        root.setTop(toolBar);
+        root.setTop(new VBox(new MainMenuBar(canvas, this), buildToolBar()));
         root.setCenter(canvas);
 
-        stage.setTitle("HouseGraph");
+        updateTitle();
         stage.setScene(new Scene(root, 1100, 750));
         stage.show();
 
@@ -233,7 +188,7 @@ public class App extends Application {
                 .ifPresent(file -> log.error("No graph file at {}", file.getAbsolutePath()));
         requested.or(() -> preferences.get(AppPreferences.LAST_FILE).map(File::new))
                 .filter(File::isFile)
-                .ifPresent(file -> openGraph(stage, file, false));
+                .ifPresent(file -> openGraph(file, false));
     }
 
     /** The {@code --graph=<path>} argument, if one was given. */
@@ -265,6 +220,158 @@ public class App extends Application {
                 Thread.currentThread().interrupt();
             }
         }, "housegraph-shutdown"));
+    }
+
+    /**
+     * The strip under the menu bar: the handful of commands worth reaching without opening a menu,
+     * and the missing-libraries notice pushed to the right.
+     *
+     * <p>Every button here also has a menu item — the toolbar is a shortcut, never the only way to
+     * reach something, which is what keeps it short. The notice is the one exception, because it is
+     * a status indicator rather than a command and has nowhere in the menus to live.
+     */
+    private ToolBar buildToolBar() {
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        return new ToolBar(
+                button("New", this::newGraph),
+                button("Open…", this::openGraph),
+                button("Save", this::saveGraph),
+                new Separator(),
+                button("Undo", canvas::undo),
+                button("Redo", canvas::redo),
+                new Separator(),
+                button("Fit", canvas::zoomToFit),
+                spacer,
+                missingLibrariesNotice);
+    }
+
+    private static Button button(String text, Runnable action) {
+        Button button = new Button(text);
+        button.setOnAction(event -> action.run());
+        return button;
+    }
+
+    // --- MenuActions: the commands the menu bar can't carry out on its own ------------
+
+    @Override
+    public void newGraph() {
+        if (!canvas.getGraph().getNodes().isEmpty()
+                && !confirm("Start a new graph?",
+                        "Everything on the canvas is discarded, and anything unsaved is lost.")) {
+            return;
+        }
+        canvas.clearGraph();
+        // No file behind the new graph, so Save prompts again rather than overwriting whatever was
+        // open before. The remembered last file is left alone: it is what the *next launch* reopens,
+        // and emptying the canvas is not a statement about that.
+        currentFile = null;
+        updateTitle();
+        hideMissingLibrariesNotice();
+    }
+
+    @Override
+    public void openGraph() {
+        File file = createFileChooser("Open Graph").showOpenDialog(stage);
+        if (file != null) {
+            openGraph(file, true);
+        }
+    }
+
+    @Override
+    public List<File> recentGraphs() {
+        return RecentGraphs.load(preferences);
+    }
+
+    @Override
+    public void openRecentGraph(File file) {
+        // The user picked this file, so it takes the same interactive path as File ▸ Open: a missing
+        // node library prompts rather than quietly leaving a notice.
+        openGraph(file, true);
+    }
+
+    @Override
+    public void clearRecentGraphs() {
+        RecentGraphs.clear(preferences);
+    }
+
+    @Override
+    public void saveGraph() {
+        // Writes straight to the current file with no dialog. Until one has been chosen (fresh
+        // session, never saved), it falls back to the Save-As flow.
+        if (currentFile == null) {
+            saveAs();
+            return;
+        }
+        saveTo(canvas, currentFile);
+    }
+
+    @Override
+    public void saveGraphAs() {
+        saveAs();
+    }
+
+    @Override
+    public boolean hasCurrentFile() {
+        return currentFile != null;
+    }
+
+    @Override
+    public void exit() {
+        // Not stage.close(): this is the same path the shutdown hook takes, so stop() runs and the
+        // graph is disposed rather than left to the OS.
+        Platform.exit();
+    }
+
+    @Override
+    public void editSecrets() {
+        SecretsEditor.show(stage);
+    }
+
+    @Override
+    public void manageNodeLibraries() {
+        openPluginWindow();
+    }
+
+    @Override
+    public void showLogs() {
+        // The log window lives in its own top-level stage (not owned by this one) so it survives
+        // independently and can be closed and reopened without losing history — the buffer keeps
+        // capturing while it's shut.
+        LogWindow.show(preferences);
+    }
+
+    @Override
+    public void openDataFolder() {
+        getHostServices().showDocument(AppDirectories.get().root().toUri().toString());
+    }
+
+    @Override
+    public void openDocumentation() {
+        getHostServices().showDocument(MainMenuBar.documentationUrl());
+    }
+
+    @Override
+    public void setStepDelayMillis(long millis) {
+        // Slows every flow-driven run down to something the eye can follow: the canvas already
+        // animates each node and edge as it fires, this just spaces the firings out. Session-only
+        // and off by default — it changes timing, so it's a thing you switch on to look at a graph,
+        // not a setting a graph or a deployment should carry (see NodeGraph.setStepDelayMillis).
+        graph.setStepDelayMillis(millis);
+    }
+
+    /**
+     * A yes/no dialog for a command that would throw work away.
+     *
+     * @return true to go ahead
+     */
+    private boolean confirm(String header, String detail) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, detail, ButtonType.CANCEL, ButtonType.OK);
+        alert.initOwner(stage);
+        alert.setTitle("HouseGraph");
+        alert.setHeaderText(header);
+        return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
     private void openPluginWindow() {
@@ -323,7 +430,7 @@ public class App extends Application {
     }
 
     /** Prompts for a destination file, then saves the graph there. */
-    private void saveAs(Stage stage, GraphCanvas canvas) {
+    private void saveAs() {
         File file = createFileChooser("Save Graph").showSaveDialog(stage);
         if (file == null) {
             return;
@@ -345,7 +452,8 @@ public class App extends Application {
      * which is the one cost {@code GraphImageExport} is built to avoid. A wait cursor covers the
      * pause instead.
      */
-    private void exportImages(Stage stage) {
+    @Override
+    public void exportImages() {
         if (canvas.getGraph().getNodes().isEmpty()) {
             new Alert(Alert.AlertType.INFORMATION, "There is nothing on the canvas to export.").showAndWait();
             return;
@@ -403,7 +511,7 @@ public class App extends Application {
     /**
      * Records the just-saved/opened file as the current file and, unless this run was pointed at a
      * graph with {@code --graph}, as the one to reopen on the next launch and at the head of the
-     * recent list. Quick Save still targets it either way — {@link #trackLastFile} governs only what
+     * recent list. Save still targets it either way — {@link #trackLastFile} governs only what
      * is persisted for the next launch.
      *
      * <p>A supervised instance stays out of the recent list for the same reason it stays out of
@@ -412,6 +520,7 @@ public class App extends Application {
      */
     private void rememberLastFile(File file) {
         currentFile = file;
+        updateTitle();
         if (!trackLastFile) {
             return;
         }
@@ -421,43 +530,7 @@ public class App extends Application {
     }
 
     /**
-     * Rebuilds the Recent menu from what is on disk.
-     *
-     * <p>Entries whose file is gone are shown disabled rather than dropped: the list is not pruned
-     * (see {@link RecentGraphs}), so an unplugged drive greys its graphs out for as long as it is
-     * away instead of losing them. The menu always holds at least one item — a disabled placeholder
-     * when nothing has been opened yet — because an empty {@code MenuButton} silently refuses to
-     * open its popup.
-     */
-    private void populateRecentMenu(Stage stage, MenuButton menu) {
-        menu.getItems().clear();
-
-        List<File> recent = RecentGraphs.load(preferences);
-        if (recent.isEmpty()) {
-            MenuItem placeholder = new MenuItem("No recent graphs");
-            placeholder.setDisable(true);
-            menu.getItems().add(placeholder);
-            return;
-        }
-
-        for (File file : recent) {
-            boolean missing = !file.isFile();
-            String label = RecentGraphs.describe(file);
-            MenuItem item = new MenuItem(missing ? label + "  (missing)" : label);
-            item.setDisable(missing);
-            // The user picked this file, so it takes the same interactive path as the Load button:
-            // a missing node library prompts rather than quietly leaving a notice.
-            item.setOnAction(e -> openGraph(stage, file, true));
-            menu.getItems().add(item);
-        }
-
-        MenuItem clear = new MenuItem("Clear Recent Graphs");
-        clear.setOnAction(e -> RecentGraphs.clear(preferences));
-        menu.getItems().addAll(new SeparatorMenuItem(), clear);
-    }
-
-    /**
-     * The single path both the Load button and the startup reopen take.
+     * The single path both File ▸ Open and the startup reopen take.
      *
      * <p>Before building anything, the file's root {@code plugins} table is compared against what's
      * installed — one pass, no class loading. What happens when something is missing depends on who
@@ -482,7 +555,7 @@ public class App extends Application {
      * <p>Opening with missing libraries is safe because their nodes are preserved verbatim (see
      * {@code MissingNode}). Before that fix, "open anyway" would have been a data-loss trap.
      */
-    private void openGraph(Stage stage, File file, boolean interactive) {
+    private void openGraph(File file, boolean interactive) {
         JSONObject root;
         try {
             root = GraphFileIO.readRoot(file);
@@ -493,13 +566,12 @@ public class App extends Application {
 
         GraphDependencyCheck.DependencyReport report = GraphDependencyCheck.inspect(root, pluginCatalog);
         if (!report.isSatisfied()) {
-            if (interactive && !confirmOpenWithMissingLibraries(stage, report.blocking())) {
+            if (interactive && !confirmOpenWithMissingLibraries(report.blocking())) {
                 return;
             }
             showMissingLibrariesNotice(report.blocking());
         } else {
-            missingLibrariesNotice.setVisible(false);
-            missingLibrariesNotice.setManaged(false);
+            hideMissingLibrariesNotice();
         }
 
         try {
@@ -520,8 +592,7 @@ public class App extends Application {
     }
 
     /** @return true to go ahead and open the graph */
-    private boolean confirmOpenWithMissingLibraries(Stage stage,
-                                                    List<GraphDependencyCheck.RequiredPlugin> blocking) {
+    private boolean confirmOpenWithMissingLibraries(List<GraphDependencyCheck.RequiredPlugin> blocking) {
         StringBuilder detail = new StringBuilder();
         for (GraphDependencyCheck.RequiredPlugin required : blocking) {
             detail.append("  • ").append(required.label());
@@ -565,6 +636,16 @@ public class App extends Application {
         return true;
     }
 
+    /** Puts the open file's name in the window title, the way a document app does. */
+    private void updateTitle() {
+        stage.setTitle(currentFile == null ? "HouseGraph" : currentFile.getName() + " — HouseGraph");
+    }
+
+    private void hideMissingLibrariesNotice() {
+        missingLibrariesNotice.setVisible(false);
+        missingLibrariesNotice.setManaged(false);
+    }
+
     private void showMissingLibrariesNotice(List<GraphDependencyCheck.RequiredPlugin> blocking) {
         int count = blocking.size();
         missingLibrariesNotice.setText(count + " node librar" + (count == 1 ? "y" : "ies") + " missing — fix…");
@@ -588,33 +669,4 @@ public class App extends Application {
         launch(args);
     }
 
-    /**
-     * The step delays the toolbar's Watch control offers, as {@link NodeGraph#setStepDelayMillis}
-     * values. A short list of round numbers rather than a slider: the useful range spans a factor of
-     * ten and the exact figure never matters, only whether a run crawls or flies.
-     */
-    private enum WatchSpeed {
-        OFF("Off", 0),
-        QUARTER_SECOND("0.25s", 250),
-        HALF_SECOND("0.5s", 500),
-        ONE_SECOND("1s", 1000),
-        TWO_SECONDS("2s", 2000);
-
-        private final String label;
-        private final long millis;
-
-        WatchSpeed(String label, long millis) {
-            this.label = label;
-            this.millis = millis;
-        }
-
-        long millis() {
-            return millis;
-        }
-
-        @Override
-        public String toString() {
-            return label;
-        }
-    }
 }

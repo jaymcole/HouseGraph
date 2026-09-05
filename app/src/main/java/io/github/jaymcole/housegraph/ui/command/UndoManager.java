@@ -30,6 +30,16 @@ public class UndoManager {
         redoStack.clear();
     }
 
+    /** Whether there is anything to {@link #undo()} — for greying out a menu item. */
+    public boolean canUndo() {
+        return !undoStack.isEmpty();
+    }
+
+    /** Whether there is anything to {@link #redo()}. */
+    public boolean canRedo() {
+        return !redoStack.isEmpty();
+    }
+
     public void undo() {
         if (undoStack.isEmpty()) {
             return;

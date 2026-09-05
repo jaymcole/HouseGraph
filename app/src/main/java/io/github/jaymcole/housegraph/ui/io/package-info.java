@@ -11,7 +11,7 @@
  * {@code GraphFileIO} Javadoc and {@code docs/engine/ui-layer.md}.
  * <p>
  * {@link io.github.jaymcole.housegraph.ui.io.RecentGraphs} is the other half of getting a file
- * open: the most-recently-used list behind the toolbar's Recent menu, persisted in
+ * open: the most-recently-used list behind File ▸ Open Recent, persisted in
  * {@code AppPreferences}. It is free of JavaFX for the same reason — {@code App} owns the menu, this
  * owns the list.
  */

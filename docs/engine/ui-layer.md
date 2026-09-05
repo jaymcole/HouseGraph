@@ -16,6 +16,7 @@ ui/
 ├── command/           Command, UndoManager, and every *Command
 ├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
 ├── log/               LogWindow, LogLevelPreferences
+├── menu/              MainMenuBar, MenuActions
 ├── plugin/            PluginWindow (the node-library manager)
 ├── export/            GraphComponents, GraphImageExport
 ├── widget/            TaskProgressBar (a Task-bound progress bar, reused across windows)
@@ -70,8 +71,10 @@ Interactions, with the class Javadoc as the authoritative list:
   shape when the nodes around it move. `GraphCanvas` owns which waypoints are
   selected (`selectedWaypoints`, keyed by edge); `AbstractEdgeView` only exposes the
   hit-test, the highlight, and the translate.
-- Delete/Backspace removes the selection; `Ctrl/Cmd+C`/`V` copy and paste;
-  `Ctrl/Cmd+Z` and `Shift+Z` undo and redo.
+- Delete/Backspace removes the selection; `Ctrl/Cmd+A` selects everything on the
+  canvas, connections included; `Ctrl/Cmd+C`/`V` copy and paste; `Ctrl/Cmd+Z` and
+  `Shift+Z` undo and redo. Each of these is also a `public` method, because the menu
+  bar drives the same commands — see "Menu bar" below.
 - A paste lands at the pointer: the copied nodes keep their relative layout and the
   top-left corner of the group goes under the cursor. `GraphCanvas` tracks the pointer
   with mouse filters rather than handlers, since a `NodeView` or `PortView` consumes
@@ -231,18 +234,54 @@ the factor. `MAX_PIXELS` is a backstop for a pathological layout — one node dr
 tens of thousands of pixels from its component — and reduces the scale rather than
 letting the export run out of memory.
 
+## Menu bar
+
+The window's chrome is `menu/MainMenuBar` over a short `ToolBar`, both in `App`'s
+`BorderPane` top. The menus are File, Edit, View, Run, Tools and Help.
+
+Commands come from two places, and that split is why the menu bar is its own class
+rather than more of `App`:
+
+- **Canvas commands** — undo, redo, copy, paste, delete, select-all, the four zoom
+  commands — are called straight on the `GraphCanvas` the menu bar is constructed
+  with. This is what the `public` methods listed under `GraphCanvas` above are for.
+- **Application commands** — anything needing the stage, the preferences store or
+  the plugin catalog — go through `menu/MenuActions`, which `App` implements. The
+  menu bar therefore depends on a named set of commands rather than on `App`, which
+  would be a cycle since `App` constructs it.
+
+**Accelerators duplicate the canvas's own key handling deliberately.** The canvas
+handles and *consumes* Delete and the `Ctrl/Cmd` editing shortcuts, and JavaFX
+processes a scene's accelerators only after an event has bubbled unconsumed — so
+with canvas focus its handler wins and the identical accelerator never fires. The
+accelerator is what makes those keys work when focus is elsewhere (a toolbar
+button), and what puts the shortcut hint beside each menu item, which is where most
+people discover it. A focused text field consumes the same keys, so typing in a
+node's inline editor never reaches the menu.
+
+**Enablement is recomputed in `setOnShowing`.** Undo depth, selection and clipboard
+are plain state on the canvas with nothing to observe, and a closed menu cannot be
+looked at, so recomputing as each menu opens is both sufficient and cheap. The same
+hook renames **Save** to **Save…** while no file has been chosen, since until then it
+prompts.
+
+The toolbar under it is a shortcut strip: New, Open, Save, Undo, Redo, Zoom to Fit.
+Every one of them is also a menu item — nothing lives in the toolbar alone, which is
+what keeps it short. The missing-libraries notice is the one exception, because it is
+a status indicator rather than a command and has no place in a menu.
+
 ## Recent graphs
 
-The toolbar's **Recent** menu is a `MenuButton` in `App`, rebuilt on every open from
+**File ▸ Open Recent** is a `Menu` in `MainMenuBar`, rebuilt on every open from
 `io/RecentGraphs` — so it reflects whatever has been saved or loaded since, with no
 refresh plumbing. Choosing an entry takes the same `openGraph(..., interactive)` path
-as the **Load** button, which is what makes a missing node library prompt rather than
+as **File ▸ Open**, which is what makes a missing node library prompt rather than
 leave a quiet toolbar notice.
 
 An entry whose file is gone is shown disabled and marked, because the list is not
 pruned — see [storage.md](storage.md) for why, and for the on-disk shape. The menu
 always holds at least one item, a disabled placeholder before anything has been
-opened, since a `MenuButton` with no items silently refuses to open its popup.
+opened, since a `Menu` with no items silently refuses to open its popup.
 
 `RecentGraphs` itself is free of JavaFX, like the rest of `io/`, and is unit-tested
 headlessly against a temp preferences file.
@@ -297,7 +336,7 @@ to refresh the table when a download starts or finishes.
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the context menu, change the
-toolbar's controls, change either auxiliary window, or change what image export
+menus or the toolbar, change either auxiliary window, or change what image export
 draws. Save-format changes belong in
 [save-format.md](save-format.md); extension-point changes also touch
 [`../nodes/`](../nodes/).

@@ -2,7 +2,7 @@
 
 ## Where to look first
 
-**In the app:** the **Logs…** toolbar button. It keeps capturing whether or not the
+**In the app:** **Tools ▸ Logs…**. It keeps capturing whether or not the
 window is open, so opening it after something went wrong still shows you the
 history. Each output has its own level dropdown, and rows can be copied.
 

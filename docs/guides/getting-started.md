@@ -70,19 +70,36 @@ naming the inputs that need a value.
 | Pan | middle-drag empty space |
 | Zoom | scroll (anchored at the cursor) |
 | Select | left-drag empty space for a rubber band |
+| Select everything | `Ctrl/Cmd+A` |
 | Delete selection | Delete or Backspace |
 | Copy / paste | `Ctrl/Cmd+C` / `Ctrl/Cmd+V` (paste lands at the cursor) |
 | Undo / redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` |
 | Bend an edge | double-click it to add a waypoint |
 | Node options | right-click a node |
 
+The full list, including the file and zoom shortcuts, is under **Help ▸ Keyboard
+Shortcuts**.
+
+### The menus
+
+Commands live in the menu bar; the strip under it repeats the handful used most.
+
+| Menu | Holds |
+| --- | --- |
+| **File** | New, Open, Open Recent, Save, Save As, Export Images, Exit |
+| **Edit** | Undo, Redo, Copy, Paste, Delete, Select All |
+| **View** | Zoom In / Out, Actual Size, Zoom to Fit |
+| **Run** | Watch Speed |
+| **Tools** | Secrets, Node Libraries, Logs, Open Data Folder |
+| **Help** | Documentation, Keyboard Shortcuts, About |
+
 ## Watching a graph run
 
 Nodes flash as they fire, but a real graph finishes in a blink — the whole cascade
-lights up and clears before you can see which node went first. The toolbar's
-**Watch** control fixes that: pick a pace (0.25s, 0.5s, 1s, 2s) and the engine pauses
-for that long before each node runs, so a trigger visibly walks its way downstream.
-Set it back to **Off** to run at full speed.
+lights up and clears before you can see which node went first. **Run ▸ Watch Speed**
+fixes that: pick a pace (0.25s, 0.5s, 1s, 2s) and the engine pauses for that long
+before each node runs, so a trigger visibly walks its way downstream. Set it back to
+**Off** to run at full speed.
 
 Watch what it shows you about how the engine actually works: a node that fans out to
 two branches lights *both* at once and they descend side by side, because branches
@@ -101,14 +118,18 @@ Two things to know before leaning on it:
 
 ## Saving
 
-**Quick Save** writes to the current file with no dialog. Until there is one it
-falls back to **Save As…**. The last file you saved or loaded reopens on the next
-launch.
+**File ▸ Save** (`Ctrl/Cmd+S`) writes to the current file with no dialog. Until
+there is one it falls back to **Save As…**, and the menu shows it as **Save…** to
+say so. The window title carries the open file's name, and the last file you saved
+or loaded reopens on the next launch.
 
-**Recent** lists the last ten graphs you saved or opened, newest first, so reopening
-one is a click rather than a trip through the file dialog. A graph on a drive that
-is not plugged in stays on the list, greyed out until it is back. **Clear Recent
-Graphs**, at the bottom of the menu, empties it.
+**File ▸ Open Recent** lists the last ten graphs you saved or opened, newest first,
+so reopening one is a click rather than a trip through the file dialog. A graph on a
+drive that is not plugged in stays on the list, greyed out until it is back. **Clear
+Recent Graphs**, at the bottom of the submenu, empties it.
+
+**File ▸ New Graph** empties the canvas and asks first, since anything unsaved is
+lost. It does not change which file reopens on the next launch.
 
 Graphs are saved as JSON. Computed values and secrets are never written — computed
 outputs are recalculated on load, and a node stores only a *reference* to a secret.
@@ -119,8 +140,9 @@ install. Nothing is lost, including if you save again.
 
 ## Exporting images
 
-**Export Images…** asks for a folder and writes a PNG of the canvas into it, at the
-same 1:1 scale you see on screen — no need to zoom out, and no screenshot cropping.
+**File ▸ Export Images…** asks for a folder and writes a PNG of the canvas into it,
+at the same 1:1 scale you see on screen — no need to zoom out, and no screenshot
+cropping.
 
 One canvas often holds several unrelated automations side by side, so **each one is
 exported as its own image**, containing only its own nodes. Two automations laid out
@@ -160,5 +182,5 @@ A gitignored `.env` file seeds the Secret Loader node's dropdown; see
 ---
 
 **When you change this, update…** this file whenever the build or run commands
-change, the canvas gestures or toolbar controls change, or the data directory
+change, the canvas gestures, the menus or the toolbar change, or the data directory
 locations change.
