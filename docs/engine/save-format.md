@@ -274,11 +274,11 @@ the reconnect pass.
 
 ## File actions
 
-The toolbar exposes three. **Quick Save** writes straight to the current file — the
-one most recently saved to or loaded from — with no dialog, falling back to **Save
-As…** until one exists. **Load** opens a file chooser. Saving or loading records
-the file as current and persists its path (`AppPreferences.LAST_FILE`) so it
-reopens on the next launch, which also seeds Quick Save's target.
+The File menu exposes three. **Save** writes straight to the current file — the one
+most recently saved to or loaded from — with no dialog, falling back to **Save As…**
+until one exists. **Open** opens a file chooser. Saving or loading records the file
+as current and persists its path (`AppPreferences.LAST_FILE`) so it reopens on the
+next launch, which also seeds Save's target.
 
 A reopened graph resumes any node that was running when it was saved — see
 [`../nodes/state-and-startup.md`](../nodes/state-and-startup.md).

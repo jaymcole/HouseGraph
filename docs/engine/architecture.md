@@ -83,8 +83,9 @@ GUI. Anything else, including no arguments, launches the window. See
 1. **Launch.** `App.start` bootstraps logging, loads the node-library catalog and
    prunes superseded versions, builds a `PluginLoader` and installs it as the
    thread's context class loader, then builds a `NodeGraph` and a `NodeRegistry`
-   scanning the built-in library plus every installed one. It wires the toolbar
-   and reopens the last file from `AppPreferences`, or the one named by `--graph`.
+   scanning the built-in library plus every installed one. It builds the menu bar
+   and toolbar — `App` is the `MenuActions` behind the menus — and reopens the last
+   file from `AppPreferences`, or the one named by `--graph`.
    No startup path makes a network call.
 2. **Edit.** Nodes are added from the Add-Node menu, edges dragged, values typed —
    all tracked for undo. See [ui-layer.md](ui-layer.md).

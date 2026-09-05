@@ -11,7 +11,7 @@ import io.github.jaymcole.housegraph.graph.BaseNode;
  * library providing it isn't installed — is carried as a {@code MissingNode}, which is a real node:
  * it reaches the canvas, keeps its ports and edges, and is written back out unchanged on the next
  * save. That matters because it used to be a {@code null} slot instead, which {@code GraphCanvas.place}
- * dropped and no save ever wrote back, so opening such a graph and pressing Quick Save destroyed the
+ * dropped and no save ever wrote back, so opening such a graph and saving destroyed the
  * node and everything attached to it.
  * <p>
  * {@code null} now means only "the factory genuinely failed to build a type we <em>do</em> have" —

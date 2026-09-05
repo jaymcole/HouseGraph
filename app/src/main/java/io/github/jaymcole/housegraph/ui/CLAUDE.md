@@ -20,6 +20,7 @@ concern.
 | `snapshot/` | the snapshot data model, shared by copy/paste and save/load |
 | `io/` | save/load (`GraphFileIO`) |
 | `log/` | the log viewer (`LogWindow`) and `LogLevelPreferences` |
+| `menu/` | the application menu bar (`MainMenuBar`) and the `MenuActions` the host app implements |
 | `plugin/` | the node-library manager (`PluginWindow`) |
 | `export/` | rendering the canvas to PNGs, one per connected component |
 | `widget/` | small controls with no graph-model dependency, reused across windows (`TaskProgressBar`) |

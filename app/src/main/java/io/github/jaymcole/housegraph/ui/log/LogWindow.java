@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 
 /**
  * The standalone log viewer: a top-level window, independent of the graph window, that
- * renders the shared {@link LogBufferSink}. It is opened from the toolbar and can be closed
+ * renders the shared {@link LogBufferSink}. It is opened from Tools ▸ Logs… and can be closed
  * and reopened freely — because the buffer keeps capturing whether or not this window
  * exists, reopening replays the full retained history via {@link LogBufferSink#snapshot()}
  * and then follows live records through a {@linkplain LogBufferSink#addListener listener}.

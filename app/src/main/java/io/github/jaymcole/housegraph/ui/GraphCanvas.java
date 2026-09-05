@@ -84,12 +84,15 @@ import java.util.function.Function;
  * node then carries any selected waypoints along with it, as one undo step; right-click
  * opens a menu led by a ranked node search box, focused immediately; it shows
  * no results until you type, with the categorised "Add Node" menu kept below it for
- * browsing. Delete/Backspace removes the current
- * selection; Ctrl/Cmd+C copies it and Ctrl/Cmd+V pastes it at the cursor; Ctrl/Cmd+Z and
- * Ctrl/Cmd+Shift+Z undo and redo (currently: adding a node via the menu, and deleting
- * nodes/connections - see {@link UndoManager}). Data edges are created by dragging from
+ * browsing. Delete/Backspace removes the current selection; Ctrl/Cmd+A selects
+ * everything on the canvas; Ctrl/Cmd+C copies the selection and Ctrl/Cmd+V pastes it
+ * at the cursor; Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo (currently: adding a
+ * node via the menu, and deleting nodes/connections - see {@link UndoManager}). Data edges are created by dragging from
  * one data port's circle to another; flow edges by dragging between the triangular
  * flow anchors at the top corners of each node.
+ * <p>
+ * Each of those editing commands, plus the zoom commands, is also a public method, because
+ * the application's menu bar drives the same ones — see {@code ui/menu/MainMenuBar}.
  */
 public class GraphCanvas extends Pane implements NodeView.DragController, GraphExecutionListener, EdgeInteractionListener {
 
@@ -100,6 +103,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private static final KeyCodeCombination UNDO_COMBO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination REDO_COMBO =
             new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
+    private static final KeyCodeCombination SELECT_ALL_COMBO =
+            new KeyCodeCombination(KeyCode.A, KeyCombination.SHORTCUT_DOWN);
 
     /** Extra offset per repeated paste at the same spot, so stacked pastes stay distinguishable. */
     private static final double PASTE_CASCADE_STEP = 20;
@@ -108,6 +113,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     /** Unzoomed and unpanned — what {@link #withComponentIsolated} renders at. */
     private static final CameraState IDENTITY_CAMERA = new CameraState(1.0, 0, 0);
+
+    /** Zoom limits, shared by scroll zoom, the menu's zoom commands and a camera restored from a save file. */
+    private static final double MIN_ZOOM = 0.2;
+    private static final double MAX_ZOOM = 3.0;
+    /** One zoom step: what a scroll notch applies, and what one Zoom In / Zoom Out applies. */
+    private static final double ZOOM_STEP = 1.1;
+    /** Blank canvas left around the graph by {@link #zoomToFit}, in unzoomed pixels. */
+    private static final double FIT_MARGIN = 40;
 
     private final NodeGraph graph;
     private final Group content = new Group();
@@ -245,6 +258,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 event.consume();
             } else if (UNDO_COMBO.match(event)) {
                 undoManager.undo();
+                event.consume();
+            } else if (SELECT_ALL_COMBO.match(event)) {
+                selectAll();
                 event.consume();
             }
         });
@@ -966,7 +982,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** Undoable delete of the current selection: selected nodes, plus every connection touching one, plus any standalone selected connection. */
-    private void deleteSelected() {
+    public void deleteSelected() {
         if (selectedNodes.isEmpty() && selectedConnections.isEmpty()) {
             return;
         }
@@ -1217,7 +1233,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /** Snapshots the currently selected nodes (works for a single selected node too). */
-    private void copySelection() {
+    public void copySelection() {
         if (selectedNodes.isEmpty()) {
             return;
         }
@@ -1258,7 +1274,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * without moving the pointer steps each copy further, so they don't stack. The pasted
      * nodes become the new selection.
      */
-    private void pasteClipboard() {
+    public void pasteClipboard() {
         if (clipboardNodes.isEmpty()) {
             return;
         }
@@ -1629,11 +1645,76 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         }
     }
 
+    // --- Editor commands (the menu bar and the canvas shortcuts share these) ----
+
+    /**
+     * Undoes the last edit. Public because the Edit menu drives the same history the canvas's own
+     * Ctrl/Cmd+Z does — there is one {@link UndoManager} per canvas and no second path into it.
+     */
+    public void undo() {
+        undoManager.undo();
+    }
+
+    /** Redoes the last undone edit. */
+    public void redo() {
+        undoManager.redo();
+    }
+
+    /** Whether {@link #undo()} would do anything — for greying the menu item out. */
+    public boolean canUndo() {
+        return undoManager.canUndo();
+    }
+
+    /** Whether {@link #redo()} would do anything — for greying the menu item out. */
+    public boolean canRedo() {
+        return undoManager.canRedo();
+    }
+
+    /** Whether anything — node, connection or both — is selected. */
+    public boolean hasSelection() {
+        return !selectedNodes.isEmpty() || !selectedConnections.isEmpty();
+    }
+
+    /** Whether a previous copy left something {@link #pasteClipboard()} could place. */
+    public boolean canPaste() {
+        return !clipboardNodes.isEmpty();
+    }
+
+    /**
+     * Selects every node and every connection on the canvas.
+     *
+     * <p>Connections are included, not just nodes, so Select All followed by Delete empties the
+     * canvas in one step even when an edge's endpoints were themselves already gone.
+     */
+    public void selectAll() {
+        clearSelection();
+        for (NodeView node : nodeViews) {
+            selectNode(node);
+        }
+        for (ConnectionView connection : allConnections()) {
+            selectConnection(connection);
+        }
+        requestFocus();
+    }
+
+    /**
+     * Empties the canvas and drops the undo history — the new-document boundary
+     * {@link #loadSnapshot} crosses too, without a file behind it. Every node is removed properly,
+     * so a live resource node shuts down rather than being abandoned.
+     *
+     * <p>Not undoable, and it does not prompt: the caller owns the "are you sure" (see {@code App}).
+     */
+    public void clearGraph() {
+        clearAll();
+        undoManager.clear();
+        nodePlacementCounter = 0;
+    }
+
     // --- Zoom -----------------------------------------------------------------
 
     private void handleZoom(ScrollEvent event) {
-        double factor = event.getDeltaY() > 0 ? 1.1 : 1 / 1.1;
-        double newZoom = clamp(zoom * factor, 0.2, 3.0);
+        double factor = event.getDeltaY() > 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+        double newZoom = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
 
         Point2D beforeLocal = content.sceneToLocal(event.getSceneX(), event.getSceneY());
         translateX += (zoom - newZoom) * beforeLocal.getX();
@@ -1646,6 +1727,58 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     private void updateTransform() {
         content.getTransforms().setAll(new Affine(zoom, 0, translateX, 0, zoom, translateY));
+    }
+
+    /** One step in, anchored to the middle of the viewport rather than to the pointer. */
+    public void zoomIn() {
+        zoomAboutViewportCentre(zoom * ZOOM_STEP);
+    }
+
+    /** One step out, anchored to the middle of the viewport. */
+    public void zoomOut() {
+        zoomAboutViewportCentre(zoom / ZOOM_STEP);
+    }
+
+    /** Back to 1:1, keeping whatever is in the middle of the viewport in the middle. */
+    public void resetZoom() {
+        zoomAboutViewportCentre(1.0);
+    }
+
+    /**
+     * Frames the whole graph: picks the largest zoom (within the usual limits) at which every node
+     * fits with a margin, and centres it. Does nothing on an empty canvas, or before the canvas has
+     * been laid out and so has no size to fit into.
+     */
+    public void zoomToFit() {
+        if (nodeViews.isEmpty() || getWidth() <= 0 || getHeight() <= 0) {
+            return;
+        }
+        // The bounds are pre-transform — the pan/zoom lives on `content` itself — so this is the
+        // graph's own coordinate space, which is exactly what the new camera has to be derived in.
+        Bounds bounds = content.getBoundsInLocal();
+        if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0) {
+            return;
+        }
+        double scale = clamp(Math.min((getWidth() - 2 * FIT_MARGIN) / bounds.getWidth(),
+                (getHeight() - 2 * FIT_MARGIN) / bounds.getHeight()), MIN_ZOOM, MAX_ZOOM);
+        zoom = scale;
+        translateX = (getWidth() - bounds.getWidth() * scale) / 2 - bounds.getMinX() * scale;
+        translateY = (getHeight() - bounds.getHeight() * scale) / 2 - bounds.getMinY() * scale;
+        updateTransform();
+    }
+
+    /**
+     * Sets the zoom while holding the content point currently at the viewport's centre in place —
+     * the counterpart of {@link #handleZoom}, which holds the point under the pointer instead. A
+     * menu command has no pointer position worth anchoring to.
+     */
+    private void zoomAboutViewportCentre(double requestedZoom) {
+        double newZoom = clamp(requestedZoom, MIN_ZOOM, MAX_ZOOM);
+        Point2D centre = content.parentToLocal(getWidth() / 2, getHeight() / 2);
+        translateX += (zoom - newZoom) * centre.getX();
+        translateY += (zoom - newZoom) * centre.getY();
+        zoom = newZoom;
+        updateTransform();
     }
 
     private static double clamp(double value, double min, double max) {
@@ -1748,7 +1881,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     /** Restores a previously captured pan/zoom, e.g. on loading a save file. Zoom is clamped to the usual scroll-zoom range. */
     public void setCameraState(CameraState state) {
-        zoom = clamp(state.zoom(), 0.2, 3.0);
+        zoom = clamp(state.zoom(), MIN_ZOOM, MAX_ZOOM);
         translateX = state.translateX();
         translateY = state.translateY();
         updateTransform();

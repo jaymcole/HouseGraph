@@ -5,7 +5,7 @@ into a graph file.
 
 ## Storing one
 
-Open **Secrets…** from the toolbar. Add a key and its value, and save.
+Open **Tools ▸ Secrets…**. Add a key and its value, and save.
 
 Keys are names you choose — `DISCORD_TOKEN`, `FRONT_CAMERA_PASSWORD`. A node stores
 the *key*, and looks up the value when it needs it. The value never enters your

@@ -15,7 +15,7 @@ Install libraries you trust the author of.
 
 ## Installing
 
-Open **Node Libraries…** from the toolbar, choose **Add from URL…**, and give it a
+Open **Tools ▸ Node Libraries…**, choose **Add from URL…**, and give it a
 GitHub repository URL. HouseGraph looks up the latest release and lists every
 package it publishes as a table — name, size, and whether it's already installed —
 with an **Add** button on each row that isn't. Clicking one warns that a node
