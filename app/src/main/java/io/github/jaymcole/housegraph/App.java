@@ -19,6 +19,7 @@ import io.github.jaymcole.housegraph.storage.AppPreferences;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.export.GraphImageExport;
 import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
+import io.github.jaymcole.housegraph.ui.io.RecentGraphs;
 import io.github.jaymcole.housegraph.ui.editor.SecretsEditor;
 import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
 import io.github.jaymcole.housegraph.ui.log.LogWindow;
@@ -30,6 +31,9 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
 import javafx.stage.DirectoryChooser;
@@ -167,6 +171,14 @@ public class App extends Application {
             }
         });
 
+        // The same list the Load dialog reaches, one click shorter. Rebuilt every time it opens so
+        // it reflects whatever has been saved or loaded since — including by another instance.
+        MenuButton recentButton = new MenuButton("Recent");
+        recentButton.setOnShowing(e -> populateRecentMenu(stage, recentButton));
+        // Populated once up front as well: a MenuButton with no items has no popup to show, so the
+        // first click on a fresh profile would otherwise do nothing at all.
+        populateRecentMenu(stage, recentButton);
+
         Button secretsButton = new Button("Secrets…");
         secretsButton.setOnAction(e -> SecretsEditor.show(stage));
 
@@ -199,7 +211,7 @@ public class App extends Application {
         watchSpeedChoice.setValue(WatchSpeed.OFF);
         watchSpeedChoice.setOnAction(e -> graph.setStepDelayMillis(watchSpeedChoice.getValue().millis()));
 
-        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, exportImagesButton,
+        ToolBar toolBar = new ToolBar(quickSaveButton, saveButton, loadButton, recentButton, exportImagesButton,
                 secretsButton, logsButton, dependenciesButton,
                 new Label("Watch:"), watchSpeedChoice, missingLibrariesNotice);
 
@@ -390,8 +402,13 @@ public class App extends Application {
 
     /**
      * Records the just-saved/opened file as the current file and, unless this run was pointed at a
-     * graph with {@code --graph}, as the one to reopen on the next launch. Quick Save still targets
-     * it either way — {@link #trackLastFile} governs only what is persisted for the next launch.
+     * graph with {@code --graph}, as the one to reopen on the next launch and at the head of the
+     * recent list. Quick Save still targets it either way — {@link #trackLastFile} governs only what
+     * is persisted for the next launch.
+     *
+     * <p>A supervised instance stays out of the recent list for the same reason it stays out of
+     * {@link AppPreferences#LAST_FILE}: the graphs a daemon cycles through are not files the person
+     * at this keyboard was working on.
      */
     private void rememberLastFile(File file) {
         currentFile = file;
@@ -399,7 +416,44 @@ public class App extends Application {
             return;
         }
         preferences.put(AppPreferences.LAST_FILE, file.getAbsolutePath());
-        preferences.save();
+        // Writes the store, the key just put included, so there is one write rather than two.
+        RecentGraphs.remember(preferences, file);
+    }
+
+    /**
+     * Rebuilds the Recent menu from what is on disk.
+     *
+     * <p>Entries whose file is gone are shown disabled rather than dropped: the list is not pruned
+     * (see {@link RecentGraphs}), so an unplugged drive greys its graphs out for as long as it is
+     * away instead of losing them. The menu always holds at least one item — a disabled placeholder
+     * when nothing has been opened yet — because an empty {@code MenuButton} silently refuses to
+     * open its popup.
+     */
+    private void populateRecentMenu(Stage stage, MenuButton menu) {
+        menu.getItems().clear();
+
+        List<File> recent = RecentGraphs.load(preferences);
+        if (recent.isEmpty()) {
+            MenuItem placeholder = new MenuItem("No recent graphs");
+            placeholder.setDisable(true);
+            menu.getItems().add(placeholder);
+            return;
+        }
+
+        for (File file : recent) {
+            boolean missing = !file.isFile();
+            String label = RecentGraphs.describe(file);
+            MenuItem item = new MenuItem(missing ? label + "  (missing)" : label);
+            item.setDisable(missing);
+            // The user picked this file, so it takes the same interactive path as the Load button:
+            // a missing node library prompts rather than quietly leaving a notice.
+            item.setOnAction(e -> openGraph(stage, file, true));
+            menu.getItems().add(item);
+        }
+
+        MenuItem clear = new MenuItem("Clear Recent Graphs");
+        clear.setOnAction(e -> RecentGraphs.clear(preferences));
+        menu.getItems().addAll(new SeparatorMenuItem(), clear);
     }
 
     /**

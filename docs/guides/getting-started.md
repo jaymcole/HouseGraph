@@ -105,6 +105,11 @@ Two things to know before leaning on it:
 falls back to **Save As…**. The last file you saved or loaded reopens on the next
 launch.
 
+**Recent** lists the last ten graphs you saved or opened, newest first, so reopening
+one is a click rather than a trip through the file dialog. A graph on a drive that
+is not plugged in stays on the list, greyed out until it is back. **Clear Recent
+Graphs**, at the bottom of the menu, empties it.
+
 Graphs are saved as JSON. Computed values and secrets are never written — computed
 outputs are recalculated on load, and a node stores only a *reference* to a secret.
 

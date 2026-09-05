@@ -19,7 +19,7 @@ ui/
 ├── plugin/            PluginWindow (the node-library manager)
 ├── export/            GraphComponents, GraphImageExport
 ├── widget/            TaskProgressBar (a Task-bound progress bar, reused across windows)
-└── io/                GraphFileIO
+└── io/                GraphFileIO, RecentGraphs
 ```
 
 Java has no sub-package visibility, so pieces that call across these boundaries are
@@ -231,6 +231,22 @@ the factor. `MAX_PIXELS` is a backstop for a pathological layout — one node dr
 tens of thousands of pixels from its component — and reduces the scale rather than
 letting the export run out of memory.
 
+## Recent graphs
+
+The toolbar's **Recent** menu is a `MenuButton` in `App`, rebuilt on every open from
+`io/RecentGraphs` — so it reflects whatever has been saved or loaded since, with no
+refresh plumbing. Choosing an entry takes the same `openGraph(..., interactive)` path
+as the **Load** button, which is what makes a missing node library prompt rather than
+leave a quiet toolbar notice.
+
+An entry whose file is gone is shown disabled and marked, because the list is not
+pruned — see [storage.md](storage.md) for why, and for the on-disk shape. The menu
+always holds at least one item, a disabled placeholder before anything has been
+opened, since a `MenuButton` with no items silently refuses to open its popup.
+
+`RecentGraphs` itself is free of JavaFX, like the rest of `io/`, and is unit-tested
+headlessly against a temp preferences file.
+
 ## Undo/redo
 
 `UndoManager` keeps a linear history of `Command`s, each with `execute()` and
@@ -280,7 +296,8 @@ to refresh the table when a download starts or finishes.
 ---
 
 **When you change this, update…** this file whenever you change canvas
-interactions, add a view type or a `Command`, change the context menu, change either
-auxiliary window, or change what image export draws. Save-format changes belong in
+interactions, add a view type or a `Command`, change the context menu, change the
+toolbar's controls, change either auxiliary window, or change what image export
+draws. Save-format changes belong in
 [save-format.md](save-format.md); extension-point changes also touch
 [`../nodes/`](../nodes/).
