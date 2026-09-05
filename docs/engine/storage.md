@@ -95,17 +95,33 @@ see `.env.example`.
 ## `AppPreferences`
 
 A small persistent key/value store, plain JSON under `AppDirectories.config()`, for
-non-sensitive UX state — currently the last opened file (`LAST_FILE`), with room
-for window size and recent files.
+non-sensitive UX state — the last opened file (`LAST_FILE`), the recent-files list
+(`recentFiles`), each log output's level (`log.level.<sink>`), with room for window
+size and whatever else the UI comes to remember.
 
 **Reading is forgiving:** a missing or corrupt file yields empty preferences rather
 than failing, so a bad prefs file can never stop the app starting. Writing is
 explicit through `save()`.
 
 An instance launched with `--graph`, meaning a supervised one, **does not write
-`LAST_FILE`**. It would otherwise overwrite whatever the person at the keyboard had
-open, and on a machine running several graphs there is no single "last" file to
-record.
+`LAST_FILE`** or touch the recent list. It would otherwise overwrite whatever the
+person at the keyboard had open, and on a machine running several graphs there is no
+single "last" file to record.
+
+### The recent-files list
+
+`ui/io/RecentGraphs` owns it: absolute paths, newest first, deduplicated and capped
+at ten. The store is string-valued, so the list is encoded as a JSON array inside the
+one `recentFiles` value rather than getting a file of its own — a handful of paths is
+not structured state. An unreadable value reads back as an empty list, matching the
+store around it.
+
+**Entries are never pruned for being absent.** A graph on an unplugged drive would
+otherwise be forgotten by the one launch that happened while it was away; the menu
+greys it out instead, and it returns when the path does.
+
+The glue lives in the UI layer, like `LogLevelPreferences`, because that is the layer
+that knows about both the store and the thing being remembered.
 
 ## Files under `config()`
 
