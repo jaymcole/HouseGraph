@@ -8,6 +8,7 @@ layer knows about a higher one.
 │   ui/            JavaFX canvas, views, editors, undo,     │
 │                  save/load, the log and library windows   │
 │        │                                                  │
+│   loader/        a saved snapshot → a live NodeGraph      │
 │   graph/nodes/   the built-in node library                │
 │   plugin/        host side of out-of-tree libraries       │
 │   cli/ remote/   headless CLI, git sync, supervision      │
@@ -28,7 +29,7 @@ Out-of-tree node libraries sit beside `app`, depending only on `housegraph-api`.
 | Module | Contains | Published |
 | --- | --- | --- |
 | `housegraph-api` | `graph/`, `sdk/`, `annotations/`, `logging/`, `resource/`, `storage/`, `store/` | Yes — node libraries compile against it |
-| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
+| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `loader/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
 
 `graph/` is in the api module while `graph/nodes/` is in `app`. Distinct packages,
 not a split package.
@@ -42,10 +43,15 @@ not a split package.
   renders views, wires gestures to engine calls, and drives save/load.
 - **`graph/nodes/`** holds dependency-free primitives only. Every integration
   category is an out-of-tree library.
-- **`app/plugin/`, `app/cli/` and `app/remote/` are headless.** This repository
-  has no way to test a window, so nothing worth testing may live in one.
+- **`app/loader/`, `app/plugin/`, `app/cli/` and `app/remote/` are headless.** This
+  repository has no way to test a window, so nothing worth testing may live in one.
   `remote/` supervises the JavaFX app as a child process rather than running
   graphs itself.
+- **Opening a graph is not a canvas operation.** `GraphLoader` builds a snapshot's
+  nodes and edges onto a `NodeGraph` with no view involved; `GraphCanvas.place`
+  calls it and then draws the result. It sits in its own package rather than in
+  `ui/` because its callers — `cli/`, `remote/`, and a node that loads another
+  graph — are below the UI, and a downward dependency is the only kind allowed.
 
 ## Principal types
 
@@ -62,6 +68,7 @@ not a split package.
 | `NodeSearchIndex` | Ranked search over the discovered node types. |
 | `MissingNode` | Placeholder for a node whose library isn't installed, preserving it verbatim. |
 | `PluginCatalog` / `PluginLoader` | What is installed, and the shared class loader serving it. |
+| `GraphLoader` | Builds a `GraphSnapshot`'s nodes and edges onto a `NodeGraph`, headlessly. |
 | `GraphCanvas` | The JavaFX canvas hosting node and edge views. |
 | `ResourceRegistry` | App-wide, name-keyed lookup and event pub/sub. |
 | `SecretsStore` / `AppDirectories` | Encrypted secrets / OS-appropriate file locations. |
@@ -93,7 +100,8 @@ GUI. Anything else, including no arguments, launches the window. See
    cascades along flow edges. A node that only needs a value calls
    `beginProcessing()` to pull without cascading. See
    [execution-model.md](execution-model.md).
-4. **Save / load.** `GraphFileIO` serializes to JSON and restores. Computed and
+4. **Save / load.** `GraphFileIO` serializes to JSON and parses it back to a
+   `GraphSnapshot`; `GraphLoader` turns that into live nodes and edges. Computed and
    secret values are never written. A node whose library isn't installed loads as
    a `MissingNode`. See [save-format.md](save-format.md).
 5. **Shutdown.** `App.stop` calls `NodeGraph.dispose()`, closes the node-library

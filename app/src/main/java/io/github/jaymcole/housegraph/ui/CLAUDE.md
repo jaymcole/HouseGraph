@@ -42,10 +42,15 @@ matching their concern, and mirror them under the matching test package.
 - **Reversible canvas mutations are `Command`s.** Anything undoable goes through
   `UndoManager` as a `Command`, not an ad-hoc mutation. Use `record()` for gestures
   applied live, such as a drag, that become one undo step at the end.
-- **Keep save/load logic headless.** `GraphFileIO`'s `toJson`/`fromJson` must stay
-  free of JavaFX so they can be unit-tested; only `save`/`load` touch a canvas.
-  When you change the JSON format, keep the forgiving-read behaviour and update the
-  `GraphFileIO` Javadoc **and**
+- **Keep save/load logic headless — both halves.** `GraphFileIO`'s
+  `toJson`/`fromJson` must stay free of JavaFX so they can be unit-tested; only
+  `save`/`load` touch a canvas. The other half is `loader/GraphLoader`, outside this
+  package: it turns a `GraphSnapshot` into live nodes and edges on the `NodeGraph`
+  with no view involved, and `GraphCanvas.place` is only the drawing on top of it.
+  Anything that belongs to *opening a graph* rather than to *showing* one goes
+  there, not here — headless callers (`cli/`, `remote/`, a node loading another
+  graph) cannot reach up into `ui/`. When you change the JSON format, keep the
+  forgiving-read behaviour and update the `GraphFileIO` Javadoc **and**
   [`docs/engine/save-format.md`](../../../../../../../../../docs/engine/save-format.md).
 - **The node-facing extension points are not here.** `NodeContentProvider`,
   `AutoStartable` and `ValueEditors` live in `sdk/` in `housegraph-api`, because

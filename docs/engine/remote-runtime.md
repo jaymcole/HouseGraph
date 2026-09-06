@@ -154,25 +154,23 @@ Shutdown and the nested timeout chain are in
 
 ## Why graphs still run in a window
 
-The engine is headless. **Graph execution is not**, in two ways:
-
-1. There is no canvas-free path from a save file to a live `NodeGraph`; `place()`
-   lives in `GraphCanvas`.
-2. Several nodes keep runtime state in JavaFX controls. `TriggerRepeatingNode` uses
-   a `javafx.animation.Timeline` as its clock and writes a status label and start
-   button from `start()`, all null unless `createNodeContent()` ran.
-   `EchoResourceNode` is the same, as are the Discord bot and web server nodes out
-   of tree. `autoStartIfWasRunning()` would throw.
+The engine is headless, and so is loading a graph: `GraphLoader` turns a save file's
+snapshot into live nodes and edges on a `NodeGraph` with no canvas involved (see
+[architecture.md](architecture.md)). **Graph execution is still not headless**, for
+one remaining reason: several nodes keep runtime state in JavaFX controls.
+`TriggerRepeatingNode` uses a `javafx.animation.Timeline` as its clock and writes a
+status label and start button from `start()`, all null unless `createNodeContent()`
+ran. `EchoResourceNode` is the same, as are the Discord bot and web server nodes out
+of tree. `autoStartIfWasRunning()` would throw.
 
 So the child is the real app, window and all, exactly as it would be run by hand.
 Node views are what run `createNodeContent()`, so a window that was never shown
 would be a graph with half-initialised nodes.
 
-A true headless runner needs both gaps closed: a canvas-free loader, and a
-lifecycle seam that keeps a node's running state in the node. The second is a
-cross-repo change touching every out-of-tree library. The CLI's command surface is
-designed so that backend can slot in behind `run` without changing how the daemon
-is operated.
+A true headless runner needs that last gap closed: a lifecycle seam that keeps a
+node's running state in the node rather than in its controls. It is a cross-repo
+change touching every out-of-tree library. The CLI's command surface is designed so
+that backend can slot in behind `run` without changing how the daemon is operated.
 
 Two practical consequences, both called out in the runbook:
 

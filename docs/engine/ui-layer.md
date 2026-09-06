@@ -30,9 +30,10 @@ an intentional API surface. Anything used within a single sub-package stays
 package-private.
 
 The `snapshot/` records are a plain data model — a captured slice of the graph —
-shared by copy/paste, `command/` and `io/`, so they live on their own rather than
-nested inside the canvas widget. The test tree mirrors this layout, which is how
-`GraphFileIOTest` drives package-private `toJson`/`fromJson` headlessly.
+shared by copy/paste, `command/`, `io/` and the headless `loader/` package outside
+this layer, so they live on their own rather than nested inside the canvas widget.
+The test tree mirrors this layout, which is how `GraphFileIOTest` drives
+package-private `toJson`/`fromJson` headlessly.
 
 **The node-facing extension points are not here.** `NodeContentProvider`,
 `AutoStartable` and `ValueEditors` live in `sdk/` in the `housegraph-api` module,
@@ -92,6 +93,33 @@ that connection would be. `GraphCanvas.connectionSafety` calls
 non-red port, mirroring `NodeGraph.attachEdge`. See
 [type-system.md](type-system.md).
 
+### Loading a snapshot
+
+`GraphCanvas.place` puts a `GraphSnapshot` on the canvas — the shared path behind
+paste (the factory duplicates the clipboard's nodes) and open-from-file (it unwraps
+the nodes `GraphFileIO` parsed). It is two layers:
+
+- **`GraphLoader`**, in the headless `loader/` package, builds each node, registers
+  it on the `NodeGraph`, and resolves every saved edge by index into the node's own
+  variable and flow-port lists. No canvas, no scene, no view — see
+  [architecture.md](architecture.md) for why it lives outside `ui/`, and
+  [save-format.md](save-format.md) for the identity and isolation rules it keeps.
+- **`place` itself**, which draws the result: a `NodeView` per node, then
+  `forceLayout()`, then a view per edge the loader wired, carrying the routing
+  waypoints — the one part of a snapshot the engine has no place for.
+
+Two orderings are load-bearing. The loader reports each node through a
+`GraphLoadListener` *before* registering it, so the `NodeView` — and with it
+`createNodeContent()` — exists by the time `NodeGraph.addNode` fires `onActivated()`.
+And `forceLayout()` runs after the nodes and before any edge view, because an edge
+computes its curve from live port positions in its constructor.
+
+Because the loader has already registered the edges, `createEdge` and
+`createFlowEdge` are split: each wires the model and then calls the private
+`attachEdgeView`/`attachFlowEdgeView`, which is what `place` uses on its own.
+It matches ports to their views by identity rather than re-resolving the saved
+index, so a `NodeView`'s port order cannot rewire a loaded graph.
+
 ### Node search box
 
 The context menu's first row is a `CustomMenuItem` wrapping a `TextField`, backed by
@@ -138,7 +166,8 @@ The one gesture refused is wiring the *identical* pair of ports twice:
 duplicate edge — which would change nothing but would inflate a
 [flow join](concurrency.md)'s arrival count — cannot be dragged into existence.
 `createFlowEdge` returns the existing view instead of a second one for the same
-reason, covering the load, paste and node-rebuild paths that call it directly.
+reason, covering the node-rebuild path that calls it directly; `GraphLoader` applies
+the same rule to the model when it loads a pair saved twice.
 
 ### Node visual states
 

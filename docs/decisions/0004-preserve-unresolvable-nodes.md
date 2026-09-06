@@ -27,8 +27,8 @@ key, so the load-time dependency check can name a missing library *and* the
 repository it can be installed from, in one pure pass before any class is loaded.
 
 **A `null` slot now means only an internal failure** — a type that resolves but will
-not instantiate, where there is no user data to preserve. `GraphCanvas.place` builds
-an index-aligned lookup list so a `null` never shifts later indices.
+not instantiate, where there is no user data to preserve. The load path builds an
+index-aligned lookup list so a `null` never shifts later indices.
 
 ## Consequences
 

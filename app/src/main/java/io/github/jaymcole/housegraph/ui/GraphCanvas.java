@@ -24,6 +24,11 @@ import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
 import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
 import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 
+import io.github.jaymcole.housegraph.loader.GraphLoader;
+import io.github.jaymcole.housegraph.loader.LoadedDataEdge;
+import io.github.jaymcole.housegraph.loader.LoadedFlowEdge;
+import io.github.jaymcole.housegraph.loader.LoadedGraph;
+
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.Edge;
 import io.github.jaymcole.housegraph.graph.FlowEdge;
@@ -31,6 +36,7 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.GraphExecutionListener;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
 import io.github.jaymcole.housegraph.graph.TypeConverters;
 import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
@@ -580,17 +586,25 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         PortView outputPort = a.getDirection() == PortView.Direction.OUTPUT ? a : b;
         PortView inputPort = a.getDirection() == PortView.Direction.OUTPUT ? b : a;
 
-        // An input can only ever be fed by one edge; wiring a new one replaces the old.
-        for (EdgeView existing : new ArrayList<>(edgeViews.values())) {
-            if (existing.hasTarget(inputPort)) {
-                existing.delete();
-            }
-        }
+        // Before registering, not after: an input can only ever be fed by one edge, and the graph
+        // refuses a second one, so the edge being replaced has to leave the model first.
+        detachEdgeViewsTargeting(inputPort);
 
         Edge edge = new Edge(
                 outputPort.getOwner().getNode(), outputPort.getVariable(),
                 inputPort.getOwner().getNode(), inputPort.getVariable());
         graph.registerEdge(edge);
+        return attachEdgeView(edge, outputPort, inputPort);
+    }
+
+    /**
+     * Builds the view for an {@link Edge} that is <em>already</em> registered on the graph, and
+     * connects the ports it runs between. The view half of {@link #createEdge}, on its own, for the
+     * one caller that wires the model itself: {@link GraphLoader}, whose edges arrive pre-registered
+     * (see {@link #place}). Registering here as well would wire every loaded edge twice.
+     */
+    private EdgeView attachEdgeView(Edge edge, PortView outputPort, PortView inputPort) {
+        detachEdgeViewsTargeting(inputPort);
         outputPort.connect();
         inputPort.connect();
         // Wiring an input can satisfy a required input; re-evaluate the target node's status.
@@ -612,6 +626,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         edgeViews.put(edge, edgeView);
         content.getChildren().add(edgeView);
         return edgeView;
+    }
+
+    /** Deletes whatever edge currently feeds {@code inputPort} — model and view both, via the view's delete callback. */
+    private void detachEdgeViewsTargeting(PortView inputPort) {
+        for (EdgeView existing : new ArrayList<>(edgeViews.values())) {
+            if (existing.hasTarget(inputPort)) {
+                existing.delete();
+            }
+        }
     }
 
     // --- Flow ports / edges ------------------------------------------------------
@@ -765,6 +788,19 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 outPort.getOwner().getNode(), outPort.getFlowPort(),
                 inPort.getOwner().getNode(), inPort.getFlowPort());
         graph.registerFlowEdge(flowEdge);
+        return attachFlowEdgeView(flowEdge, outPort, inPort);
+    }
+
+    /**
+     * Builds the view for a {@link FlowEdge} already registered on the graph — the flow counterpart
+     * of {@link #attachEdgeView}, and for the same caller.
+     */
+    private FlowEdgeView attachFlowEdgeView(FlowEdge flowEdge, FlowPortView outPort, FlowPortView inPort) {
+        FlowEdgeView existing = flowEdgeViews.get(flowEdge);
+        if (existing != null) {
+            // The loader reuses one FlowEdge for a pair saved twice; so does its view.
+            return existing;
+        }
 
         FlowEdgeView[] flowEdgeViewRef = new FlowEdgeView[1];
         FlowEdgeView flowEdgeView = new FlowEdgeView(outPort, inPort, content,
@@ -1112,47 +1148,51 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * offset from its captured position) and reconnects the internal edges. Shared by
      * paste (factory duplicates the clipboard's live node instances) and load-from-file
      * (factory just returns the already-freshly-built node parsed from JSON).
+     * <p>
+     * The graph half of the work — building the nodes, registering them, resolving every saved
+     * edge by index and wiring it — belongs to {@link GraphLoader} and happens with no canvas
+     * involved; see {@code docs/engine/architecture.md}. What is left here is the view: a
+     * {@link NodeView} per node, and an edge view per edge the loader resolved, carrying the
+     * routing waypoints the snapshot saved (which the engine has no place for).
      */
     public List<NodeView> place(GraphSnapshot snapshot, Function<ClipboardNode, BaseNode> nodeFactory, double offsetX, double offsetY) {
+        // Only the real views, so callers that select/undo the result never see a null. The loader
+        // keeps the index-aligned list, holes included, and resolves the saved edges against it.
         List<NodeView> placed = new ArrayList<>();
-        // Index-aligned with snapshot.nodes() - and therefore with the node indices saved edges
-        // reference. A node the factory can't build (an unknown type, a duplicate that failed)
-        // leaves a null slot here rather than being dropped, so every later node keeps its original
-        // index and edges still resolve to the node they were wired to. `placed` (returned) holds
-        // only the real views, so callers that select/undo the result never see a null.
-        List<NodeView> byIndex = new ArrayList<>();
-        for (ClipboardNode entry : snapshot.nodes()) {
-            BaseNode node = nodeFactory.apply(entry);
-            if (node == null) {
-                byIndex.add(null);
-                continue;
-            }
+
+        LoadedGraph loaded = GraphLoader.load(snapshot, nodeFactory, graph, (entry, node) -> {
+            // Called before the node joins the graph, which is where NodeGraph.addNode fires
+            // onActivated() - so the view, and with it createNodeContent(), is built and on the
+            // canvas by the time the node activates, as it was when this method added nodes itself.
             NodeView nodeView = new NodeView(node, content, this);
-            addNode(nodeView, entry.x() + offsetX, entry.y() + offsetY);
+            addNodeView(nodeView, entry.x() + offsetX, entry.y() + offsetY);
             placed.add(nodeView);
-            byIndex.add(nodeView);
+        });
+
+        // A pass of its own, after every node is activated: a node that reconfigures its own ports
+        // from onActivated() would otherwise rebuild the view we are still holding here.
+        for (NodeView nodeView : placed) {
+            BaseNode node = nodeView.getNode();
+            node.setPortsChangedListener(() -> rebuildNodeView(node));
         }
 
         forceLayout();
 
-        // Reconnect each edge independently. A save file can outlive the node contract it was
-        // written against - a node type that dropped an output, or an unknown node type that
-        // loaded as a null slot above - which leaves stale edge endpoints. Each edge is
-        // reconnected in isolation so one unresolvable endpoint drops only that edge; it must
-        // never abort the loop and cost the user every remaining edge.
-        for (ClipboardDataEdge dataEdge : snapshot.dataEdges()) {
+        // Each edge view is built in isolation, mirroring the loader's per-edge isolation on the
+        // model side: a port a view somehow cannot offer costs that one edge its curve, nothing more.
+        for (LoadedDataEdge loadedEdge : loaded.dataEdges()) {
             try {
-                reconnectDataEdge(byIndex, dataEdge, offsetX, offsetY);
+                showDataEdge(loadedEdge, offsetX, offsetY);
             } catch (RuntimeException e) {
-                log.warn("Skipping data edge that failed to reconnect: {}", e.toString());
+                log.warn("Skipping data edge whose view could not be built: {}", e.toString());
             }
         }
 
-        for (ClipboardFlowEdge flowEdge : snapshot.flowEdges()) {
+        for (LoadedFlowEdge loadedEdge : loaded.flowEdges()) {
             try {
-                reconnectFlowEdge(byIndex, flowEdge, offsetX, offsetY);
+                showFlowEdge(loadedEdge, offsetX, offsetY);
             } catch (RuntimeException e) {
-                log.warn("Skipping flow edge that failed to reconnect: {}", e.toString());
+                log.warn("Skipping flow edge whose view could not be built: {}", e.toString());
             }
         }
 
@@ -1160,62 +1200,63 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     /**
-     * Reconnects one saved data edge, or skips it with a warning if either endpoint no longer
-     * resolves (a node index past the loaded node count, or a port index the node no longer has).
-     * Skipping rather than throwing is what keeps one stale edge from aborting the whole reconnect
-     * pass - see {@link #place}.
+     * Draws one edge {@link GraphLoader} already wired, and applies the routing the snapshot saved
+     * for it. Ports are matched by identity against the node's own views rather than re-resolved by
+     * index, so the port order a {@link NodeView} happens to render in cannot rewire a saved graph.
      */
-    private void reconnectDataEdge(List<NodeView> nodesByIndex, ClipboardDataEdge edge, double offsetX, double offsetY) {
-        NodeView sourceView = nodeAt(nodesByIndex, edge.sourceNodeIndex());
-        NodeView targetView = nodeAt(nodesByIndex, edge.targetNodeIndex());
-        if (sourceView == null || targetView == null) {
-            log.warn("Skipping data edge to unresolved node (source={}, target={}, node count={})",
-                    edge.sourceNodeIndex(), edge.targetNodeIndex(), nodesByIndex.size());
-            return;
-        }
-        PortView sourcePort = portAt(sourceView.getOutputPorts(), edge.sourceVariableIndex());
-        PortView targetPort = portAt(targetView.getInputPorts(), edge.targetVariableIndex());
+    private void showDataEdge(LoadedDataEdge loaded, double offsetX, double offsetY) {
+        Edge edge = loaded.edge();
+        PortView sourcePort = portFor(edge.getSourceNode(), edge.getSourceVariable(), PortView.Direction.OUTPUT);
+        PortView targetPort = portFor(edge.getTargetNode(), edge.getTargetVariable(), PortView.Direction.INPUT);
         if (sourcePort == null || targetPort == null) {
-            log.warn("Skipping data edge with out-of-range port index (sourceVar={}, targetVar={}) between nodes {} and {}",
-                    edge.sourceVariableIndex(), edge.targetVariableIndex(), edge.sourceNodeIndex(), edge.targetNodeIndex());
+            log.warn("No port view for loaded data edge between {} and {}",
+                    edge.getSourceNode().getName(), edge.getTargetNode().getName());
             return;
         }
-        EdgeView edgeView = createEdge(sourcePort, targetPort);
-        edgeView.setWaypoints(offsetPoints(edge.waypoints(), offsetX, offsetY));
+        attachEdgeView(edge, sourcePort, targetPort)
+                .setWaypoints(offsetPoints(loaded.entry().waypoints(), offsetX, offsetY));
     }
 
-    /** Flow-edge counterpart of {@link #reconnectDataEdge}: reconnects one saved flow edge, or skips it with a warning if an endpoint no longer resolves. */
-    private void reconnectFlowEdge(List<NodeView> nodesByIndex, ClipboardFlowEdge edge, double offsetX, double offsetY) {
-        NodeView sourceView = nodeAt(nodesByIndex, edge.sourceNodeIndex());
-        NodeView targetView = nodeAt(nodesByIndex, edge.targetNodeIndex());
-        if (sourceView == null || targetView == null) {
-            log.warn("Skipping flow edge to unresolved node (source={}, target={}, node count={})",
-                    edge.sourceNodeIndex(), edge.targetNodeIndex(), nodesByIndex.size());
-            return;
-        }
-        FlowPortView sourcePort = flowPortAt(sourceView.getFlowOutPorts(), edge.sourcePortIndex());
-        FlowPortView targetPort = flowPortAt(targetView.getFlowInPorts(), edge.targetPortIndex());
+    /** Flow-edge counterpart of {@link #showDataEdge}. */
+    private void showFlowEdge(LoadedFlowEdge loaded, double offsetX, double offsetY) {
+        FlowEdge flowEdge = loaded.edge();
+        FlowPortView sourcePort = flowPortFor(flowEdge.getSourceNode(), flowEdge.getSourcePort(), FlowPort.Direction.OUT);
+        FlowPortView targetPort = flowPortFor(flowEdge.getTargetNode(), flowEdge.getTargetPort(), FlowPort.Direction.IN);
         if (sourcePort == null || targetPort == null) {
-            log.warn("Skipping flow edge with out-of-range port index (sourcePort={}, targetPort={}) between nodes {} and {}",
-                    edge.sourcePortIndex(), edge.targetPortIndex(), edge.sourceNodeIndex(), edge.targetNodeIndex());
+            log.warn("No flow port view for loaded flow edge between {} and {}",
+                    flowEdge.getSourceNode().getName(), flowEdge.getTargetNode().getName());
             return;
         }
-        FlowEdgeView flowEdgeView = createFlowEdge(sourcePort, targetPort);
-        flowEdgeView.setWaypoints(offsetPoints(edge.waypoints(), offsetX, offsetY));
+        attachFlowEdgeView(flowEdge, sourcePort, targetPort)
+                .setWaypoints(offsetPoints(loaded.entry().waypoints(), offsetX, offsetY));
     }
 
-    /**
-     * The node at {@code index}, or null if it doesn't resolve - either the index is out of range,
-     * or the slot is a null placeholder left by a node that couldn't be built (see {@link #place}).
-     * Both mean "a save file's edge references a node that's no longer there", so both skip the edge.
-     */
-    private static NodeView nodeAt(List<NodeView> nodes, int index) {
-        return index >= 0 && index < nodes.size() ? nodes.get(index) : null;
+    /** The view of one of a node's data ports, or null if the node isn't on this canvas (or its view has no such port). */
+    private PortView portFor(BaseNode node, NodeVariable variable, PortView.Direction direction) {
+        NodeView nodeView = nodeViewByNode.get(node);
+        if (nodeView == null) {
+            return null;
+        }
+        for (PortView port : direction == PortView.Direction.OUTPUT ? nodeView.getOutputPorts() : nodeView.getInputPorts()) {
+            if (port.getVariable() == variable) {
+                return port;
+            }
+        }
+        return null;
     }
 
-    /** The port at {@code index}, or null if out of range (a save file's edge referencing a port the node no longer has). */
-    private static PortView portAt(List<PortView> ports, int index) {
-        return index >= 0 && index < ports.size() ? ports.get(index) : null;
+    /** Flow counterpart of {@link #portFor}. */
+    private FlowPortView flowPortFor(BaseNode node, FlowPort flowPort, FlowPort.Direction direction) {
+        NodeView nodeView = nodeViewByNode.get(node);
+        if (nodeView == null) {
+            return null;
+        }
+        for (FlowPortView port : direction == FlowPort.Direction.OUT ? nodeView.getFlowOutPorts() : nodeView.getFlowInPorts()) {
+            if (port.getFlowPort() == flowPort) {
+                return port;
+            }
+        }
+        return null;
     }
 
     /** Shifts each waypoint by the paste offset, so a pasted edge's routing lands relative to its pasted nodes (offset is 0 for save/load). */
@@ -1225,11 +1266,6 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             shifted.add(new Point2D(point.getX() + offsetX, point.getY() + offsetY));
         }
         return shifted;
-    }
-
-    /** The flow port at {@code index}, or null if out of range (e.g. a save file from when the node had a different port count). */
-    private static FlowPortView flowPortAt(List<FlowPortView> ports, int index) {
-        return index >= 0 && index < ports.size() ? ports.get(index) : null;
     }
 
     /** Snapshots the currently selected nodes (works for a single selected node too). */

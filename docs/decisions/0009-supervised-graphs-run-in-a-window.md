@@ -15,15 +15,18 @@ hand.
 
 ## Consequences
 
-The engine is headless but **graph execution is not**, in two ways:
+The engine is headless but **graph execution was not**, in two ways:
 
-1. There is no canvas-free path from a save file to a live `NodeGraph`. `place()`
-   lives in `GraphCanvas`.
+1. There was no canvas-free path from a save file to a live `NodeGraph`: `place()`
+   lived in `GraphCanvas`. *Since closed* — `GraphLoader` builds a snapshot's nodes
+   and edges onto a `NodeGraph` with no view involved, and the canvas only draws
+   what it returns.
 2. Several nodes keep runtime state in JavaFX controls. `TriggerRepeatingNode` uses
    a `javafx.animation.Timeline` as its clock and writes a status label and start
    button from `start()` — all null unless `createNodeContent()` ran.
    `EchoResourceNode` is the same, as are the Discord bot and web server nodes out
-   of tree. `autoStartIfWasRunning()` would throw.
+   of tree. `autoStartIfWasRunning()` would throw. This one still holds, and it is
+   why the decision stands.
 
 Node views are what run `createNodeContent()`, so a window that was never shown
 would be a graph with half-initialised nodes.
@@ -32,9 +35,9 @@ would be a graph with half-initialised nodes.
 login is part of the setup. And the jar bundles JavaFX's platform natives, so it
 must be built on the machine that will run it.
 
-**A true headless runner needs both gaps closed** — a canvas-free loader, and a
-lifecycle seam keeping a node's running state in the node rather than in its
-controls. The second is a cross-repo change touching every out-of-tree library.
+**A true headless runner needs the second gap closed too** — a lifecycle seam
+keeping a node's running state in the node rather than in its controls. That is a
+cross-repo change touching every out-of-tree library.
 
 The CLI's command surface is deliberately designed so that backend can slot in
 behind `run` without changing how the daemon is operated.

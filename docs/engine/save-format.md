@@ -263,14 +263,16 @@ duplicating one would produce an empty node with no JSON behind it.
 **A `null` slot means only an internal failure.** A node whose type resolves but
 will not instantiate keeps an index-holding `ClipboardNode` with a `null` node;
 there is no user data to preserve. It still must not shift every later node's
-index. `GraphCanvas.place` builds an index-aligned lookup list with a `null` slot
-per unbuilt node, places only the real nodes, and resolves edges against that list.
+index. `GraphLoader` keeps the list index-aligned with the file's, `null` slots and
+all, and resolves every edge against it — so the loader, not the canvas, is where
+positional identity is honoured.
 
 **Edge reconnection is per-edge and self-contained.** Each saved edge is
 reconnected in isolation, and one whose endpoints no longer resolve — a node index
 past the loaded count, a `null` slot, or a port a node no longer has — is dropped
 with a warning instead of aborting the loop. Preserve that isolation when touching
-the reconnect pass.
+`GraphLoader`'s reconnect pass. Port indices resolve against the node's own
+variable and flow-port lists, never against a view's ports.
 
 ## File actions
 

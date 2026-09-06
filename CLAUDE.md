@@ -66,7 +66,8 @@ deliberate decision.
 6. **Long-lived resources are referenced by name, not wired** — when they are
    genuinely broadcast. Liveness is user-driven, not tied to being on the canvas.
 7. **Keep pure logic headless-testable.** `NodeGraph`, `GraphFileIO`'s JSON
-   conversion and `ObjectProperties` avoid JavaFX deliberately.
+   conversion, `GraphLoader` and `ObjectProperties` avoid JavaFX deliberately.
+   Opening a graph is one of them: `loader/` builds it, `ui/` only draws it.
 
 ## API stability
 

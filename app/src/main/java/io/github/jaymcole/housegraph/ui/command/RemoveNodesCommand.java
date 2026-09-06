@@ -116,7 +116,8 @@ public class RemoveNodesCommand implements Command {
         }
         // Freshly re-added NodeViews haven't been through a layout pass yet, so their
         // ports' on-screen positions aren't accurate until one happens - see the same
-        // fix/explanation on GraphCanvas.place().
+        // fix/explanation on GraphCanvas.forceLayout(), which every path that adds nodes and
+        // then immediately wires edges between them needs first.
         canvas.forceLayout();
         for (CapturedDataEdge edge : dataEdges) {
             edge.view = canvas.createEdge(edge.source, edge.target);
