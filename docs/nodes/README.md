@@ -30,8 +30,9 @@ a node author needs.
 
 **In this repository:** `app/src/main/java/.../graph/nodes/<category>/`. Current
 categories are `constants`, `control`, `converters`, `debug`, `loader`, `math`,
-`object`, `resource` and `viewers`. This is the built-in library — **dependency-free
-primitives only**. Anything needing a third-party library belongs out of tree.
+`module`, `object`, `resource` and `viewers`. This is the built-in library —
+**dependency-free primitives only**. Anything needing a third-party library belongs
+out of tree.
 
 **Out of tree:** its own repository, compiled against `housegraph-api`, installed
 at runtime. Start from the
