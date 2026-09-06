@@ -45,11 +45,18 @@ Then, as needed:
 - **Loop** → `runFlowBranchToCompletion(port, seed)` (`control/ForEachNode.java`).
 - **Join** → override `isFlowJoin()` (`control/JoinNode.java`).
 - **Inline UI** → implement `NodeContentProvider`; push values from `onExecuted()`.
+  Every control update goes through `present(...)`, never a bare field write.
 - **Extra config** → override `saveState()`/`loadState()`. Never store a secret
   here — store its `SecretsStore` key and resolve at runtime.
 - **Long-lived resource** → register in `ResourceRegistry` from `onActivated()`,
   tear down in `onRemoved()` and `releaseResources()`, open the connection only on
   user action (`resource/EchoResourceNode.java`).
+- **Running/stopped lifecycle** → the flag is a field of the node, the clock is a
+  `sdk.NodeTimer` (never a `Timeline`), and every control update goes through
+  `present(...)`. That is what lets it start, stop and resume with no view —
+  `control/TriggerRepeatingNode.java` and `resource/EchoResourceNode.java`, both
+  tested with no toolkit started. Never branch on `RuntimeMode.isDaemon()` for this:
+  "has a view" is per node (`hasView()`), not per process.
 - **Dynamic ports** → react in `onInputEdgeAdded/Removed`, persist the shape in
   `saveState` (`object/ObjectDecomposerNode.java`).
 
@@ -76,7 +83,7 @@ Then, as needed:
   out-of-tree library shares an id space with every other installed library, so
   there `@Node.Type` is mandatory and prefixed with the library id.)
 - Split teardown: fast and thread-affine in `onRemoved()`, anything that blocks in
-  `releaseResources()`.
+  `releaseResources()`. Stop a `NodeTimer` in the fast half; leave controls alone.
 - Poll `ctx.checkCancelled()` in anything slow.
 - Add a test mirroring the existing node tests.
 

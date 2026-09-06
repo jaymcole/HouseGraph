@@ -64,12 +64,60 @@ template's `HelloWorldNode` follows the same pattern.
 
 ## Your node must work without its UI
 
-`createNodeContent()` only runs when a view is built. A node loaded headlessly, or
-torn down before it was ever rendered, has null UI fields. Guard for it —
-especially in `onRemoved()` and `releaseResources()`, which must work even if the
-UI was never created.
+`createNodeContent()` only runs when something draws the node, so every field it
+assigns is null the rest of the time: a graph opened by a headless loader, a node
+torn down before it was rendered, and — once graphs can be used from inside other
+graphs — every node in the interior of such a graph, in an app that is fully
+windowed. **Having a view is a fact about one node, not about the process**, which
+is why nothing here consults `sdk.RuntimeMode.isDaemon()`.
 
-This is also why a supervised graph still runs in a real window; see
+Three rules keep a node working either way.
+
+**Own your running state.** A running flag is a field of the node. "Running means
+the timer object is non-null" makes the lifecycle depend on the UI that built the
+timer, and `saveState()` then reads a control.
+
+```java
+private volatile boolean running;
+
+@Override public Map<String, String> saveState() {
+    return running ? Map.of("running", "true") : Map.of();
+}
+```
+
+**Drive clocks with `sdk.NodeTimer`, not `javafx.animation.Timeline`.** A
+`Timeline` only ticks while the toolkit is running. `NodeTimer` ticks wherever the
+node is, on a shared daemon scheduler, one virtual thread per tick, skipping a tick
+whose predecessor has not finished. Stop it in `onRemoved()` — cancelling is
+immediate and never waits on a tick in flight, so it belongs in the fast half of
+teardown ([node-lifecycle.md](../engine/node-lifecycle.md)).
+
+**Route every control update through `present(...)`.** `BaseNode.present(Runnable)`
+runs the block through the sink the node's view installed, and discards it when
+there is no view. In the desktop app that sink runs the block inline when the caller
+is already on the FX thread and marshals it there otherwise — which is what makes a
+`NodeTimer` tick safe to show something.
+
+```java
+private void start() {
+    running = true;
+    clock.start(1000, this::tick);
+    present(() -> {
+        startButton.setDisable(true);
+        status.setText("Running");
+    });
+}
+```
+
+Read the node's state *inside* the block: it may run later than the call.
+
+`BaseNode.hasView()` answers the question directly, for the rarer case of skipping
+work that exists only to feed a control — rendering a thumbnail, formatting a long
+report. Ordinary control updates need only `present(...)`.
+
+A node that follows all three starts, runs, stops and resumes with no view. One that
+does not still works in a window and throws the moment it is loaded without one.
+Supervised graphs run in a real window for this reason among others; see
 [`../engine/remote-runtime.md`](../engine/remote-runtime.md#why-graphs-still-run-in-a-window).
 
 ## Registering a custom editable type
@@ -101,5 +149,7 @@ though you still apply the JavaFX Gradle plugin yourself; see
 ---
 
 **When you change this, update…** this file whenever you change
-`NodeContentProvider`, `ValueEditors`, or the thread on which either is dispatched.
-The consuming side is in [`../engine/ui-layer.md`](../engine/ui-layer.md).
+`NodeContentProvider`, `NodePresentation`, `NodeTimer`, `ValueEditors`, or the thread
+on which any of them is dispatched. The consuming side is in
+[`../engine/ui-layer.md`](../engine/ui-layer.md); the cross-repo copy of the
+no-view rules is [`../shared/node-library-rules.md`](../shared/node-library-rules.md).

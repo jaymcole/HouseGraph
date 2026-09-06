@@ -10,14 +10,12 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.sdk.AutoStartable;
 import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
+import io.github.jaymcole.housegraph.sdk.NodeTimer;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.util.Duration;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -31,13 +29,21 @@ import java.util.Map;
  * can arm or disarm the timer (see {@link ProcessContext#wasTriggeredVia}). Arriving through
  * either port never fires this node's own flow-out itself — only the periodic tick does — so
  * {@link #process(ProcessContext)} calls {@link #activateNone()} for those firings; the actual
- * button-equivalent work happens in {@link #onExecuted()} once it's back on the FX thread, since
- * {@code process()} runs on a background execution thread and can't touch the {@link Timeline}
- * or controls directly.
+ * button-equivalent work happens in {@link #onExecuted()}, which the engine dispatches through
+ * its callback executor rather than on the execution thread {@code process()} runs on.
  * <p>
  * If the timer was running when the graph was saved, it resumes automatically on load: the
  * running flag rides along in {@link #saveState()} and {@link #autoStartIfWasRunning()} presses
  * Start for the user (see {@link AutoStartable}).
+ *
+ * <h2>It runs with or without a view</h2>
+ * The clock is a {@link NodeTimer}, not a {@code javafx.animation.Timeline}, and {@link #running}
+ * is a field of this node rather than "the timer object exists". So starting, stopping, saving
+ * and resuming all work when nothing has drawn this node — a headless run, or a graph used from
+ * inside another graph. The countdown label and the two buttons are presentation only, and every
+ * write to them goes through {@link #present(Runnable)}, which discards the update when there is
+ * no view and marshals it onto the FX thread when there is. That matters here because the tick
+ * arrives on a timer thread, not the FX thread.
  */
 @Display.Name("Repeating Trigger")
 @Display.Description("Starts a run over and over on a timer.")
@@ -45,19 +51,30 @@ import java.util.Map;
 @Keywords({"timer", "interval", "schedule", "poll", "periodic", "cron", "repeat", "every"})
 public class TriggerRepeatingNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
+    /**
+     * The countdown ticks once a second rather than once per interval, so the label can show the
+     * time remaining and so a long interval is still cancelled promptly. It ticks whether or not
+     * anyone is watching: the tick is also what counts down to the firing.
+     */
+    private static final long TICK_MILLIS = 1_000;
+
     private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true).required();
     private final FlowPort startFlowInput = new FlowPort("Start", FlowPort.Direction.IN);
     private final FlowPort stopFlowInput = new FlowPort("Stop", FlowPort.Direction.IN);
 
-    private Timeline timeline;
+    private final NodeTimer clock = new NodeTimer("RepeatingTrigger");
+
+    /** This node's own running state — what {@link #saveState()} reports, and not a UI object. */
+    private volatile boolean running;
+    private volatile int intervalValue;
+    private volatile int remainingSeconds;
+
     private Button startButton;
     private Button stopButton;
     private Label statusLabel;
-    private int intervalValue;
-    private int remainingSeconds;
     /** True when the timer was running at the moment the loaded graph was saved; drives {@link #autoStartIfWasRunning()}. */
     private boolean wasRunning;
-    /** Set in {@link #process(ProcessContext)}, consumed in {@link #onExecuted()} once control is back on the FX thread. */
+    /** Set in {@link #process(ProcessContext)}, consumed in {@link #onExecuted()}. */
     private volatile FlowPort pendingFlowAction;
 
     @Override
@@ -91,7 +108,7 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
     @Override
     public Map<String, String> saveState() {
         Map<String, String> state = new HashMap<>();
-        if (timeline != null) {
+        if (running) {
             state.put("running", "true");
         }
         return state;
@@ -112,6 +129,11 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
     /** Test seam: whether the loaded graph had this timer running, i.e. auto-start is pending. */
     boolean wasRunning() {
         return wasRunning;
+    }
+
+    /** Test seam: whether the countdown is currently armed. */
+    boolean isRunning() {
+        return running;
     }
 
     @Override
@@ -160,6 +182,11 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
 
         HBox buttons = new HBox(6, startButton, stopButton);
         VBox box = new VBox(4, buttons, statusLabel);
+        // A view built while the timer is already running (a rebuild after a settings change,
+        // or a canvas opened on an already-live node) must not come up showing "Stopped".
+        if (running) {
+            showRunning();
+        }
         return box;
     }
 
@@ -178,39 +205,36 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
      * resolved this node's own inputs before calling {@link #process}.
      */
     private void armTimer() {
-        if (timeline != null) {
+        if (running) {
             return;
         }
         Integer seconds = intervalSeconds.getValue();
         if (seconds == null || seconds <= 0) {
-            statusLabel.setText("Enter a positive interval first");
+            present(() -> statusLabel.setText("Enter a positive interval first"));
             return;
         }
 
         intervalValue = seconds;
         remainingSeconds = seconds;
-        updateCountdownLabel();
-
-        // One-second ticks driving a countdown, rather than a single seconds-long
-        // KeyFrame, so the remaining time can be shown and updated live.
-        timeline = new Timeline(new KeyFrame(Duration.seconds(1), event -> countdownTick()));
-        timeline.setCycleCount(Timeline.INDEFINITE);
-        timeline.play();
-
-        startButton.setDisable(true);
-        stopButton.setDisable(false);
+        running = true;
+        clock.start(TICK_MILLIS, this::countdownTick);
+        showRunning();
     }
 
     private void stop() {
-        if (timeline != null) {
-            timeline.stop();
-            timeline = null;
-        }
-        startButton.setDisable(false);
-        stopButton.setDisable(true);
-        statusLabel.setText("Stopped");
+        running = false;
+        clock.stop();
+        present(() -> {
+            startButton.setDisable(false);
+            stopButton.setDisable(true);
+            statusLabel.setText("Stopped");
+        });
     }
 
+    /**
+     * One second of the countdown, on a {@link NodeTimer} thread. {@link #execute()} hands the run
+     * to the engine's executor and returns, so the tick is never waiting on the graph it fires.
+     */
     private void countdownTick() {
         remainingSeconds--;
         if (remainingSeconds <= 0) {
@@ -220,21 +244,27 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
         updateCountdownLabel();
     }
 
+    private void showRunning() {
+        present(() -> {
+            startButton.setDisable(true);
+            stopButton.setDisable(false);
+        });
+        updateCountdownLabel();
+    }
+
     private void updateCountdownLabel() {
-        statusLabel.setText("Next trigger in " + remainingSeconds + "s");
+        present(() -> statusLabel.setText("Next trigger in " + remainingSeconds + "s"));
     }
 
     /**
      * Stops the timer when the node is removed from the graph (deleted, replaced by a
-     * load, or app shutdown) so it can't keep firing as a zombie. Only the timer is
-     * touched — not the buttons/label — since the node's UI is going away and, in a
-     * headless context, may never have been built.
+     * load, or app shutdown) so it can't keep firing as a zombie. Cancelling the clock is
+     * immediate and does not wait for a tick already in flight, so this stays inside the
+     * fast, unbounded-but-quick half of teardown.
      */
     @Override
     protected void onRemoved() {
-        if (timeline != null) {
-            timeline.stop();
-            timeline = null;
-        }
+        running = false;
+        clock.stop();
     }
 }

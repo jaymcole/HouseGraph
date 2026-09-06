@@ -47,7 +47,7 @@ here:
 
 | Hook | Thread | Bounded | Put here |
 | --- | --- | --- | --- |
-| `onRemoved()` | the removing thread — the FX thread at shutdown | No | `unregister`, stop a `Timeline`, reset a control |
+| `onRemoved()` | the removing thread — the FX thread at shutdown | No | `unregister`, stop a `NodeTimer`, clear the running flag |
 | `releaseResources()` | a worker thread | Yes, ~15s per node | Kill a child process, withdraw an mDNS registration, log a client out, close a socket that waits |
 
 Both must be **idempotent**, and both must work even if the node's UI was never

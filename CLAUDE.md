@@ -114,6 +114,7 @@ Honour it. Beyond that:
 | --- | --- |
 | Graph execution, threading, locking | `NodeGraph` Javadoc + [`docs/engine/`](docs/engine/) execution docs |
 | `BaseNode` lifecycle hooks | `BaseNode` Javadoc + [execution-model.md](docs/engine/execution-model.md) and [node-lifecycle.md](docs/engine/node-lifecycle.md) |
+| The no-view seam (`NodePresentation`, `NodeTimer`, `present`/`hasView`) | [inline-ui.md](docs/nodes/inline-ui.md) + [`docs/shared/node-library-rules.md`](docs/shared/node-library-rules.md) — out-of-tree libraries learn it only from there |
 | Save-file JSON format | `GraphFileIO` Javadoc + [save-format.md](docs/engine/save-format.md); keep the backward-compat notes |
 | Resource registry semantics | `ResourceRegistry` Javadoc + [long-lived-resources.md](docs/nodes/long-lived-resources.md) |
 | Secret storage, crypto, on-disk locations | `SecretsStore`/`AppDirectories` Javadoc + [storage.md](docs/engine/storage.md) |

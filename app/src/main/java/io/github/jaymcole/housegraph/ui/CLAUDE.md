@@ -53,8 +53,16 @@ matching their concern, and mirror them under the matching test package.
   forgiving-read behaviour and update the `GraphFileIO` Javadoc **and**
   [`docs/engine/save-format.md`](../../../../../../../../../docs/engine/save-format.md).
 - **The node-facing extension points are not here.** `NodeContentProvider`,
-  `AutoStartable` and `ValueEditors` live in `sdk/` in `housegraph-api`, because
-  out-of-tree nodes cannot see `app`. This layer only consumes them.
+  `AutoStartable`, `NodePresentation`, `NodeTimer` and `ValueEditors` live in `sdk/`
+  in `housegraph-api`, because out-of-tree nodes cannot see `app`. This layer only
+  consumes them.
+- **`NodeView` is what gives a node a view.** `addNodeView` attaches a
+  `NodePresentation` and `removeNodeView` clears it, so `BaseNode.present(...)`
+  reaches controls exactly while they are on the canvas — the constructor attaches
+  once more before `createNodeContent()`, and `addNodeView` re-attaches because
+  undoing a delete re-adds the same view object. That sink is the only place
+  `Platform.runLater` belongs for node UI; a node never writes a control directly
+  and never asks whether the process is headless.
 - **New manually-editable type?** Add one line to the `sdk.ValueEditors` static
   block; nothing in `PortView` changes. Note it in
   [`docs/engine/type-system.md`](../../../../../../../../../docs/engine/type-system.md).

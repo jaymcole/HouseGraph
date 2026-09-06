@@ -9,6 +9,7 @@ import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
 import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
+import javafx.application.Platform;
 import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
@@ -246,6 +247,10 @@ public class NodeView extends BorderPane {
         setCenter(body);
 
         if (node instanceof NodeContentProvider contentProvider) {
+            // Installed *before* createNodeContent() so a node that presents something while
+            // building its controls is already view-aware, and so the node's own start path -
+            // which autoStartIfWasRunning() may re-run moments later - finds a live sink.
+            attachPresentation();
             Node customContent = contentProvider.createNodeContent();
             if (customContent instanceof Region region) {
                 region.setMaxWidth(Double.MAX_VALUE);
@@ -564,6 +569,41 @@ public class NodeView extends BorderPane {
 
         for (PortView port : inputPorts) {
             port.setMissingRequired(missing.contains(port.getVariable()));
+        }
+    }
+
+    /**
+     * Points the node's {@link BaseNode#present(Runnable)} at this view's controls. Called from
+     * the constructor before {@code createNodeContent()}, and again by the canvas whenever this
+     * view is (re)added — undoing a delete restores the very same {@code NodeView}, whose sink
+     * {@link #detachPresentation()} cleared on the way out. Idempotent.
+     */
+    public void attachPresentation() {
+        node.setPresentation(NodeView::onFxThread);
+    }
+
+    /**
+     * Drops this view's presentation sink, so the node's {@link BaseNode#present(Runnable)}
+     * calls become no-ops the moment its controls leave the canvas. Called by the canvas when
+     * the view is removed — on delete, on a load replacing the graph, and on the remove half of
+     * a port-change rebuild, where the replacement view installs its own sink straight after.
+     * Without this, a node torn down or rebuilt would keep writing into orphaned controls.
+     */
+    public void detachPresentation() {
+        node.setPresentation(null);
+    }
+
+    /**
+     * Runs a node's inline-UI update on the FX thread — inline when already there, so a button
+     * handler sees its own effect before it returns, and deferred otherwise, which is how a
+     * {@link io.github.jaymcole.housegraph.sdk.NodeTimer} tick reaches its status label without
+     * touching a control from a background thread.
+     */
+    private static void onFxThread(Runnable uiUpdate) {
+        if (Platform.isFxApplicationThread()) {
+            uiUpdate.run();
+        } else {
+            Platform.runLater(uiUpdate);
         }
     }
 

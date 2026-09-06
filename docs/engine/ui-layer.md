@@ -36,11 +36,26 @@ The test tree mirrors this layout, which is how `GraphFileIOTest` drives
 package-private `toJson`/`fromJson` headlessly.
 
 **The node-facing extension points are not here.** `NodeContentProvider`,
-`AutoStartable` and `ValueEditors` live in `sdk/` in the `housegraph-api` module,
-because nodes live outside this repository where `app` is not on the classpath. The
-consuming sites are still in this layer: `NodeView` dispatches
-`NodeContentProvider`, `GraphCanvas.loadSnapshot` dispatches `AutoStartable`, and
-`PortView` reads `ValueEditors`.
+`AutoStartable`, `NodePresentation`, `NodeTimer` and `ValueEditors` live in `sdk/`
+in the `housegraph-api` module, because nodes live outside this repository where
+`app` is not on the classpath. The consuming sites are still in this layer:
+`NodeView` dispatches `NodeContentProvider`, `GraphCanvas.loadSnapshot` dispatches
+`AutoStartable`, and `PortView` reads `ValueEditors`.
+
+**`NodeView` is also what makes a node "have a view".** `addNodeView` attaches a
+`NodePresentation` to the node and `removeNodeView` clears it, so
+`BaseNode.present(...)` reaches the controls exactly while they are on the canvas
+and is a no-op the rest of the time. The sink runs its block inline when the caller
+is already on the FX thread and `Platform.runLater`s it otherwise, which is how a
+node's own clock updates a status label.
+
+Two details are load-bearing. The view's constructor attaches it once more, *before*
+`createNodeContent()`, because a node may present something while building its
+controls and because `autoStartIfWasRunning()` follows moments later on a load.
+And attaching belongs in `addNodeView` rather than only in the constructor because
+undoing a delete re-adds the very same `NodeView` (`RemoveNodesCommand.undo`), whose
+sink the removal cleared. Node-side guidance is in
+[`../nodes/inline-ui.md`](../nodes/inline-ui.md#your-node-must-work-without-its-ui).
 
 ## Threading rule
 
@@ -365,7 +380,7 @@ to refresh the table when a download starts or finishes.
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the context menu, change the
-menus or the toolbar, change either auxiliary window, or change what image export
-draws. Save-format changes belong in
+menus or the toolbar, change either auxiliary window, change what image export
+draws, or change when a node's `NodePresentation` is installed or cleared. Save-format changes belong in
 [save-format.md](save-format.md); extension-point changes also touch
 [`../nodes/`](../nodes/).

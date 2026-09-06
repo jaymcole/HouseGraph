@@ -113,7 +113,7 @@ the UI update afterwards.
 
 ## Split your teardown
 
-`onRemoved()` is for fast, thread-affine work: stop a `Timeline`, reset a control,
+`onRemoved()` is for fast, thread-affine work: stop a `NodeTimer`, clear a flag,
 unregister a name. `releaseResources()` is for anything that waits on the outside
 world: kill a child process, withdraw an mDNS registration, log a client out.
 

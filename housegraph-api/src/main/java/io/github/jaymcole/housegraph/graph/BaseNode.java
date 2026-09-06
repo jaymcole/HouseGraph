@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.graph;
 
 import io.github.jaymcole.housegraph.annotations.Display;
+import io.github.jaymcole.housegraph.sdk.NodePresentation;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -226,6 +227,73 @@ public abstract class BaseNode {
      * the calling thread.
      */
     protected void onExecuted() {
+    }
+
+    // --- Presentation seam --------------------------------------------------------
+
+    /**
+     * The sink this node's inline-UI updates go through, or null when nothing is drawing this
+     * node. Written by the host when it builds or discards the node's content and read from
+     * timer, engine and UI threads alike, hence {@code volatile}.
+     */
+    private volatile NodePresentation presentation;
+
+    /**
+     * Installs (or, with null, clears) the sink this node's {@link #present(Runnable)} updates
+     * run through. <b>Called by the host that draws the node</b>, around
+     * {@link io.github.jaymcole.housegraph.sdk.NodeContentProvider#createNodeContent()} — node
+     * authors call {@link #present(Runnable)} instead and never touch this.
+     *
+     * @param presentation the sink to route UI updates through, or null when this node has no view
+     */
+    public final void setPresentation(NodePresentation presentation) {
+        this.presentation = presentation;
+    }
+
+    /**
+     * Whether anything is currently drawing this node — that is, whether
+     * {@link io.github.jaymcole.housegraph.sdk.NodeContentProvider#createNodeContent()} has run
+     * and its controls are still on screen.
+     *
+     * <h4>This is a question about the node, not about the process</h4>
+     * A node with no view is the ordinary case in a headless run, but not only there: a graph
+     * used from inside another graph has no view for any of its interior nodes while the app
+     * around it is fully windowed. Ask this, never
+     * {@link io.github.jaymcole.housegraph.sdk.RuntimeMode#isDaemon()}, which answers whether a
+     * supervisor started the JVM and says nothing about any particular node.
+     *
+     * <p>Most node code does not need this: routing every control update through
+     * {@link #present(Runnable)} already does the right thing either way. Use it to skip work
+     * that only exists to feed a control — building a thumbnail, formatting a long report.
+     *
+     * @return true when this node has a live view
+     */
+    protected final boolean hasView() {
+        return presentation != null;
+    }
+
+    /**
+     * Runs one update against this node's inline controls, or discards it when the node has no
+     * view. This is the only safe way for node code to touch what
+     * {@link io.github.jaymcole.housegraph.sdk.NodeContentProvider#createNodeContent()} built:
+     * those fields are null until that method runs, and it runs only when something draws the
+     * node.
+     *
+     * <h4>Threading</h4>
+     * The host decides where {@code uiUpdate} runs. The desktop app runs it inline when the
+     * caller is already on the JavaFX Application Thread and marshals it there otherwise, so a
+     * button handler still sees its own effect immediately while a background thread — a
+     * {@link io.github.jaymcole.housegraph.sdk.NodeTimer} tick, a worker reporting a result —
+     * cannot touch a control from the wrong thread. Because the update may run later, read the
+     * node's own state inside the block rather than capturing a snapshot of it outside.
+     *
+     * @param uiUpdate the control update to apply; ignored when this node has no view
+     */
+    protected final void present(Runnable uiUpdate) {
+        NodePresentation sink = presentation;
+        if (sink != null) {
+            sink.update(uiUpdate);
+        }
     }
 
     /**

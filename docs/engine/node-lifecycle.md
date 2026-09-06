@@ -11,15 +11,22 @@ opposite threads.
 
 | Hook | Thread | Bounded | For |
 | --- | --- | --- | --- |
-| `onRemoved()` | the thread that removed the node — the FX thread at shutdown | No | Fast, thread-affine work: stop a `Timeline`, reset a control, unregister a resource |
+| `onRemoved()` | the thread that removed the node — the FX thread at shutdown | No | Fast, thread-affine work: stop a `NodeTimer`, clear a running flag, unregister a resource |
 | `releaseResources()` | a worker thread | Yes | Slow work that waits on the outside world: kill a child process, withdraw an mDNS registration, log a client out |
 
 Both must be **idempotent**. `releaseResources()` should honour interruption.
 
-The thread split is the reason for the split. Stopping a `Timeline` or touching a
-control must happen on the FX thread, while work you intend to bound must not run
-on the thread you are standing on. `dispose()` runs *on* the FX thread inside
-`App.stop()`, so marshalling back to it with `Platform.runLater` would never run.
+The thread split is the reason for the split. Work you intend to bound must not run
+on the thread you are standing on, while thread-affine work must run where it
+belongs — and `dispose()` runs *on* the FX thread inside `App.stop()`, so
+marshalling back to it with `Platform.runLater` would never run.
+
+A node's own teardown does not need the FX thread: it stops a `sdk.NodeTimer`
+(immediate, and it never waits on a tick in flight), clears its running flag and
+unregisters its name, all of which are plain fields and plain maps. Its controls it
+leaves alone — they are going away, and `BaseNode.present(...)` would discard the
+update anyway once the view detaches. See
+[`../nodes/inline-ui.md`](../nodes/inline-ui.md#your-node-must-work-without-its-ui).
 
 ## `dispose()` makes two passes
 
