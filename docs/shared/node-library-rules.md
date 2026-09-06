@@ -178,8 +178,12 @@ been drawn.
 These are **additions** to the API — against an older version they will not compile,
 so bump the version you pinned in rule 1. Nothing forces the change: a library that
 ignores them behaves exactly as it always has in a window, and stays exactly as
-broken outside one, where the first loader without a canvas hits a
-`NullPointerException` in your `start()`.
+broken outside one. Outside one is no longer hypothetical: `housegraph run --headless
+<graph>` loads a graph with no canvas, and a node that skips these throws a
+`NullPointerException` out of its own `start()` the moment that runner resumes it.
+The runner survives it — the node is left stopped, the rest of the graph runs, and
+the log names the node and this file — but that node does nothing until the library
+is fixed.
 
 ---
 

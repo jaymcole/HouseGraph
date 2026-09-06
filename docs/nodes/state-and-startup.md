@@ -74,9 +74,9 @@ Re-run your normal Start path. If Start does blocking work on a worker,
 
 ### The thread is the loader's, and the node may have no view
 
-`GraphCanvas.loadSnapshot` is the caller today, and it calls this on the JavaFX
-Application Thread once it has drawn the graph. **That is the canvas's guarantee,
-not the interface's.** A loader with no canvas calls it on whatever thread opened
+`GraphCanvas.loadSnapshot` calls this on the JavaFX Application Thread once it has
+drawn the graph. **That is the canvas's guarantee, not the interface's.** The
+headless runner behind `housegraph run --headless` calls it on the thread that opened
 the graph, and the node it calls never had `createNodeContent()` run, so every
 control field is null.
 
@@ -85,7 +85,8 @@ clock with `sdk.NodeTimer` rather than a `javafx.animation.Timeline`, and writes
 controls only through `BaseNode.present(...)`. Those three rules, with examples, are
 in [inline-ui.md](inline-ui.md#your-node-must-work-without-its-ui). A node that
 skips them still resumes correctly in a window and throws the moment something
-loads it without one.
+loads it without one; the runner logs which node and carries on, so it costs that
+node rather than the graph.
 
 ## The "on startup" trigger
 

@@ -22,8 +22,9 @@ import java.util.Optional;
  * {@code Launcher} checks whether the first argument names a command here and, if so, runs it
  * instead of starting JavaFX. One jar, one {@code Main-Class}, no second start script to keep in
  * step — and {@code java -jar app.jar} with no arguments still opens the window exactly as it always
- * has. {@code run} is deliberately <em>not</em> in this table: it is the GUI, so it falls through to
- * {@code Application.launch} and is documented in the usage text as the command it effectively is.
+ * has. {@code run} is deliberately <em>not</em> in this table — it is the GUI, so it falls through to
+ * {@code Application.launch} — but it is documented in the usage text as the command it effectively
+ * is, {@link #HEADLESS_FLAG} included.
  */
 public final class CommandLine {
 
@@ -31,10 +32,25 @@ public final class CommandLine {
     public static final String PROGRAM = "housegraph";
 
     /**
-     * The graph-opening command. Not dispatched here — it needs the JavaFX toolkit, so
-     * {@code Launcher} recognises it and lets the normal application launch handle it.
+     * The graph-opening command. Not dispatched here — bare, it means the editor, so
+     * {@code Launcher} recognises it and lets the normal application launch handle it. With
+     * {@link #HEADLESS_FLAG} it means the editor's headless sibling, which {@code Launcher} also
+     * forks on; neither form reaches the table, because neither returns a code the way a command
+     * does — one opens a window, the other stays up until the process is signalled.
      */
     public static final String RUN_COMMAND = "run";
+
+    /**
+     * The flag on {@link #RUN_COMMAND} that means "no window": {@code housegraph run --headless
+     * <graph>} loads the graph, resumes the nodes that were running when it was saved, and stays up
+     * with no display involved. See {@code headless/HeadlessRunner}.
+     *
+     * <p>Opt-in, and deliberately not inferred: {@code housegraph run foo.json} still opens the
+     * editor for the person who typed it. Nor is it read off {@code sdk.RuntimeMode.isDaemon()},
+     * which says a supervisor started this JVM — a different fact from "there is no display", and
+     * one that would leave a person on a headless server no way to ask for this directly.
+     */
+    public static final String HEADLESS_FLAG = "headless";
 
     /** Arguments that mean "print something and stop", even though they name no command. */
     private static final java.util.Set<String> HELP_FLAGS =
@@ -180,6 +196,7 @@ public final class CommandLine {
         out.println();
         out.println("Commands:");
         out.printf("  %-10s %s%n", RUN_COMMAND, "Open the editor on one graph");
+        out.printf("  %-10s %s%n", "", "  --" + HEADLESS_FLAG + "   run it with no window, until the process is signalled");
         commands.values().forEach(command ->
                 out.printf("  %-10s %s%n", command.name(), command.summary()));
         out.println();

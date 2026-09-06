@@ -152,35 +152,57 @@ loop; `restartAll` clears it, because a new commit may be exactly the fix.
 Shutdown and the nested timeout chain are in
 [node-lifecycle.md](node-lifecycle.md).
 
-## Why graphs still run in a window
+## Running a graph with no window
 
-The engine is headless, and so is loading a graph: `GraphLoader` turns a save file's
-snapshot into live nodes and edges on a `NodeGraph` with no canvas involved (see
-[architecture.md](architecture.md)). Node lifecycles are headless too: a node keeps
-its running flag in a field, drives its clock with `sdk.NodeTimer`, and routes every
-control update through `BaseNode.present(...)`, which discards the update when
-nothing is drawing that node — so `autoStartIfWasRunning()` on a viewless node
-starts it rather than throwing. The built-in `TriggerRepeatingNode` and
-`EchoResourceNode` are built that way and tested with no toolkit started.
+`housegraph run --headless <graph>` is the canvas-free runner. It stands up logging
+and the node-library class loader, opens the graph through the same `GraphFileIO` →
+`GraphLoader` path the canvas uses, resumes every `AutoStartable` node that was
+running when the graph was saved, and stays up until the process is signalled. No
+toolkit is started and no display is needed. `headless/HeadlessRunner` is the program;
+`headless/HeadlessGraph` is the open-and-resume half of it.
 
-**What is still missing is the runner itself.** Nothing yet opens a graph, resumes
-its `AutoStartable` nodes and stays alive without a canvas: `GraphCanvas.loadSnapshot`
-is the only caller of `autoStartIfWasRunning()`, and `run` still means the GUI. So
-the child is the real app, window and all, exactly as it would be run by hand.
+The flag is opt-in and `housegraph run <graph>` still opens the editor, because
+someone typing that at a desktop means the editor. It is deliberately not keyed off
+`sdk.RuntimeMode.isDaemon()`: that says a supervisor started this JVM, which is a
+different fact from "there is no display", and a person on a headless server has to
+be able to ask for this directly.
 
-The other reason to stay in a window is out-of-tree: the seam above is additive, so a
-node library that has not adopted it — the Discord bot and web server nodes among
-them — compiles and behaves exactly as before, and is exactly as viewless-unsafe as
-before. What those libraries must change is in
+Nothing in a loaded graph holds the JVM open by itself — the run executor is
+virtual-thread-per-task and `NodeTimer`'s scheduler thread is a daemon — so the
+runner waits on a latch its shutdown hook releases. `kill` is how the supervisor
+restarts a graph, so that hook is the whole shutdown path: it runs the same three
+steps as the windowed app (`NodeGraph.dispose()`, close the class loader, close the
+log file), bounded, so a node that refuses to stop delays the restart rather than
+blocking it. There is no `Platform.exit()` handoff to make, because there is no FX
+thread teardown has to happen on.
+
+What it refuses to start for is narrow: a graph file that is missing, unreadable or
+unparseable is a `20`, and nothing else is. An uninstalled library is not, for the
+reason above, and neither is a node that throws while being resumed — each resume is
+isolated, and the failure is logged against the node and the library that owns it. A
+partly live graph beats a dead one.
+
+## Why the daemon still starts windowed children
+
+`GraphProcess` builds `run <graph>`, not `run --headless <graph>`. The blocker is
+out-of-tree: the presentation seam is additive on purpose, so a library that ignores
+it compiles and behaves exactly as before — and is exactly as viewless-unsafe as
+before. The Discord bot and web server nodes keep state in controls that
+`createNodeContent()` builds, so resuming one headlessly throws. The runner survives
+that node by node, but a graph whose point is its Discord bot is not usefully running
+without it. What those libraries must change is in
 [`../shared/node-library-rules.md`](../shared/node-library-rules.md).
 
-The CLI's command surface is designed so a headless backend can slot in behind `run`
-without changing how the daemon is operated.
+Shipping the runner and changing what every deployed server does are also two
+different risks, and they are worth taking one at a time. So the runner is driven by
+hand until the first-party libraries in
+[`housegraph-nodes`](https://github.com/jaymcole/housegraph-nodes) have adopted the
+seam.
 
-Two practical consequences, both called out in the runbook:
+Two practical consequences of the windowed child, both called out in the runbook:
 
 - **The jar bundles JavaFX's platform natives**, so it must be built on the machine
-  that will run it.
+  that will run it, and the machine needs a logged-in GUI session.
 - **The supervisor opens a graph; it never presses Start.** `AutoStartable` resumes
   a node only if it was running when the graph was saved. That is the correct
   semantics — liveness is user-driven — but it means a graph saved with its trigger
@@ -189,7 +211,10 @@ Two practical consequences, both called out in the runbook:
   `sdk.RuntimeMode.isDaemon()` instead of a saved running flag — see
   [`../nodes/state-and-startup.md`](../nodes/state-and-startup.md). `GraphProcess`'s
   child launcher sets the `housegraph.daemon` system property on every process it
-  spawns; that is the only place it is set.
+  spawns; that is the only place it is set. The headless runner sets nothing: it is
+  the same program either way, and whether a supervisor started it is the
+  supervisor's business.
+
 
 ## Commands
 
@@ -197,6 +222,7 @@ Two practical consequences, both called out in the runbook:
 | --- | --- |
 | `housegraph` | opens the editor on the last graph |
 | `housegraph run <graph>` | opens the editor on one graph; what the supervisor starts |
+| `housegraph run --headless <graph>` | runs one graph with no window, until the process is signalled |
 | `housegraph daemon [--once]` | sync loop plus supervision |
 | `housegraph sync [--force]` | pull now and report; starts nothing |
 | `housegraph plugins list [--json] \| install <url> \| update [id...]` | node libraries from the terminal |
@@ -212,11 +238,17 @@ word that falls through, because opening a graph is the GUI. One jar, one
 has. A bare word naming no command gets "Unknown command", not a window that
 silently ignores what was typed.
 
+`run` is where `Launcher` forks a second time, on `--headless`. Neither form is in
+the command table, because neither behaves like a command: one opens a window and
+one stays up until it is signalled, where every entry in the table returns a code and
+exits. Both find the graph by the same rule — the first bare argument, or an explicit
+`--graph=`.
+
 ---
 
 **When you change this, update…** this file whenever you change the sync strategy,
 the manifest or config format, supervision or backoff behaviour, the exit-code
-contract, the CLI surface, or what still stands between the daemon and a headless
-runner. Config-shape changes also touch
+contract, the CLI surface, the headless runner, or what still stands between the
+daemon and headless children. Config-shape changes also touch
 [`../guides/server-setup.md`](../guides/server-setup.md); trust changes belong in
 [security-model.md](security-model.md).

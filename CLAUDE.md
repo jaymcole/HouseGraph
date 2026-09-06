@@ -67,7 +67,8 @@ deliberate decision.
    genuinely broadcast. Liveness is user-driven, not tied to being on the canvas.
 7. **Keep pure logic headless-testable.** `NodeGraph`, `GraphFileIO`'s JSON
    conversion, `GraphLoader` and `ObjectProperties` avoid JavaFX deliberately.
-   Opening a graph is one of them: `loader/` builds it, `ui/` only draws it.
+   Opening a graph is one of them: `loader/` builds it, `ui/` only draws it. So is
+   running one: `headless/` opens a graph and keeps it alive with no window.
 
 ## API stability
 

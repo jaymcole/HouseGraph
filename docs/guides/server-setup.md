@@ -359,6 +359,20 @@ A **LaunchAgent**, not a LaunchDaemon: graphs run in the ordinary windowed app, 
 it has to start inside your logged-in session. A LaunchDaemon runs before login,
 where there is no window server, and would fail every time.
 
+> ### There is a windowless way to run one graph
+>
+> ```bash
+> java -jar ~/HouseGraph/housegraph.jar run --headless ~/HouseGraph/graphs/porch.json
+> ```
+>
+> This loads the graph, restarts whatever was running when it was saved, and stays up
+> until you `Ctrl-C` or `kill` it — no window, no display. Useful for checking a graph
+> on a machine you are only SSH'd into.
+>
+> **The daemon does not use it yet**, so this Part and the automatic login in
+> [Part 9](#9-make-the-mac-behave-like-a-server) are still required. Why:
+> [`../engine/remote-runtime.md`](../engine/remote-runtime.md).
+
 ```bash
 cp ~/HouseGraph-source/extras/launchd/com.jaymcole.housegraph.plist ~/Library/LaunchAgents/
 ```
@@ -422,7 +436,7 @@ A sleeping Mac runs no graphs. And in **System Settings**:
 ---
 
 **When you change this, update…** this file whenever the shape of `remote.json` or
-`housegraph.json` changes, a CLI command is added or renamed, `doctor`'s checks
-change, or the prerequisites change. Keep it a **runbook** — reasoning belongs in
+`housegraph.json` changes, a CLI command or flag is added or renamed, `doctor`'s
+checks change, the prerequisites change, or the daemon stops needing a GUI session. Keep it a **runbook** — reasoning belongs in
 [`../engine/remote-runtime.md`](../engine/remote-runtime.md), and the two should not
 drift into restating each other.

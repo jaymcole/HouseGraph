@@ -16,8 +16,10 @@ rule: **pure logic does not import JavaFX.**
   tested with no canvas, scene or node view (`loader/GraphLoaderTest`).
 - `ObjectProperties`, `CommandMatcher` and `AppDirectories.resolveRoot` are pure
   and tested as such.
-- `loader/`, `plugin/`, `cli/` and `remote/` are headless for the same reason.
-  Nothing worth testing may live in a window.
+- `loader/`, `headless/`, `plugin/`, `cli/` and `remote/` are headless for the same
+  reason. Nothing worth testing may live in a window. `headless/HeadlessGraphTest`
+  is the strongest form of it: a real save file onto a real `NodeGraph`, with a
+  saved-running node resuming and firing, and no toolkit started.
 
 When you extend any of these, keep the JavaFX-free core JavaFX-free. If new logic
 must touch the UI, factor the testable part out.

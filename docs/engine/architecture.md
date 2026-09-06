@@ -9,6 +9,7 @@ layer knows about a higher one.
 │                  save/load, the log and library windows   │
 │        │                                                  │
 │   loader/        a saved snapshot → a live NodeGraph      │
+│   headless/      one graph, running, with no window       │
 │   graph/nodes/   the built-in node library                │
 │   plugin/        host side of out-of-tree libraries       │
 │   cli/ remote/   headless CLI, git sync, supervision      │
@@ -29,7 +30,7 @@ Out-of-tree node libraries sit beside `app`, depending only on `housegraph-api`.
 | Module | Contains | Published |
 | --- | --- | --- |
 | `housegraph-api` | `graph/`, `sdk/`, `annotations/`, `logging/`, `resource/`, `storage/`, `store/` | Yes — node libraries compile against it |
-| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `loader/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
+| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `loader/`, `headless/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
 
 `graph/` is in the api module while `graph/nodes/` is in `app`. Distinct packages,
 not a split package.
@@ -43,15 +44,29 @@ not a split package.
   renders views, wires gestures to engine calls, and drives save/load.
 - **`graph/nodes/`** holds dependency-free primitives only. Every integration
   category is an out-of-tree library.
-- **`app/loader/`, `app/plugin/`, `app/cli/` and `app/remote/` are headless.** This
-  repository has no way to test a window, so nothing worth testing may live in one.
-  `remote/` supervises the JavaFX app as a child process rather than running
-  graphs itself.
+- **`app/loader/`, `app/headless/`, `app/plugin/`, `app/cli/` and `app/remote/` are
+  headless.** This repository has no way to test a window, so nothing worth testing
+  may live in one. `remote/` supervises a child process rather than running graphs
+  itself; `headless/` is what such a child can be, and is a package rather than part
+  of `remote/` so the supervisor does not depend on the thing it supervises.
 - **Opening a graph is not a canvas operation.** `GraphLoader` builds a snapshot's
   nodes and edges onto a `NodeGraph` with no view involved; `GraphCanvas.place`
   calls it and then draws the result. It sits in its own package rather than in
-  `ui/` because its callers — `cli/`, `remote/`, and a node that loads another
-  graph — are below the UI, and a downward dependency is the only kind allowed.
+  `ui/` because its callers — `headless/`, `cli/`, `remote/`, and a node that loads
+  another graph — are below the UI, and a downward dependency is the only kind
+  allowed.
+- **`ui/io/GraphFileIO` and `ui/snapshot/` are the exception, and are known to be
+  misplaced.** The JSON half of `GraphFileIO` has no view in it and is already read
+  by `cli/`, `remote/`, `catalog/` and now `headless/`; `loader/` and `headless/`
+  reach up for `GraphSnapshot` too. Moving both into a headless package is the fix.
+  It is not free — the snapshot records carry manual edge routing as
+  `javafx.geometry.Point2D`, so the move relocates a JavaFX dependency rather than
+  removing one, and it must not change a byte of the save format. Until then, this
+  is the one upward dependency in the tree, and it is not a licence for a second
+  kind.
+- **Running a graph is not a canvas operation either.** `headless/HeadlessRunner`
+  opens a graph, resumes its `AutoStartable` nodes and stays up with no toolkit
+  started. See [remote-runtime.md](remote-runtime.md).
 
 ## Principal types
 
@@ -69,6 +84,7 @@ not a split package.
 | `MissingNode` | Placeholder for a node whose library isn't installed, preserving it verbatim. |
 | `PluginCatalog` / `PluginLoader` | What is installed, and the shared class loader serving it. |
 | `GraphLoader` | Builds a `GraphSnapshot`'s nodes and edges onto a `NodeGraph`, headlessly. |
+| `HeadlessRunner` | Runs one graph with no window, until the process is signalled. |
 | `GraphCanvas` | The JavaFX canvas hosting node and edge views. |
 | `ResourceRegistry` | App-wide, name-keyed lookup and event pub/sub. |
 | `SecretsStore` / `AppDirectories` | Encrypted secrets / OS-appropriate file locations. |
@@ -82,7 +98,8 @@ plain classpath jar; do not move `main` into `App`.
 
 `Launcher` forks on the first argument. A bare word is a CLI command and never
 touches JavaFX, except `run`, which falls through because opening a graph is the
-GUI. Anything else, including no arguments, launches the window. See
+GUI. Anything else, including no arguments, launches the window. `run` forks once
+more, on `--headless`, into `HeadlessRunner`. See
 [remote-runtime.md](remote-runtime.md).
 
 ## Application lifecycle

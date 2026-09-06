@@ -86,6 +86,25 @@ class CommandLineTest {
     }
 
     @Test
+    void leavesAHeadlessRunAloneToo() {
+        // A headless run is not a command: it stays up until the process is signalled rather than
+        // returning a code the way everything in this table does, so Launcher forks on it instead.
+        assertFalse(commandLine.handlesArguments(
+                        CommandLine.RUN_COMMAND, "--" + CommandLine.HEADLESS_FLAG, "porch.json"),
+                "the headless fork is Launcher's, not the command table's");
+        assertFalse(commandLine.handles(CommandLine.RUN_COMMAND));
+    }
+
+    @Test
+    void theUsageMentionsTheHeadlessFlagWhereSomeoneWouldLookForIt() {
+        assertEquals(0, commandLine.run());
+
+        assertTrue(output().contains("--" + CommandLine.HEADLESS_FLAG),
+                "run is the only entry in the listing with no command class behind it, so its usage "
+                        + "text is the only place the flag is documented at the terminal");
+    }
+
+    @Test
     void versionPrintsAVersionRatherThanUsage() {
         assertEquals(0, commandLine.run("--version"));
 

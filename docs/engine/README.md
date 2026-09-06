@@ -57,7 +57,7 @@ avoids the rebuild — a preference, not a guarantee.
 | [ui-layer.md](ui-layer.md) | canvas, views, undo, the FX-thread rule |
 | [node-search.md](node-search.md) | what is indexed, the scoring model, query syntax, `NodeKind` |
 | [plugin-runtime.md](plugin-runtime.md) | module split, class loading, catalog, discovery |
-| [remote-runtime.md](remote-runtime.md) | git sync, process supervision, exit codes, shutdown |
+| [remote-runtime.md](remote-runtime.md) | git sync, process supervision, exit codes, the headless runner |
 | [storage.md](storage.md) | on-disk layout, secrets, preferences |
 | [document-store.md](document-store.md) | the shared JSON document store behind data-store nodes |
 | [logging.md](logging.md) | levels, sinks, the SLF4J bridge |
