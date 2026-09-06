@@ -1,7 +1,6 @@
-package io.github.jaymcole.housegraph.ui.io;
+package io.github.jaymcole.housegraph.saveformat;
 
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
-import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 import org.json.JSONObject;
 
 /**

@@ -108,9 +108,9 @@ possible extension, deliberately out of scope.
 | Entry-scope gate | `graph/NodeGraph.java` — `execute`, `EntryExecution` |
 | Mid-cascade gate | `graph/NodeGraph.java` — `reentryGates`, `ReentryGate`, `Run.fire` |
 | Per-run isolation | `graph/ExecutionContext.java` |
-| Persistence | `ui/io/GraphFileIO.java` — `executionPolicy`; missing reads as `QUEUE` |
+| Persistence | `saveformat/GraphFileIO.java` — `executionPolicy`; missing reads as `QUEUE` |
 | UI selector and glyph | `ui/view/NodeView.java`, `ui/view/ExecutionPolicyIcons.java` |
-| Tests | `graph/NodeGraphTest.java`, `ui/io/GraphFileIOTest.java` |
+| Tests | `graph/NodeGraphTest.java`, `saveformat/GraphFileIOTest.java` |
 
 The UI shows the policy glyph and its right-click submenu for any node that
 participates in flow, at both scopes — see [ui-layer.md](ui-layer.md). Authoring

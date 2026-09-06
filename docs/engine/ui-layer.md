@@ -14,13 +14,12 @@ ui/
 │                      EdgeInteractionListener, ExecutionPolicyIcons
 ├── editor/            SecretsEditor
 ├── command/           Command, UndoManager, and every *Command
-├── snapshot/          GraphSnapshot, ClipboardNode, ClipboardDataEdge, ClipboardFlowEdge
 ├── log/               LogWindow, LogLevelPreferences
 ├── menu/              MainMenuBar, MenuActions
 ├── plugin/            PluginWindow (the node-library manager)
 ├── export/            GraphComponents, GraphImageExport
 ├── widget/            TaskProgressBar (a Task-bound progress bar, reused across windows)
-└── io/                GraphFileIO, RecentGraphs
+└── io/                GraphFileIO (thin save/load wrappers), RecentGraphs
 ```
 
 Java has no sub-package visibility, so pieces that call across these boundaries are
@@ -29,11 +28,13 @@ Java has no sub-package visibility, so pieces that call across these boundaries 
 an intentional API surface. Anything used within a single sub-package stays
 package-private.
 
-The `snapshot/` records are a plain data model — a captured slice of the graph —
-shared by copy/paste, `command/`, `io/` and the headless `loader/` package outside
-this layer, so they live on their own rather than nested inside the canvas widget.
-The test tree mirrors this layout, which is how `GraphFileIOTest` drives
-package-private `toJson`/`fromJson` headlessly.
+The snapshot data model — `GraphSnapshot`, `ClipboardNode`, `ClipboardDataEdge`,
+`ClipboardFlowEdge` and `CameraState` — is a plain captured slice of the graph
+shared by copy/paste, `command/`, `io/` and the headless `loader/` package, so it
+does not live nested inside the canvas widget. It lives in `saveformat/`, outside
+this layer entirely, alongside the JSON conversion that reads and writes it — see
+[save-format.md](save-format.md) for why and `GraphFileIOTest` for the headless
+`toJson`/`fromJson` coverage that split makes possible.
 
 **The node-facing extension points are not here.** `NodeContentProvider`,
 `AutoStartable`, `NodePresentation`, `NodeTimer` and `ValueEditors` live in `sdk/`
@@ -112,7 +113,7 @@ non-red port, mirroring `NodeGraph.attachEdge`. See
 
 `GraphCanvas.place` puts a `GraphSnapshot` on the canvas — the shared path behind
 paste (the factory duplicates the clipboard's nodes) and open-from-file (it unwraps
-the nodes `GraphFileIO` parsed). It is two layers:
+the nodes `saveformat.GraphFileIO` parsed). It is two layers:
 
 - **`GraphLoader`**, in the headless `loader/` package, builds each node, registers
   it on the `NodeGraph`, and resolves every saved edge by index into the node's own

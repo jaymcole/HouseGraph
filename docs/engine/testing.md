@@ -10,13 +10,14 @@ rule: **pure logic does not import JavaFX.**
 
 - `NodeGraph`, `BaseNode` and the whole `graph/` engine run headless. Tests build a
   throwaway `NodeGraph`, add nodes, wire edges, and drive execution directly.
-- `GraphFileIO`'s JSON conversion is separated from the `save`/`load` canvas
-  wrappers precisely so the format can be tested without a canvas, and `GraphLoader`
-  continues the split: building a snapshot's nodes and edges onto a `NodeGraph` is
-  tested with no canvas, scene or node view (`loader/GraphLoaderTest`).
+- `saveformat.GraphFileIO`'s JSON conversion lives in its own headless package,
+  separate from `ui.io.GraphFileIO`'s `save`/`load` canvas wrappers, precisely so
+  the format can be tested without a canvas (`saveformat/GraphFileIOTest`), and
+  `GraphLoader` continues the split: building a snapshot's nodes and edges onto a
+  `NodeGraph` is tested with no canvas, scene or node view (`loader/GraphLoaderTest`).
 - `ObjectProperties`, `CommandMatcher` and `AppDirectories.resolveRoot` are pure
   and tested as such.
-- `loader/`, `headless/`, `plugin/`, `cli/` and `remote/` are headless for the same
+- `loader/`, `saveformat/`, `headless/`, `plugin/`, `cli/` and `remote/` are headless for the same
   reason. Nothing worth testing may live in a window. `headless/HeadlessGraphTest`
   is the strongest form of it: a real save file onto a real `NodeGraph`, with a
   saved-running node resuming and firing, and no toolkit started.

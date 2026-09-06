@@ -1,4 +1,4 @@
-package io.github.jaymcole.housegraph.ui.snapshot;
+package io.github.jaymcole.housegraph.saveformat;
 
 import java.util.List;
 

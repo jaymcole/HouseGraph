@@ -1,7 +1,7 @@
 package io.github.jaymcole.housegraph.loader;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
+import io.github.jaymcole.housegraph.saveformat.ClipboardNode;
 
 /**
  * Notified as {@link GraphLoader} builds each node, <em>before</em> that node joins the graph.

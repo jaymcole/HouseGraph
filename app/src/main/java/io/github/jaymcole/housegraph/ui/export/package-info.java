@@ -10,8 +10,8 @@
  * {@code GraphCanvas.withComponentIsolated}, since it touches the canvas's own views and selection.
  * <p>
  * Nothing here reaches into {@code housegraph-api}: node positions live in
- * {@link io.github.jaymcole.housegraph.ui.snapshot} and the save file, not on the node, so
- * rendering a picture of a graph needs no geometry from the node model.
+ * {@link io.github.jaymcole.housegraph.saveformat.GraphSnapshot} and the save file, not on the
+ * node, so rendering a picture of a graph needs no geometry from the node model.
  * See {@code docs/engine/ui-layer.md}.
  */
 package io.github.jaymcole.housegraph.ui.export;

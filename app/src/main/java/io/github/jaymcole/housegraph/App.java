@@ -16,9 +16,9 @@ import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.logging.Logging;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
+import io.github.jaymcole.housegraph.saveformat.GraphFileIO;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.export.GraphImageExport;
-import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
 import io.github.jaymcole.housegraph.ui.io.RecentGraphs;
 import io.github.jaymcole.housegraph.ui.editor.SecretsEditor;
 import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
@@ -501,7 +501,7 @@ public class App extends Application implements MenuActions {
             // The catalog goes along so each node library this graph uses is recorded with the
             // repository it can be installed from, not just its id — that's what lets another
             // machine offer to fetch what's missing rather than only name it.
-            GraphFileIO.save(canvas, file, pluginCatalog);
+            io.github.jaymcole.housegraph.ui.io.GraphFileIO.save(canvas, file, pluginCatalog);
             rememberLastFile(file);
         } catch (IOException ex) {
             new Alert(Alert.AlertType.ERROR, "Failed to save graph: " + ex.getMessage()).showAndWait();

@@ -1,7 +1,7 @@
 package io.github.jaymcole.housegraph.loader;
 
 import io.github.jaymcole.housegraph.graph.Edge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.saveformat.ClipboardDataEdge;
 
 /**
  * One data edge the loader resolved: the snapshot entry it came from, and the live

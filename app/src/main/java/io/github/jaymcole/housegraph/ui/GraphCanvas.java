@@ -19,10 +19,11 @@ import io.github.jaymcole.housegraph.ui.view.FlowEdgeView;
 import io.github.jaymcole.housegraph.ui.view.FlowPortView;
 import io.github.jaymcole.housegraph.ui.view.NodeView;
 import io.github.jaymcole.housegraph.ui.view.PortView;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
-import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
+import io.github.jaymcole.housegraph.saveformat.CameraState;
+import io.github.jaymcole.housegraph.saveformat.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.saveformat.ClipboardFlowEdge;
+import io.github.jaymcole.housegraph.saveformat.ClipboardNode;
+import io.github.jaymcole.housegraph.saveformat.GraphSnapshot;
 
 import io.github.jaymcole.housegraph.loader.GraphLoader;
 import io.github.jaymcole.housegraph.loader.LoadedDataEdge;
