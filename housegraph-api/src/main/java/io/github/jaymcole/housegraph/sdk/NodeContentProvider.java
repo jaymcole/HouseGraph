@@ -24,6 +24,15 @@ import javafx.scene.Node;
  * matter: keep that off the FX thread, and hop back with {@code Platform.runLater} to
  * show its result.
  * <p>
+ * <b>Your node may never get a view.</b> This method runs only when something draws the node, so
+ * every field it assigns is null in a headless run and null for a graph used from inside another
+ * graph. Nothing else about the node may depend on it having happened: a node with a
+ * running/stopped lifecycle keeps that state in a field of its own (never "the timer object
+ * exists"), drives its clock with {@link NodeTimer} rather than a {@code javafx.animation.Timeline},
+ * and writes to the controls built here only through {@link BaseNode#present(Runnable)}, which
+ * discards the update when there is no view. {@link BaseNode#hasView()} answers the question
+ * directly for the rarer case of skipping work that exists only to feed a control.
+ * <p>
  * Example — a node that just displays its input value:
  * <pre>{@code
  * public class ValueDisplayNode extends BaseNode implements NodeContentProvider {

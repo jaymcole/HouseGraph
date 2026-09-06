@@ -156,21 +156,26 @@ Shutdown and the nested timeout chain are in
 
 The engine is headless, and so is loading a graph: `GraphLoader` turns a save file's
 snapshot into live nodes and edges on a `NodeGraph` with no canvas involved (see
-[architecture.md](architecture.md)). **Graph execution is still not headless**, for
-one remaining reason: several nodes keep runtime state in JavaFX controls.
-`TriggerRepeatingNode` uses a `javafx.animation.Timeline` as its clock and writes a
-status label and start button from `start()`, all null unless `createNodeContent()`
-ran. `EchoResourceNode` is the same, as are the Discord bot and web server nodes out
-of tree. `autoStartIfWasRunning()` would throw.
+[architecture.md](architecture.md)). Node lifecycles are headless too: a node keeps
+its running flag in a field, drives its clock with `sdk.NodeTimer`, and routes every
+control update through `BaseNode.present(...)`, which discards the update when
+nothing is drawing that node — so `autoStartIfWasRunning()` on a viewless node
+starts it rather than throwing. The built-in `TriggerRepeatingNode` and
+`EchoResourceNode` are built that way and tested with no toolkit started.
 
-So the child is the real app, window and all, exactly as it would be run by hand.
-Node views are what run `createNodeContent()`, so a window that was never shown
-would be a graph with half-initialised nodes.
+**What is still missing is the runner itself.** Nothing yet opens a graph, resumes
+its `AutoStartable` nodes and stays alive without a canvas: `GraphCanvas.loadSnapshot`
+is the only caller of `autoStartIfWasRunning()`, and `run` still means the GUI. So
+the child is the real app, window and all, exactly as it would be run by hand.
 
-A true headless runner needs that last gap closed: a lifecycle seam that keeps a
-node's running state in the node rather than in its controls. It is a cross-repo
-change touching every out-of-tree library. The CLI's command surface is designed so
-that backend can slot in behind `run` without changing how the daemon is operated.
+The other reason to stay in a window is out-of-tree: the seam above is additive, so a
+node library that has not adopted it — the Discord bot and web server nodes among
+them — compiles and behaves exactly as before, and is exactly as viewless-unsafe as
+before. What those libraries must change is in
+[`../shared/node-library-rules.md`](../shared/node-library-rules.md).
+
+The CLI's command surface is designed so a headless backend can slot in behind `run`
+without changing how the daemon is operated.
 
 Two practical consequences, both called out in the runbook:
 
@@ -211,6 +216,7 @@ silently ignores what was typed.
 
 **When you change this, update…** this file whenever you change the sync strategy,
 the manifest or config format, supervision or backoff behaviour, the exit-code
-contract, or the CLI surface. Config-shape changes also touch
+contract, the CLI surface, or what still stands between the daemon and a headless
+runner. Config-shape changes also touch
 [`../guides/server-setup.md`](../guides/server-setup.md); trust changes belong in
 [security-model.md](security-model.md).

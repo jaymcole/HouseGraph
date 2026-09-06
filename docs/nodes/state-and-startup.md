@@ -61,17 +61,31 @@ public class MyResourceNode extends BaseNode
 }
 ```
 
-`GraphCanvas.loadSnapshot` calls it on each just-loaded node **after the whole
-graph is in place** — every node placed and activated, every edge wired. That
-ordering matters: the node's `onActivated()` has already registered its resource,
-and its incoming data edges exist, so a node that pulls an input at start sees its
-wiring.
+The loader calls it on each just-loaded node **after the whole graph is in place**
+— every node added and activated, every edge wired. That ordering matters: the
+node's `onActivated()` has already registered its resource, and its incoming data
+edges exist, so a node that pulls an input at start sees its wiring.
 
 It fires **only on load**. Paste and undo/redo never auto-start a copied resource,
 which falls out of `state` not being carried by duplication.
 
-Re-run your normal Start path, including whatever thread it already uses. If Start
-does blocking work off the FX thread, `autoStartIfWasRunning()` should too.
+Re-run your normal Start path. If Start does blocking work on a worker,
+`autoStartIfWasRunning()` should too.
+
+### The thread is the loader's, and the node may have no view
+
+`GraphCanvas.loadSnapshot` is the caller today, and it calls this on the JavaFX
+Application Thread once it has drawn the graph. **That is the canvas's guarantee,
+not the interface's.** A loader with no canvas calls it on whatever thread opened
+the graph, and the node it calls never had `createNodeContent()` run, so every
+control field is null.
+
+So a start path reached from here keeps its running state in the node, drives any
+clock with `sdk.NodeTimer` rather than a `javafx.animation.Timeline`, and writes to
+controls only through `BaseNode.present(...)`. Those three rules, with examples, are
+in [inline-ui.md](inline-ui.md#your-node-must-work-without-its-ui). A node that
+skips them still resumes correctly in a window and throws the moment something
+loads it without one.
 
 ## The "on startup" trigger
 
@@ -99,6 +113,11 @@ running last time", but "did the remote daemon's supervisor start this process, 
 did a person open it". The supervisor's child launcher sets the
 `housegraph.daemon` system property on every graph process it spawns; nothing else
 sets it.
+
+**It is not the "does this node have a view" question**, which is per node and
+answered by `BaseNode.hasView()`: a graph used from inside another graph has no view
+for any of its interior nodes in a process that is fully windowed. Keying UI safety
+off `isDaemon()` gets that case wrong.
 
 `DaemonStartTriggerNode` (`control/`) is the built-in example: no state to persist
 at all, just
@@ -129,5 +148,7 @@ The user-facing version of this is in
 ---
 
 **When you change this, update…** this file whenever you change the state map
-contract, the `AutoStartable` timing, the rule about what copy/paste carries, or
-what sets/reads the `housegraph.daemon` property behind `RuntimeMode`.
+contract, the `AutoStartable` timing or thread contract, the rule about what
+copy/paste carries, or what sets/reads the `housegraph.daemon` property behind
+`RuntimeMode`. The no-view half of the start path is owned by
+[inline-ui.md](inline-ui.md).

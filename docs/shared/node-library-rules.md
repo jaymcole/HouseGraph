@@ -125,6 +125,62 @@ the one you declared.** JDA and jmdns each need one. DJL needs three — `ai.djl
 their own transitive path to `ai.djl:api`, so an exclude on one does not cover
 another. Check with `gradlew :yourlib:dependencies` before you build.
 
+## 8. A node with a Start/Stop lifecycle must survive having no UI
+
+`createNodeContent()` runs only when something draws your node, so every field it
+assigns is null otherwise — and "otherwise" is not only a headless run: a graph used
+from inside another graph has no view for its interior nodes while the app around it
+is fully windowed. **Whether a node has a view is a question about that node, never
+about the process.** Do not key any of this off `sdk.RuntimeMode.isDaemon()`, which
+answers whether a supervisor started the JVM.
+
+```java
+private volatile boolean running;                       // 1. not "timeline != null"
+private final NodeTimer clock = new NodeTimer("MyBot"); // 2. not a Timeline
+
+private void start() {
+    running = true;
+    connect();
+    clock.start(30_000, this::heartbeat);
+    present(() -> status.setText("Connected"));         // 3. not a bare setText
+}
+
+@Override public Map<String, String> saveState() {
+    return running ? Map.of("running", "true") : Map.of();
+}
+
+@Override protected void onRemoved() {
+    running = false;
+    clock.stop();
+}
+```
+
+1. **Own the running flag.** A field on the node. A `saveState()` that reports
+   `running` by testing whether a control or a `Timeline` exists is reading the UI,
+   and `AutoStartable` then cannot round-trip through a loader that built none.
+2. **`sdk.NodeTimer`, not `javafx.animation.Timeline`**, which ticks only while the
+   toolkit runs. `NodeTimer` ticks wherever the node is: a shared daemon scheduler,
+   one virtual thread per tick, a tick skipped rather than overlapped if its
+   predecessor is still running. `stop()` is idempotent and immediate, so it belongs
+   in `onRemoved()`.
+3. **`BaseNode.present(Runnable)` for every control update.** It runs the block
+   through the sink the node's view installed and discards it when there is no view.
+   The host runs it inline if you are already on the FX thread and marshals it there
+   if you are not — which is what makes a `NodeTimer` tick safe to show something.
+   Read your node's state *inside* the block; it may run later than the call.
+   `BaseNode.hasView()` asks the question directly, for skipping work that exists
+   only to feed a control.
+
+`AutoStartable.autoStartIfWasRunning()` is where this pays off: **its thread is the
+loader's**, not promised to be the FX thread, and the node it reaches may never have
+been drawn.
+
+These are **additions** to the API — against an older version they will not compile,
+so bump the version you pinned in rule 1. Nothing forces the change: a library that
+ignores them behaves exactly as it always has in a window, and stays exactly as
+broken outside one, where the first loader without a canvas hits a
+`NullPointerException` in your `start()`.
+
 ---
 
 ## Things that will bite you otherwise
@@ -150,7 +206,7 @@ a socket bind, an HTTP call, a gateway login — does: keep it off the FX thread
 hop back to show the result.
 
 **Split your teardown.** `onRemoved()` runs on the removing thread and is not time
-bounded — use it for fast, thread-affine work such as stopping a `Timeline` or
+bounded — use it for fast, thread-affine work such as stopping a `NodeTimer` or
 unregistering a name. Anything that waits on the outside world (reaping a child
 process, withdrawing an mDNS registration, logging a client out) goes in
 `releaseResources()`, which runs on a worker under a per-node limit, concurrently
@@ -172,13 +228,13 @@ Everything in `housegraph-api`:
 | --- | --- |
 | `graph` | `BaseNode`, `NodeVariable`, `FlowPort`, `Edge`, `ProcessContext`, `ExecutionPolicy`, `TypeConverters` |
 | `annotations` | `@Display.Name`, `@Display.Description`, `@Node.Type`, `@Node.Kind`, `@Node.Keywords`, `@Node.Disabled` |
-| `sdk` | `NodeContentProvider` (inline JavaFX UI), `AutoStartable` (resume on load), `ValueEditors`, `Secrets` |
+| `sdk` | `NodeContentProvider` (inline JavaFX UI), `AutoStartable` (resume on load), `NodeTimer` (a toolkit-free clock), `NodePresentation` (behind `BaseNode.present`), `ValueEditors`, `Secrets`, `RuntimeMode` |
 | `logging` | `Log.get(YourClass.class)` — lands in HouseGraph's own log window and file |
 | `resource` | `ResourceRegistry` — long-lived resources referenced by name rather than wired |
 | `storage`, `store` | `AppDirectories`, `SecretsStore`, `JsonDocumentStore` |
 
-The three `sdk` extension points are dispatched by the host with `instanceof`, so
-implementing one is the entire opt-in. **Resolve secrets through `sdk.Secrets`**,
+`NodeContentProvider`, `AutoStartable` and `ValueEditors` are dispatched by the host
+with `instanceof`, so implementing one is the entire opt-in. **Resolve secrets through `sdk.Secrets`**,
 not `SecretsStore` directly — it does nothing different today, but it is the seam a
 per-library grant would be added behind.
 
@@ -245,5 +301,6 @@ not need.
 - [ ] `slf4j-api` excluded from every dependency with a path to it
 - [ ] `javafx.scene.Node` never imported
 - [ ] Teardown split between `onRemoved()` and `releaseResources()`, both idempotent
+- [ ] Running state in a field, clocks on `NodeTimer`, control updates via `present(...)`
 - [ ] Single jar, or assets named `<pluginId>-<version>-all.jar`
 - [ ] Built jar contains no `housegraph-api`, no `org.slf4j`, no SLF4J provider

@@ -9,15 +9,13 @@ import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.resource.ResourceRegistry;
 import io.github.jaymcole.housegraph.sdk.AutoStartable;
 import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
+import io.github.jaymcole.housegraph.sdk.NodeTimer;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.util.Duration;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -36,6 +34,15 @@ import java.util.Map;
  * If it was running when the graph was saved, it resumes automatically on load: the running
  * flag rides along in {@link #saveState()} and {@link #autoStartIfWasRunning()} presses Start
  * for the user (see {@link AutoStartable}).
+ *
+ * <h2>It runs with or without a view</h2>
+ * The clock is a {@link NodeTimer} rather than a {@code javafx.animation.Timeline}, and the
+ * registration, the counter and the running flag are all fields of this node. So starting,
+ * publishing, stopping and resuming work when nothing has drawn it — a headless run, or a graph
+ * used from inside another graph. The name field, the two buttons and the status label are
+ * presentation only, and every write to them goes through {@link #present(Runnable)}: discarded
+ * when there is no view, marshalled onto the FX thread when there is, which is what the
+ * once-a-second publish needs since it happens on a timer thread.
  */
 @Display.Name("Echo Resource")
 @Display.Description("Hosts a named echo resource that other nodes publish to and listen on.")
@@ -43,10 +50,13 @@ import java.util.Map;
 @Keywords({"echo", "resource", "connection", "server", "host", "publish", "broadcast", "named"})
 public class EchoResourceNode extends BaseNode implements NodeContentProvider, AutoStartable {
 
-    private String resourceName = "echo";
-    private Timeline timeline;
-    private int counter;
-    private boolean running;
+    private static final long EMIT_MILLIS = 1_000;
+
+    private final NodeTimer clock = new NodeTimer("EchoResource");
+
+    private volatile String resourceName = "echo";
+    private volatile int counter;
+    private volatile boolean running;
     /** True when this node was running at the moment the loaded graph was saved; drives {@link #autoStartIfWasRunning()}. */
     private boolean wasRunning;
 
@@ -98,6 +108,16 @@ public class EchoResourceNode extends BaseNode implements NodeContentProvider, A
         return wasRunning;
     }
 
+    /** Test seam: whether this resource is currently registered and publishing. */
+    boolean isRunning() {
+        return running;
+    }
+
+    /** Test seam: the name this resource publishes under, which the UI's name field edits. */
+    String resourceName() {
+        return resourceName;
+    }
+
     @Override
     protected void onRemoved() {
         stop();
@@ -122,7 +142,13 @@ public class EchoResourceNode extends BaseNode implements NodeContentProvider, A
         statusLabel.setStyle("-fx-text-fill: #aaaaaa; -fx-font-size: 10px;");
 
         HBox buttons = new HBox(6, startButton, stopButton);
-        return new VBox(4, nameField, buttons, statusLabel);
+        VBox box = new VBox(4, nameField, buttons, statusLabel);
+        // A view built while this resource is already live (a rebuild, or a canvas opened on an
+        // already-running node) must come up locked and labelled, not offering Start again.
+        if (running) {
+            showRunning();
+        }
+        return box;
     }
 
     private void start() {
@@ -131,37 +157,41 @@ public class EchoResourceNode extends BaseNode implements NodeContentProvider, A
         }
         running = true;
         counter = 0;
-        // Name is locked while running so the registered name can't drift from what's published.
-        nameField.setDisable(true);
-        startButton.setDisable(true);
-        stopButton.setDisable(false);
         ResourceRegistry.shared().register(resourceName, this);
-
-        timeline = new Timeline(new KeyFrame(Duration.seconds(1), e -> emit()));
-        timeline.setCycleCount(Timeline.INDEFINITE);
-        timeline.play();
-        statusLabel.setText("Running as \"" + resourceName + "\"");
+        clock.start(EMIT_MILLIS, this::emit);
+        showRunning();
     }
 
+    /** One publish, on a {@link NodeTimer} thread — hence the status label going via {@link #present}. */
     private void emit() {
         counter++;
         ResourceRegistry.shared().publish(resourceName, "tick " + counter);
-        statusLabel.setText("Published tick " + counter);
+        present(() -> statusLabel.setText("Published tick " + counter));
     }
 
-    /** Idempotent, UI-optional teardown — used by the Stop button and by {@link #onRemoved()}. */
+    /**
+     * Idempotent teardown — used by the Stop button, by the flow-free {@link #onRemoved()}, and by
+     * a headless caller that never had controls to reset.
+     */
     private void stop() {
         running = false;
-        if (timeline != null) {
-            timeline.stop();
-            timeline = null;
-        }
+        clock.stop();
         ResourceRegistry.shared().unregister(resourceName);
-        if (nameField != null) {
+        present(() -> {
             nameField.setDisable(false);
             startButton.setDisable(false);
             stopButton.setDisable(true);
             statusLabel.setText("Stopped");
-        }
+        });
+    }
+
+    private void showRunning() {
+        present(() -> {
+            // Name is locked while running so the registered name can't drift from what's published.
+            nameField.setDisable(true);
+            startButton.setDisable(true);
+            stopButton.setDisable(false);
+            statusLabel.setText("Running as \"" + resourceName + "\"");
+        });
     }
 }

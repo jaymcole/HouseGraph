@@ -297,6 +297,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     /** The view/wiring half of adding a node — used on its own when a node's view is rebuilt in place (the node stays in the graph). */
     private void addNodeView(NodeView nodeView, double contentX, double contentY) {
+        // Re-arms the node's present(...) sink. Ordinarily the view's constructor already did it,
+        // but undoing a delete re-adds the same NodeView, whose sink removeNodeView cleared.
+        nodeView.attachPresentation();
         nodeView.setLayoutX(contentX);
         nodeView.setLayoutY(contentY);
 
@@ -331,6 +334,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     /** The view half of removing a node — used on its own when rebuilding a view (the node stays in the graph, so onRemoved must not fire). */
     private void removeNodeView(NodeView nodeView) {
+        nodeView.detachPresentation();
         content.getChildren().remove(nodeView);
         nodeViews.remove(nodeView);
         nodeViewByNode.remove(nodeView.getNode());

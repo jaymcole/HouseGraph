@@ -8,7 +8,10 @@ This package is the headless core. Hold these invariants when editing here:
 
 - **Never import JavaFX into this package.** Engine-to-UI notifications go through
   the injected `callbackExecutor` and the `GraphExecutionListener` interface only.
-  Breaking this breaks headless testing.
+  Breaking this breaks headless testing. `BaseNode` carries a `sdk.NodePresentation`
+  for the same reason: node UI updates travel as a plain `Runnable` and the host
+  decides where to run them, so a node can have inline controls without this package
+  knowing a toolkit exists.
 - **Data and flow stay separate.** `NodeVariable`/`Edge` carry typed values, pulled
   on demand; `FlowPort`/`FlowEdge` carry only control order, pushed on trigger.
 - **Threading is load-bearing.** Runs execute concurrently on a virtual-thread

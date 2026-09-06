@@ -50,6 +50,15 @@ Do not. Factor the logic out of `createNodeContent()` into a plain method or a
 separate class and test that. This repository has no way to test a window, which is
 why `plugin/`, `cli/` and `remote/` are headless too.
 
+**A running lifecycle is not UI, so test it.** A node that owns its running flag,
+drives its clock with `sdk.NodeTimer` and routes control updates through
+`present(...)` starts, ticks, stops and resumes with `createNodeContent()` never
+called and no toolkit started — see
+[inline-ui.md](inline-ui.md#your-node-must-work-without-its-ui).
+`TriggerRepeatingNodeTest` and `EchoResourceNodeTest` do exactly that, including
+`autoStartIfWasRunning()` on a node loaded as running. A node whose lifecycle cannot
+be tested this way has that state in a control, which is the bug.
+
 ## Nodes with state
 
 `saveState()`/`loadState()` round-tripping is worth a direct test, especially for a
@@ -67,6 +76,12 @@ or use the package-visible constructors. Never touch the real user profile. Foll
 No real network calls. No reliance on wall-clock timing beyond `awaitIdle`. If your
 node has a clock or a launcher, inject it — `SupervisorTest` asserts a sixty-second
 backoff in microseconds with an injected clock.
+
+Where a real timer must run, **wait on the condition, not on the clock**: a latch or
+a bounded poll for the effect you expect, with a timeout generous enough that a
+loaded machine only takes longer, never a different answer. Proving a *stopped*
+timer is the one case that has to spend time — sample the count, wait past a couple
+of periods, assert it did not move.
 
 ---
 

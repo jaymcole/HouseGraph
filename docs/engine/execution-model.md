@@ -214,6 +214,12 @@ The methods the engine calls on a node, all no-ops by default:
 | `ctx.triggeredVia()` | read from within `process()` | tell apart which flow-in port fired this node |
 | `runFlowBranchToCompletion(port, seed)` | from within `process()` | loop: run one branch per item |
 
+Two more are the node's own, not the engine's: `present(Runnable)` runs a block
+against the node's inline controls and discards it when nothing is drawing that
+node, and `hasView()` reports whether anything is. They are what keep a node's
+running lifecycle independent of whether it was ever rendered — see
+[`../nodes/inline-ui.md`](../nodes/inline-ui.md#your-node-must-work-without-its-ui).
+
 Full detail on the teardown pair is in
 [node-lifecycle.md](node-lifecycle.md).
 
