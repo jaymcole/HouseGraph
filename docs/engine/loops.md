@@ -49,6 +49,15 @@ delay](execution-model.md#watching-a-run) like any other flow-driven run, where 
 loop body instead inherits its driver's. Whoever calls it blocks for the whole
 branch, so an event source calls it off the thread it needs to keep free.
 
+## The other blocking primitive
+
+`NodeGraph.runToCompletion` shares this one's shape — build a run directly, seed it, wait
+for it — and answers a different question: it runs an entry node of *another* graph and
+hands its caller the results, rather than re-running a branch of this one. Neither
+consults the entry node's `ExecutionPolicy`, for the same reason: a coalesced sub-run
+would leave its caller blocked on a run that never starts. It is documented in
+[execution-model.md](execution-model.md#driving-another-graphs-run).
+
 ---
 
 **When you change this, update…** this file and the `NodeGraph` Javadoc whenever

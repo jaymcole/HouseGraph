@@ -90,6 +90,30 @@ shared downstream node **serialize** at it unless that node is itself set
 `PARALLEL`. Graphs whose entries are all non-`PARALLEL` never contend, because no
 concurrent runs start.
 
+## A node that drives another graph
+
+A module node's `process()` is a whole run of a second graph, so its policy governs how
+many invocations of that module may be in flight at once.
+
+`QUEUE`, the default, is what makes a module safe without the user thinking about it: the
+mid-cascade gate is held for the node's own `process()`, and here that is the entire
+invocation, so a second run waits for the first module run to finish.
+
+`PARALLEL` is **supported, not refused**. Each invocation is a separate driven run with
+its own `ExecutionContext` on the same, shared, module graph — its arguments are seeded
+into that context and its results are read back inside it — so two concurrent invocations
+cannot see each other's values or each other's exits. What they share is the module's
+*nodes*, and those are governed by their own policies exactly as if they had been reached
+by two concurrent runs of one graph: a stateful interior node still serializes on the
+default `QUEUE`. The one thing per-run isolation cannot cover is state that is app-wide by
+construction — a `ResourceRegistry` name published from inside the module — which is a
+hazard for a *second instance* of that module, not for a second invocation of one. See
+[`../nodes/long-lived-resources.md`](../nodes/long-lived-resources.md).
+
+The driven run's own entry node is not gated: coalescing it would leave the driving
+`process()` blocked on a run that never starts. See
+[execution-model.md](execution-model.md#driving-another-graphs-run).
+
 ## Scope limit
 
 The gate is **process-scoped, not subgraph-scoped**: it covers a node's own

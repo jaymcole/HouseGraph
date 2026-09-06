@@ -79,6 +79,27 @@ a bot under a chosen name, forwards incoming messages and slash commands into th
 registry as events, resolves its token through `sdk.Secrets` so the token is never
 wired or saved, and connects and disconnects on user action.
 
+## Inside a module
+
+**A name registered from inside a module is still app-wide**, and that is the one place
+the registry's name-keying has a sharp edge. Two references to the same module each stand
+up their own copy of its graph, so a resource node inside it registers the same name
+twice: the second `register` displaces the first, and everything published under that name
+is delivered to both copies' listeners.
+
+Nothing renames it. Namespacing per module instance would mean a scope every node passed
+through `register`, `find`, `publish` and `subscribe` — including every out-of-tree node,
+which this repository cannot change — so a scope they were not passed is a scope they
+would not honour. Refusing to run a module that contains a resource node would ban the
+single-instance case, which is both useful and correct.
+
+What happens instead is that the collision is **named**: standing a module up snapshots
+what each registered name points at, and logs a warning against the module when a name it
+registered displaced something. So the rule for a module author is a plain one — **a
+module that publishes a resource name can be used once.** A module meant to be referenced
+several times should take the resource in as a `Module Input` from the consuming graph
+instead, which is the point-to-point case the next section is about anyway.
+
 ## When not to use the registry
 
 **Where a connection is point-to-point, a plain data edge is clearer**, because the

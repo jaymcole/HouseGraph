@@ -87,6 +87,13 @@ running in the background. Tests use it to wait deterministically for a run befo
 asserting. Because reconvergence is not implicitly barriered, a test that needs a
 specific order should impose it structurally. See [testing.md](testing.md).
 
+**Waiting for one run, not the graph**, is a different question, and `awaitIdle()`
+answers it wrongly: a graph holding a repeating trigger is never idle. That is what
+`runToCompletion` is for — a node driving a *second* graph and blocking on the run it
+started there. It counts as an outstanding pass on the graph it drives, so that graph's
+own `awaitIdle()` covers an invocation. See
+[execution-model.md](execution-model.md#driving-another-graphs-run).
+
 ---
 
 **When you change this, update…** this file and the `NodeGraph` /

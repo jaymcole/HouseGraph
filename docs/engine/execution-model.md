@@ -40,6 +40,51 @@ cardinality gate.
 A **run** is one trigger firing and everything that cascades from it. Runs are the
 unit of isolation throughout the engine — see [concurrency.md](concurrency.md).
 
+## Driving another graph's run
+
+A node whose work *is* another graph — a module node running the graph it references —
+starts a run on that second `NodeGraph` and blocks until **that run** settles.
+`NodeGraph.runToCompletion(entry, seed, harvest, cancelled)` is the primitive, and
+`runToCompletion(seed, harvest, cancelled)` is its data-only shape, which seeds a context
+and fires nothing.
+
+Neither `execute` nor `awaitIdle()` could serve. `execute` returns immediately, and a
+driving `process()` cannot: `Run.fire` reads the driver's `activate`d flow-out ports the
+moment `process()` returns, so a port chosen after that selects nothing.
+`awaitIdle()` waits for the whole graph, which never settles if it holds a repeating
+trigger.
+
+Three things cross the boundary, and each is wrong by default rather than merely absent:
+
+- **Values in**, through `seed`, which runs in the driven run's own `ExecutionContext`
+  before the entry fires — the same mechanism as `execute(node, prepare)`, for the same
+  reason. It runs on the driven graph's thread, so it must *carry* the values it writes:
+  the driving run's overlay is not visible from inside.
+- **Values out**, through `harvest`, which runs once the run has quiesced and **still
+  inside its context**, holding a `RunScope`. That is the only moment the run's computed
+  values can be read as its own; afterwards a node's ports hold the committed mirror,
+  which is last-run-wins across concurrent runs. `RunScope.pull` resolves a node within
+  the run (short-circuiting on anything it already ran), and `RunScope.hasRun` says
+  whether control reached a node — per run, so two overlapping runs never see each
+  other's answer.
+- **Cancellation**, which is OR-ed into the driven run: a driver superseded by a
+  `RESTART`, timed out, or interrupted stops the run it drives. Nodes inside see it
+  through their `ProcessContext`, and the cascade stops at the next node boundary. The
+  wait polls and then throws `CancellationException` rather than waiting the run out — a
+  cancelled driver must return promptly, and an interior node that ignores cancellation
+  would otherwise hold it.
+
+Two things do **not** cross by themselves, and a driver hands them on through
+`BaseNode.getOwningGraph()`: the [callback executor](#the-callback-executor-seam), which a
+fresh graph defaults to `Runnable::run`, and the [step delay](#watching-a-run), which is
+per-graph and would leave a watched run opaque the moment it entered the second graph.
+
+The driven graph's own `ExecutionPolicy` at the entry node is **not** consulted — the run
+is built directly, as `runFlowBranchToCompletion`'s is, because coalescing a driven run
+would leave its driver blocked on a run that never starts. Nodes *inside* it are gated by
+their own policies as usual. What that means for the driving node is in
+[execution-policy.md](execution-policy.md).
+
 ## Node status
 
 `NodeProcessingStatus`: `NOT_STARTED → IN_PROGRESS → SUCCESS | FAILED`.
@@ -213,6 +258,7 @@ The methods the engine calls on a node, all no-ops by default:
 | `activateNone()` | from within `process()` | arm/disarm: fire no flow-out port at all this run |
 | `ctx.triggeredVia()` | read from within `process()` | tell apart which flow-in port fired this node |
 | `runFlowBranchToCompletion(port, seed)` | from within `process()` | loop: run one branch per item |
+| `getOwningGraph()` | from a node driving a second graph | pass on the callback executor and step delay |
 
 Two more are the node's own, not the engine's: `present(Runnable)` runs a block
 against the node's inline controls and discards it when nothing is drawing that
