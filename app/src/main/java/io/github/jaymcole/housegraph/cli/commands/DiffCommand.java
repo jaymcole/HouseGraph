@@ -3,7 +3,7 @@ package io.github.jaymcole.housegraph.cli.commands;
 import io.github.jaymcole.housegraph.catalog.GraphDiff;
 import io.github.jaymcole.housegraph.cli.Args;
 import io.github.jaymcole.housegraph.cli.Command;
-import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
+import io.github.jaymcole.housegraph.saveformat.GraphFileIO;
 import org.json.JSONArray;
 import org.json.JSONObject;
 

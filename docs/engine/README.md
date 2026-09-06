@@ -27,8 +27,9 @@ a deliberate decision, not an incidental commit.
    reference to a secret, never the value.
 5. **All on-disk paths go through `AppDirectories`.** No hardcoded home
    directories, no OS-specific locations elsewhere.
-6. **Pure logic stays headless.** `NodeGraph`, `GraphFileIO`'s JSON conversion,
-   `GraphLoader` and `ObjectProperties` avoid JavaFX so they can be tested directly.
+6. **Pure logic stays headless.** `NodeGraph`, `saveformat.GraphFileIO`'s JSON
+   conversion, `GraphLoader` and `ObjectProperties` avoid JavaFX so they can be
+   tested directly.
 
 ## API stability
 

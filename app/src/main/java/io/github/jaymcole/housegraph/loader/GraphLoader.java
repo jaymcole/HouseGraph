@@ -8,10 +8,10 @@ import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
-import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
+import io.github.jaymcole.housegraph.saveformat.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.saveformat.ClipboardFlowEdge;
+import io.github.jaymcole.housegraph.saveformat.ClipboardNode;
+import io.github.jaymcole.housegraph.saveformat.GraphSnapshot;
 
 import java.util.ArrayList;
 import java.util.Collections;

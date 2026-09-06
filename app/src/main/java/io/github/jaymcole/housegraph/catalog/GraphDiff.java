@@ -35,7 +35,7 @@ import java.util.function.Function;
  * <h2>Number formatting is not a change</h2>
  * A proposed file need not match {@code org.json}'s own number formatting: {@code 10} and
  * {@code 10.0} compare equal, so a hand- or agent-written file that spells a coordinate
- * differently from what {@link io.github.jaymcole.housegraph.ui.io.GraphFileIO} would have
+ * differently from what {@link io.github.jaymcole.housegraph.saveformat.GraphFileIO} would have
  * written is not reported as a change.
  */
 public final class GraphDiff {

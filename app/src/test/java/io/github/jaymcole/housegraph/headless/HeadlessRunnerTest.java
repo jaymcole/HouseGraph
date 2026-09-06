@@ -6,10 +6,10 @@ import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginLoader;
 import io.github.jaymcole.housegraph.remote.ExitCodes;
-import io.github.jaymcole.housegraph.ui.io.SaveFileFixture;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
-import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
+import io.github.jaymcole.housegraph.saveformat.ClipboardDataEdge;
+import io.github.jaymcole.housegraph.saveformat.ClipboardNode;
+import io.github.jaymcole.housegraph.saveformat.GraphSnapshot;
+import io.github.jaymcole.housegraph.saveformat.SaveFileFixture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

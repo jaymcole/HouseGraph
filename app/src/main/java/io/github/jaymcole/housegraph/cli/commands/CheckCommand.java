@@ -4,7 +4,7 @@ import io.github.jaymcole.housegraph.cli.Args;
 import io.github.jaymcole.housegraph.cli.Command;
 import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
-import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
+import io.github.jaymcole.housegraph.saveformat.GraphFileIO;
 
 import java.io.File;
 import java.io.IOException;

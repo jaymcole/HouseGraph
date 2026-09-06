@@ -10,8 +10,8 @@ import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.sdk.AutoStartable;
-import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
+import io.github.jaymcole.housegraph.saveformat.ClipboardNode;
+import io.github.jaymcole.housegraph.saveformat.GraphFileIO;
 import org.json.JSONObject;
 
 import java.io.File;

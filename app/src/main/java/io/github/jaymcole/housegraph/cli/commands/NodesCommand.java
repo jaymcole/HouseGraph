@@ -7,7 +7,7 @@ import io.github.jaymcole.housegraph.cli.Command;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginLoader;
-import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
+import io.github.jaymcole.housegraph.saveformat.GraphFileIO;
 import org.json.JSONObject;
 
 import java.io.File;

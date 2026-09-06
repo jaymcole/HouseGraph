@@ -12,10 +12,10 @@
  *       ({@code SecretsEditor}).</li>
  *   <li>{@link io.github.jaymcole.housegraph.ui.command} — reversible mutations
  *       ({@code Command}) tracked by {@code UndoManager}.</li>
- *   <li>{@link io.github.jaymcole.housegraph.ui.snapshot} — the snapshot data model
- *       ({@code GraphSnapshot} and its {@code Clipboard*} records) shared by copy/paste and
- *       save/load.</li>
- *   <li>{@link io.github.jaymcole.housegraph.ui.io} — save/load ({@code GraphFileIO}).</li>
+ *   <li>{@link io.github.jaymcole.housegraph.ui.io} — the canvas-facing save/load wrappers
+ *       ({@code GraphFileIO}); the format itself and the snapshot data model
+ *       ({@code GraphSnapshot} and its {@code Clipboard*} records) live in the headless
+ *       {@link io.github.jaymcole.housegraph.saveformat} package outside this layer.</li>
  * </ul>
  * All code here runs on the JavaFX Application Thread; the engine marshals its callbacks
  * onto it. See {@code docs/engine/ui-layer.md}.

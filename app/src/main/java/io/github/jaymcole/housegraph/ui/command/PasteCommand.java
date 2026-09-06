@@ -1,7 +1,7 @@
 package io.github.jaymcole.housegraph.ui.command;
 
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
-import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
+import io.github.jaymcole.housegraph.saveformat.GraphSnapshot;
 import io.github.jaymcole.housegraph.ui.view.NodeView;
 
 import io.github.jaymcole.housegraph.graph.NodeRegistry;

@@ -1,12 +1,15 @@
 # Save format
 
-`GraphFileIO` serializes a canvas to JSON and back, reusing the index-based
-`snapshot` shape (`GraphSnapshot`, `ClipboardNode`, `ClipboardDataEdge`,
-`ClipboardFlowEdge` in `ui/snapshot/`) built for copy/paste.
+`saveformat.GraphFileIO` converts a graph to JSON and back, reusing the index-based
+snapshot shape (`GraphSnapshot`, `ClipboardNode`, `ClipboardDataEdge`,
+`ClipboardFlowEdge`, all in `saveformat/`) built for copy/paste.
 
 The JSON conversion — `toJson` and `fromJson` — is free of any JavaFX or
-`GraphCanvas` dependency so the format can be unit-tested headlessly. `save` and
-`load` are the thin wrappers that touch a real canvas.
+`GraphCanvas` dependency so the format can be unit-tested headlessly, and lives in
+its own headless package rather than in `ui/` for the same reason `loader/` and
+`headless/` do — see [architecture.md](architecture.md). `ui.io.GraphFileIO`'s
+`save` and `load` are the thin wrappers that touch a real canvas, pulling a
+snapshot and camera state off it and handing them to this package.
 
 ## Shape
 

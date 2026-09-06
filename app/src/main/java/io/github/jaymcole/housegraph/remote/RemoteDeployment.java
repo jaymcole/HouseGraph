@@ -6,7 +6,7 @@ import io.github.jaymcole.housegraph.plugin.AutoInstallPlan;
 import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
-import io.github.jaymcole.housegraph.ui.io.GraphFileIO;
+import io.github.jaymcole.housegraph.saveformat.GraphFileIO;
 
 import java.io.IOException;
 import java.nio.file.Path;

@@ -6,8 +6,9 @@ layer knows about a higher one.
 ```
 ┌─ app/ ───────────────────────────────────────────────────┐
 │   ui/            JavaFX canvas, views, editors, undo,     │
-│                  save/load, the log and library windows   │
+│                  the log and library windows              │
 │        │                                                  │
+│   saveformat/    the graph JSON format: file ↔ snapshot   │
 │   loader/        a saved snapshot → a live NodeGraph      │
 │   headless/      one graph, running, with no window       │
 │   graph/nodes/   the built-in node library                │
@@ -30,7 +31,7 @@ Out-of-tree node libraries sit beside `app`, depending only on `housegraph-api`.
 | Module | Contains | Published |
 | --- | --- | --- |
 | `housegraph-api` | `graph/`, `sdk/`, `annotations/`, `logging/`, `resource/`, `storage/`, `store/` | Yes — node libraries compile against it |
-| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `loader/`, `headless/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
+| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `saveformat/`, `loader/`, `headless/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
 
 `graph/` is in the api module while `graph/nodes/` is in `app`. Distinct packages,
 not a split package.
@@ -41,29 +42,32 @@ not a split package.
   callback executor and the `GraphExecutionListener` interface. See
   [execution-model.md](execution-model.md).
 - **`ui/` orchestrates.** `GraphCanvas` owns a `NodeGraph` and a `NodeRegistry`,
-  renders views, wires gestures to engine calls, and drives save/load.
+  renders views, wires gestures to engine calls, and calls thin save/load wrappers
+  over `saveformat/`.
 - **`graph/nodes/`** holds dependency-free primitives only. Every integration
   category is an out-of-tree library.
-- **`app/loader/`, `app/headless/`, `app/plugin/`, `app/cli/` and `app/remote/` are
-  headless.** This repository has no way to test a window, so nothing worth testing
-  may live in one. `remote/` supervises a child process rather than running graphs
-  itself; `headless/` is what such a child can be, and is a package rather than part
-  of `remote/` so the supervisor does not depend on the thing it supervises.
-- **Opening a graph is not a canvas operation.** `GraphLoader` builds a snapshot's
-  nodes and edges onto a `NodeGraph` with no view involved; `GraphCanvas.place`
-  calls it and then draws the result. It sits in its own package rather than in
-  `ui/` because its callers — `headless/`, `cli/`, `remote/`, and a node that loads
-  another graph — are below the UI, and a downward dependency is the only kind
-  allowed.
-- **`ui/io/GraphFileIO` and `ui/snapshot/` are the exception, and are known to be
-  misplaced.** The JSON half of `GraphFileIO` has no view in it and is already read
-  by `cli/`, `remote/`, `catalog/` and now `headless/`; `loader/` and `headless/`
-  reach up for `GraphSnapshot` too. Moving both into a headless package is the fix.
-  It is not free — the snapshot records carry manual edge routing as
-  `javafx.geometry.Point2D`, so the move relocates a JavaFX dependency rather than
-  removing one, and it must not change a byte of the save format. Until then, this
-  is the one upward dependency in the tree, and it is not a licence for a second
-  kind.
+- **`app/saveformat/`, `app/loader/`, `app/headless/`, `app/plugin/`, `app/cli/` and
+  `app/remote/` are headless.** This repository has no way to test a window, so
+  nothing worth testing may live in one. `remote/` supervises a child process
+  rather than running graphs itself; `headless/` is what such a child can be, and
+  is a package rather than part of `remote/` so the supervisor does not depend on
+  the thing it supervises.
+- **The save format is not a canvas operation.** `saveformat/GraphFileIO` converts
+  a `GraphSnapshot` (and a `CameraState`) to a save file's JSON and back, with no
+  view involved; `ui/io/GraphFileIO`'s `save`/`load` are the thin wrappers that
+  pull a snapshot and camera state off a real `GraphCanvas` and hand them in. It
+  sits in its own package rather than in `ui/` because its callers — `cli/`,
+  `remote/`, `catalog/` and `headless/` — are below the UI, and a downward
+  dependency is the only kind allowed. `CameraState` moved with it, even though a
+  canvas's pan/zoom is also a view concept, because `cameraFromJson` returns it and
+  `toJson` takes it as a parameter; `GraphCanvas` imports it downward the same way
+  it imports `GraphSnapshot`.
+- **Opening a graph is not a canvas operation.** `GraphLoader` builds a
+  `saveformat.GraphSnapshot`'s nodes and edges onto a `NodeGraph` with no view
+  involved; `GraphCanvas.place` calls it and then draws the result. It sits in its
+  own package rather than in `ui/` because its callers — `headless/`, `cli/`,
+  `remote/`, and a node that loads another graph — are below the UI, and a
+  downward dependency is the only kind allowed.
 - **Running a graph is not a canvas operation either.** `headless/HeadlessRunner`
   opens a graph, resumes its `AutoStartable` nodes and stays up with no toolkit
   started. See [remote-runtime.md](remote-runtime.md).
@@ -83,7 +87,7 @@ not a split package.
 | `NodeSearchIndex` | Ranked search over the discovered node types. |
 | `MissingNode` | Placeholder for a node whose library isn't installed, preserving it verbatim. |
 | `PluginCatalog` / `PluginLoader` | What is installed, and the shared class loader serving it. |
-| `GraphLoader` | Builds a `GraphSnapshot`'s nodes and edges onto a `NodeGraph`, headlessly. |
+| `GraphLoader` | Builds a `saveformat.GraphSnapshot`'s nodes and edges onto a `NodeGraph`, headlessly. |
 | `HeadlessRunner` | Runs one graph with no window, until the process is signalled. |
 | `GraphCanvas` | The JavaFX canvas hosting node and edge views. |
 | `ResourceRegistry` | App-wide, name-keyed lookup and event pub/sub. |

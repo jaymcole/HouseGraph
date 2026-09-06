@@ -1,12 +1,7 @@
-package io.github.jaymcole.housegraph.ui.io;
+package io.github.jaymcole.housegraph.saveformat;
 
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.graph.BaseNode;
-import io.github.jaymcole.housegraph.ui.CameraState;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardDataEdge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardFlowEdge;
-import io.github.jaymcole.housegraph.ui.snapshot.ClipboardNode;
-import io.github.jaymcole.housegraph.ui.snapshot.GraphSnapshot;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
