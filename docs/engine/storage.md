@@ -18,7 +18,7 @@ The single source of truth for on-disk locations. One root per platform:
 
 Under it, a subdirectory per purpose, each created on demand: `secrets()`,
 `nodes()` (plus `nodeStorage(key)`), `plugins()` (plus `pluginJar(id, version)`),
-`saves()`, `remotes()` (plus `remoteRepo(key)`), `dataStores()` (plus
+`saves()`, `modules()`, `remotes()` (plus `remoteRepo(key)`), `dataStores()` (plus
 `dataStore(name)`), `config()`, `cache()`, `logs()`.
 
 Every key is sanitised so it cannot escape its folder.
@@ -30,7 +30,7 @@ Every key is sanitised so it cannot escape its folder.
 - `resolveRoot(...)` is pure, with no filesystem access, so each OS branch is
   unit-testable.
 
-### Two easily-confused pairs
+### Three easily-confused pairs
 
 **`nodes()` vs `plugins()`** mean opposite things. `nodes()` is a node's *private
 runtime storage*; `plugins()` holds *installed node-library code*, the jars
@@ -47,6 +47,19 @@ Everything under `remotes()` is a **git mirror**, overwritten wholesale on every
 sync, so nothing put there by hand survives. The key is derived from the repository
 URL rather than chosen, so the same remote always maps to the same directory across
 restarts. See [remote-runtime.md](remote-runtime.md).
+
+**`saves()` vs `modules()`.** Both hold ordinary graph files, and the difference is
+who reads them. `saves()` is where a user keeps their own work, and is only a
+starting directory for the file dialog — nothing searches it. `modules()` is the one
+place a **module reference is resolved**: `ModuleLibrary` scans it for `*.json` and
+indexes each file by the stable `module.id` in its root, so a module found there
+keeps working when its file is moved or renamed. The id is what identifies a module;
+a path is only a hint. See
+[`../decisions/0011-modules-are-referenced-by-id.md`](../decisions/0011-modules-are-referenced-by-id.md).
+
+Publishing a graph as a module (`ModuleLibrary.publish`) is the only thing that
+assigns an id, and the only thing here that writes into a file it was handed.
+Scanning never does: a read of this directory must not rewrite the files in it.
 
 ### Runtime data written outside the save
 

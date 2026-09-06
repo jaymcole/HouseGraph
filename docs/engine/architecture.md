@@ -10,6 +10,7 @@ layer knows about a higher one.
 │        │                                                  │
 │   saveformat/    the graph JSON format: file ↔ snapshot   │
 │   loader/        a saved snapshot → a live NodeGraph      │
+│   modules/       a graph referenced by another graph      │
 │   headless/      one graph, running, with no window       │
 │   graph/nodes/   the built-in node library                │
 │   plugin/        host side of out-of-tree libraries       │
@@ -31,7 +32,7 @@ Out-of-tree node libraries sit beside `app`, depending only on `housegraph-api`.
 | Module | Contains | Published |
 | --- | --- | --- |
 | `housegraph-api` | `graph/`, `sdk/`, `annotations/`, `logging/`, `resource/`, `storage/`, `store/` | Yes — node libraries compile against it |
-| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `saveformat/`, `loader/`, `headless/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
+| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `saveformat/`, `loader/`, `modules/`, `headless/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
 
 `graph/` is in the api module while `graph/nodes/` is in `app`. Distinct packages,
 not a split package.
@@ -46,8 +47,8 @@ not a split package.
   over `saveformat/`.
 - **`graph/nodes/`** holds dependency-free primitives only. Every integration
   category is an out-of-tree library.
-- **`app/saveformat/`, `app/loader/`, `app/headless/`, `app/plugin/`, `app/cli/` and
-  `app/remote/` are headless.** This repository has no way to test a window, so
+- **`app/saveformat/`, `app/loader/`, `app/modules/`, `app/headless/`, `app/plugin/`,
+  `app/cli/` and `app/remote/` are headless.** This repository has no way to test a window, so
   nothing worth testing may live in one. `remote/` supervises a child process
   rather than running graphs itself; `headless/` is what such a child can be, and
   is a package rather than part of `remote/` so the supervisor does not depend on
@@ -68,6 +69,16 @@ not a split package.
   own package rather than in `ui/` because its callers — `headless/`, `cli/`,
   `remote/`, and a node that loads another graph — are below the UI, and a
   downward dependency is the only kind allowed.
+- **A module is a graph identified by an id, and `modules/` is the only place that
+  looks for one.** `ModuleFile` answers "is this parsed root a module, what is its
+  id, what does it reference" purely; `ModuleInterface` derives the ports a graph's
+  boundary markers declare; `ModuleLibrary` is the only component that touches disk,
+  and the only one that assigns an id. It sits beside `saveformat/` and `loader/`
+  rather than inside either because its callers — `graph/nodes/module/`,
+  `saveformat/`, `catalog/` and `cli/` — are below the UI. `catalog/` depends on it,
+  never the reverse: `GraphStructureValidator` does no I/O, so following a module
+  reference is a resolver the caller hands in. See
+  [save-format.md](save-format.md).
 - **Running a graph is not a canvas operation either.** `headless/HeadlessRunner`
   opens a graph, resumes its `AutoStartable` nodes and stays up with no toolkit
   started. See [remote-runtime.md](remote-runtime.md).
@@ -88,6 +99,8 @@ not a split package.
 | `MissingNode` | Placeholder for a node whose library isn't installed, preserving it verbatim. |
 | `PluginCatalog` / `PluginLoader` | What is installed, and the shared class loader serving it. |
 | `GraphLoader` | Builds a `saveformat.GraphSnapshot`'s nodes and edges onto a `NodeGraph`, headlessly. |
+| `ModuleLibrary` | Finds a module file by the stable id in its root; assigns that id on publish. |
+| `ModuleInterface` | The ports a graph's boundary markers declare, in the consuming graph's orientation. |
 | `HeadlessRunner` | Runs one graph with no window, until the process is signalled. |
 | `GraphCanvas` | The JavaFX canvas hosting node and edge views. |
 | `ResourceRegistry` | App-wide, name-keyed lookup and event pub/sub. |

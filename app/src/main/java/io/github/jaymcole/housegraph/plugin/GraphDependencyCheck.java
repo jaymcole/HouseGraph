@@ -18,6 +18,14 @@ import java.util.Set;
  * The user can be told what is missing — and offered the repository it comes from — before the
  * graph is half-built.
  *
+ * <p><b>A referenced module's requirements are read from the same root.</b> A graph using another
+ * graph as a module needs whatever <em>that</em> graph needs — a module built from a Discord node
+ * means the consumer needs the Discord library, even though no node on the consumer's own canvas is
+ * a Discord node and its {@code plugins} table therefore never mentions one. Resolving a module file
+ * to find that out would be I/O, which is exactly what this class must not do, so the requirement is
+ * recorded into the consumer's own {@code modules} rows when the graph is saved and read back from
+ * there. See {@code docs/engine/plugin-runtime.md}.
+ *
  * <p><b>A save file is untrusted input.</b> The repository URLs it carries are a suggestion to
  * download and execute code, so a caller may offer to install from one but must never do it
  * silently. See {@code docs/engine/plugin-runtime.md}.
@@ -93,21 +101,41 @@ public final class GraphDependencyCheck {
      * rather than merging reports after the fact. Duplicates within one file are dropped, first
      * occurrence winning.
      *
+     * <p>Reads the root {@code plugins} table first, then each {@code modules} row's own
+     * {@code plugins} array — the libraries a referenced module needs, recorded there when this graph
+     * was saved. The root table comes first so a library named both directly and through a module
+     * keeps the consumer's own row, which is the one written against a live catalog.
+     *
      * <p>A v1 file has no {@code plugins} table and yields nothing, even when it does use an
      * uninstalled library's node. Those nodes still become placeholders and are preserved, but with
      * no repository recorded there is nothing to offer. The first save under v2 fixes it for good.
+     * A pre-v3 file likewise has no {@code modules} table, and could not have referenced a module.
      *
      * @param saveRoot the parsed save file
-     * @return what it says it needs, in file order
+     * @return what it says it needs, in file order, its own libraries before its modules'
      */
     public static List<RequiredPlugin> requiredBy(JSONObject saveRoot) {
         List<RequiredPlugin> required = new ArrayList<>();
-        JSONArray plugins = saveRoot.optJSONArray("plugins");
-        if (plugins == null) {
-            return required;
-        }
-
         Set<String> seen = new LinkedHashSet<>();
+        readPluginRows(saveRoot.optJSONArray("plugins"), seen, required);
+
+        JSONArray modules = saveRoot.optJSONArray("modules");
+        if (modules != null) {
+            for (int i = 0; i < modules.length(); i++) {
+                JSONObject moduleRow = modules.optJSONObject(i);
+                if (moduleRow != null) {
+                    readPluginRows(moduleRow.optJSONArray("plugins"), seen, required);
+                }
+            }
+        }
+        return required;
+    }
+
+    /** Appends every well-formed row of one {@code plugins} array, skipping ids already collected. */
+    private static void readPluginRows(JSONArray plugins, Set<String> seen, List<RequiredPlugin> into) {
+        if (plugins == null) {
+            return;
+        }
         for (int i = 0; i < plugins.length(); i++) {
             JSONObject row = plugins.optJSONObject(i);
             if (row == null) {
@@ -117,13 +145,12 @@ public final class GraphDependencyCheck {
             if (id.isEmpty() || !seen.add(id)) {
                 continue;
             }
-            required.add(new RequiredPlugin(
+            into.add(new RequiredPlugin(
                     id,
                     row.optString("name", id),
                     emptyToNull(row.optString("version", "")),
                     emptyToNull(row.optString("repository", ""))));
         }
-        return required;
     }
 
     /**

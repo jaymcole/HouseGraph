@@ -25,7 +25,7 @@ import java.util.function.Function;
  * reported as a cascade of per-field modifications rather than one clean move — a limitation of
  * the format's own addressing, not of this comparison.
  * <p>
- * {@code dataEdges}, {@code flowEdges} and {@code plugins} carry no such positional meaning —
+ * {@code dataEdges}, {@code flowEdges}, {@code plugins} and {@code modules} carry no such positional meaning —
  * nothing else references an edge or a plugin row by its index in those arrays — so reordering
  * one of those arrays alone is reported as no change. Edges are matched by full content
  * (including waypoints); a changed edge is reported as one removed and one added rather than a
@@ -94,7 +94,7 @@ public final class GraphDiff {
                 case "dataEdges", "flowEdges" ->
                         diffBag(changes, pointer, current.optJSONArray(key), proposed.optJSONArray(key),
                                 GraphDiff::canonicalize);
-                case "plugins" ->
+                case "plugins", "modules" ->
                         diffBag(changes, pointer, current.optJSONArray(key), proposed.optJSONArray(key),
                                 row -> row instanceof JSONObject json ? json.optString("id", "") : canonicalize(row));
                 default -> diffValue(changes, pointer,

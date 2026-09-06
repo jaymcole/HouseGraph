@@ -58,7 +58,10 @@ Then, as needed:
   tested with no toolkit started. Never branch on `RuntimeMode.isDaemon()` for this:
   "has a view" is per node (`hasView()`), not per process.
 - **Dynamic ports** → react in `onInputEdgeAdded/Removed`, persist the shape in
-  `saveState` (`object/ObjectDecomposerNode.java`).
+  `saveState` (`object/ObjectDecomposerNode.java`). Ports derived from something
+  other than the wiring persist the shape just the same, and must *not* react to the
+  edge hooks (`module/ModuleNode.java`) — see
+  [`docs/nodes/dynamic-ports.md`](../../../../../../../../../../docs/nodes/dynamic-ports.md).
 
 ## Rules
 

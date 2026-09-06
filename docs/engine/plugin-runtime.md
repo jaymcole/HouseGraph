@@ -114,9 +114,8 @@ naming.
 
 ## Opening a graph that needs a library
 
-`GraphDependencyCheck.inspect` compares the save file's root `plugins` table
-against the catalog in one pure pass, before any node is built or any class is
-loaded. `App` collapses both load paths into `openGraph(file, interactive)`, and
+`GraphDependencyCheck.inspect` compares what the save file says it needs against the
+catalog in one pure pass, before any node is built or any class is loaded. `App` collapses both load paths into `openGraph(file, interactive)`, and
 what happens next depends on who asked:
 
 - **The user chose the file** — a dialog lists what is missing and offers *Open
@@ -136,6 +135,27 @@ just lack a newer feature.
 even when the graph uses an uninstalled library's node. Those nodes are still
 preserved as placeholders, but with no repository recorded there is nothing to
 offer. The first save under v2 fixes it permanently.
+
+### `plugins` means "what this graph needs", not "what is on this canvas"
+
+The root `plugins` table is still derived from the node types on the graph's own
+canvas. But a graph that references another graph as a **module** needs whatever
+*that* graph needs: a module built from a Discord node means the consumer needs the
+Discord library, even though nothing on the consumer's canvas is a Discord node.
+
+That requirement is not resolved at load time, because resolving a module file is
+I/O and this check does none. It is recorded at **save** time, while the module is
+resolvable, into the consumer's own `modules` row — each row carries its module's
+`plugins` array, in the same shape as the root table's rows. `requiredBy` reads the
+root table first, then each module row's, first occurrence winning; `classify` and
+everything downstream are unchanged, so the install offer, the daemon's gather, and
+`nodes check` all become transitively correct without learning a second place to
+look.
+
+The consequence to hold onto: **a `plugins` requirement can name a library no node
+on this canvas uses.** Nothing may assume the two sets are the same — in particular
+`GraphCanvas.countLiveNodesFrom(pluginId)` answers a different question and always
+did. See [save-format.md](save-format.md) for the row's shape.
 
 ## Changing a library while its nodes are on the canvas
 
@@ -181,7 +201,7 @@ deletes it at the next startup, before any loader exists.
 ---
 
 **When you change this, update…** this file whenever you change the module split,
-the manifest format, the class-loading model, discovery, or the install and update
-flow. Changes to the published extension points also touch
+the manifest format, the class-loading model, discovery, the install and update
+flow, or what the `plugins` requirement set is derived from. Changes to the published extension points also touch
 [`../nodes/`](../nodes/); trust decisions belong in
 [security-model.md](security-model.md).

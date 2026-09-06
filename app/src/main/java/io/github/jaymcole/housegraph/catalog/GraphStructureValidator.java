@@ -5,16 +5,21 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.TypeConverters;
+import io.github.jaymcole.housegraph.graph.nodes.module.ModuleBoundaryNode;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.modules.ModuleFile;
+import io.github.jaymcole.housegraph.modules.ModuleInterface;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Statically analyzes a parsed save file for structural defects that {@code GraphFileIO} and
@@ -40,6 +45,13 @@ import java.util.Map;
  *   a log line, which is exactly the information a caller here needs back as a structured finding.
  * </ul>
  *
+ * <p>A third tier is opt-in, because it is the one thing here that cannot be answered from this
+ * file alone: a <b>module reference cycle</b> needs the referenced modules' own files. Rather than
+ * open them — which would make this class do I/O, and it deliberately does none — the caller hands
+ * in a {@link ModuleResolver}. With {@link ModuleResolver#NONE} (the default) only the cycle a file
+ * can prove about itself is reported: a graph that references its own module id. {@code housegraph
+ * validate} supplies a real resolver, backed by {@code ModuleLibrary}, where I/O is already the job.
+ *
  * <p>Cycle detection covers only <b>data</b> edges: a data cycle is a hard runtime failure
  * ({@code NodeGraph.resolveInternal} throws {@code IllegalStateException} the first time such a
  * node is pulled). A flow cycle is not reported — the engine's per-run {@code flowVisited} dedup
@@ -56,6 +68,8 @@ public final class GraphStructureValidator {
         public static final String TYPE_MISMATCH = "type-mismatch";
         public static final String DUPLICATE_INPUT_EDGE = "duplicate-input-edge";
         public static final String DATA_CYCLE = "data-cycle";
+        public static final String MODULE_CYCLE = "module-cycle";
+        public static final String MODULE_BOUNDARY_CONFLICT = "module-boundary-conflict";
 
         private Codes() {
         }
@@ -107,11 +121,37 @@ public final class GraphStructureValidator {
         }
     }
 
+    /**
+     * Finds the parsed root of a module by its stable id — the seam that keeps the module-reference
+     * cycle check out of the filesystem.
+     *
+     * <p>Everything else here reads one already-parsed root. Following a module reference means
+     * opening another file, so the ability to do that is handed in rather than taken: this class
+     * stays pure, and a caller that has no business reading files simply passes {@link #NONE}.
+     * {@code ModuleLibrary} implements it.
+     */
+    @FunctionalInterface
+    public interface ModuleResolver {
+
+        /** A resolver that finds nothing, leaving only the self-reference a file proves about itself. */
+        ModuleResolver NONE = id -> null;
+
+        /**
+         * The parsed save file of the module with this id.
+         *
+         * @param moduleId the module's stable id
+         * @return its root, or null when it cannot be found
+         */
+        JSONObject rootOf(String moduleId);
+    }
+
     private GraphStructureValidator() {
     }
 
     /**
-     * Runs every structural and type-aware check against a parsed save file.
+     * Runs every check that needs nothing but this file. A module-reference cycle is reported only
+     * where this file proves it alone — see {@link #inspect(JSONObject, NodeRegistry, ModuleResolver)}
+     * for the transitive check.
      *
      * @param root     a parsed save file (see {@code GraphFileIO.readRoot})
      * @param registry resolves each node's saved type to a class, exactly as loading would; a type
@@ -119,6 +159,21 @@ public final class GraphStructureValidator {
      * @return every defect found, empty when the graph is structurally sound
      */
     public static Report inspect(JSONObject root, NodeRegistry registry) {
+        return inspect(root, registry, ModuleResolver.NONE);
+    }
+
+    /**
+     * Runs every structural and type-aware check against a parsed save file, following module
+     * references through {@code modules}.
+     *
+     * @param root     a parsed save file (see {@code GraphFileIO.readRoot})
+     * @param registry resolves each node's saved type to a class, exactly as loading would; a type
+     *                 that doesn't resolve is skipped for the checks that need an instance
+     * @param modules  finds a referenced module's own root, so a reference cycle is reported rather
+     *                 than discovered as a stack overflow; {@link ModuleResolver#NONE} to skip it
+     * @return every defect found, empty when the graph is structurally sound
+     */
+    public static Report inspect(JSONObject root, NodeRegistry registry, ModuleResolver modules) {
         List<Finding> findings = new ArrayList<>();
 
         JSONArray nodesJson = root.optJSONArray("nodes");
@@ -261,7 +316,136 @@ public final class GraphStructureValidator {
             }
         }
 
+        findModuleBoundaryConflicts(root, registry, findings);
+        findModuleCycles(root, modules, findings);
+
         return new Report(findings);
+    }
+
+    /**
+     * Reports a boundary marker this file declares that no consumer could bind an edge to: one with
+     * no name, or one whose name another marker on the same side already took.
+     *
+     * <p>Reported against the file that <em>declares</em> the markers, because that is the file to
+     * fix. A consuming graph sees the same conflicts through its {@code ModuleNode}, which reports
+     * {@linkplain io.github.jaymcole.housegraph.graph.nodes.module.ModuleNode#isMisconfigured()
+     * misconfigured} — but it cannot say which node to edit, and this can.
+     */
+    private static void findModuleBoundaryConflicts(JSONObject root, NodeRegistry registry, List<Finding> findings) {
+        if (!ModuleFile.isModule(root)) {
+            return;
+        }
+        ModuleInterface declared = ModuleInterface.derive(root, registry);
+        if (declared.isSound()) {
+            return;
+        }
+        // Point at the markers themselves rather than at the root: a "which node" pointer is what a
+        // caller can act on. The interface reports problems in marker order, so the nth problem and
+        // the nth offending marker line up only loosely - name the whole set instead.
+        List<String> markerPointers = new ArrayList<>();
+        JSONArray nodesJson = root.optJSONArray("nodes");
+        if (nodesJson != null) {
+            for (int i = 0; i < nodesJson.length(); i++) {
+                BaseNode node = resolveNode(nodesJson.optJSONObject(i), registry);
+                if (node instanceof ModuleBoundaryNode) {
+                    markerPointers.add("/nodes/" + i);
+                }
+            }
+        }
+        String primary = markerPointers.isEmpty() ? "/nodes" : markerPointers.get(0);
+        List<String> related = markerPointers.size() > 1
+                ? markerPointers.subList(1, markerPointers.size())
+                : List.of();
+        for (String problem : declared.problems()) {
+            findings.add(Finding.error(Codes.MODULE_BOUNDARY_CONFLICT,
+                    problem + "; a save file binds an edge endpoint by port name only where that name"
+                            + " is non-blank and unique on its side", primary, related));
+        }
+    }
+
+    /**
+     * Reports a module reference that comes back to where it started, directly or through other
+     * modules — the case that would otherwise be discovered as a stack overflow the first time
+     * anything tried to load one.
+     *
+     * <p>The walk starts from this file's own {@code modules} table and follows each referenced
+     * module's table in turn, through {@code resolver}. A module the resolver cannot find simply ends
+     * that branch: an unresolvable reference is {@code ModuleNode}'s finding to report, not this
+     * one's, and guessing at a cycle behind a file nobody can read would be a false alarm.
+     *
+     * <p>The pointer names the row <em>in this file</em> that starts the offending chain, since that
+     * is the only location an RFC 6901 pointer into this file can address; the message names the rest
+     * of the chain by id.
+     */
+    private static void findModuleCycles(JSONObject root, ModuleResolver resolver, List<Finding> findings) {
+        List<String> rowIds = ModuleFile.rowIds(root);
+        if (rowIds.isEmpty()) {
+            return;
+        }
+        String ownId = ModuleFile.idOf(root);
+        for (int i = 0; i < rowIds.size(); i++) {
+            String referenced = rowIds.get(i);
+            if (referenced.isEmpty()) {
+                continue;
+            }
+            List<String> chain = new ArrayList<>();
+            chain.add(ownId == null ? "(this graph)" : ownId);
+            // The self-reference arm needs no resolver at all: this file names its own id.
+            if (referenced.equals(ownId)) {
+                chain.add(referenced);
+                findings.add(cycleFinding(i, chain));
+                continue;
+            }
+            List<String> found = walkModules(referenced, ownId, resolver, new LinkedHashSet<>());
+            if (found != null) {
+                chain.addAll(found);
+                findings.add(cycleFinding(i, chain));
+            }
+        }
+    }
+
+    /**
+     * Depth-first from {@code moduleId}, looking for a reference back to {@code target} or to a
+     * module already on the path.
+     *
+     * @return the chain of ids from {@code moduleId} to the repeat, or null when this branch is acyclic
+     */
+    private static List<String> walkModules(String moduleId, String target, ModuleResolver resolver,
+                                            Set<String> onPath) {
+        if (!onPath.add(moduleId)) {
+            return List.of(moduleId);
+        }
+        try {
+            JSONObject moduleRoot = resolver.rootOf(moduleId);
+            if (moduleRoot == null) {
+                return null;
+            }
+            for (String next : ModuleFile.referencedIds(moduleRoot)) {
+                if (next.isEmpty()) {
+                    continue;
+                }
+                if (next.equals(target) || next.equals(moduleId)) {
+                    return List.of(moduleId, next);
+                }
+                List<String> deeper = walkModules(next, target, resolver, onPath);
+                if (deeper != null) {
+                    List<String> chain = new ArrayList<>();
+                    chain.add(moduleId);
+                    chain.addAll(deeper);
+                    return chain;
+                }
+            }
+            return null;
+        } finally {
+            onPath.remove(moduleId);
+        }
+    }
+
+    private static Finding cycleFinding(int rowIndex, List<String> chain) {
+        return Finding.error(Codes.MODULE_CYCLE,
+                "this module reference forms a cycle (" + String.join(" -> ", chain)
+                        + "); a module cannot contain itself, directly or through another module",
+                "/modules/" + rowIndex);
     }
 
     private static boolean inBounds(int index, int count) {

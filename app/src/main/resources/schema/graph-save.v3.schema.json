@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jaymcole/HouseGraph/main/app/src/main/resources/schema/graph-save.v3.schema.json",
+  "title": "HouseGraph save file (format version 3)",
+  "description": "The canonical shape GraphFileIO writes for version 3, exactly as documented in docs/engine/save-format.md. HouseGraph's own reader is more forgiving than this schema: a file written before versioning existed, or before a given key existed, uses a legacy positional shape this schema does not describe (see save-format.md's 'Forgiving reads' section). Validate a graph an agent harness is about to write against this schema; do not use a failure here as proof an existing, older file won't open.",
+  "type": "object",
+  "required": ["version", "nodes", "dataEdges", "flowEdges"],
+  "properties": {
+    "version": {
+      "const": 3
+    },
+    "plugins": {
+      "description": "Present only when the graph uses a node type from an out-of-tree library.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/pluginRow" }
+    },
+    "module": {
+      "description": "This graph's own identity as a module, present only on a graph that has been published as one. The id is the identity a consumer stores; the name is a label. See docs/decisions/0011-modules-are-referenced-by-id.md.",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "modules": {
+      "description": "The modules this graph references, present only when it references one. Each row is named by the 'module' key of one or more nodes.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/moduleRow" }
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "dataEdges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dataEdge" }
+    },
+    "flowEdges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/flowEdge" }
+    },
+    "camera": { "$ref": "#/$defs/camera" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "pluginRow": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "repository": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "moduleRow": {
+      "description": "One module this graph references. 'path' is a resolution hint recording where the module was last found; it is never the identity, and a file at that path carrying a different id is a different module. 'plugins' names the node libraries the MODULE needs — recorded here at save time, while the module was resolvable, so the load-time dependency check stays a pure read of this one root with no file opened.",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "plugins": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pluginRow" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "portRef": {
+      "description": "A data or flow port endpoint: the port's name when it is non-blank and unique on its node, otherwise its zero-based position.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer", "minimum": 0 }
+      ]
+    },
+    "waypoint": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "valueEntry": {
+      "description": "One input or output slot, keyed by name. 'value' is null for a computed, secret or transient variable (see NodeVariable.isPersistentValue) or a slot that was never set.",
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "required": ["type", "x", "y"],
+      "properties": {
+        "type": {
+          "description": "The stable type id (NodeRegistry.persistentTypeId): a node's simple class name by default, or an explicit @Node.Type id.",
+          "type": "string",
+          "minLength": 1
+        },
+        "plugin": {
+          "description": "The library id from the root 'plugins' table that provides this node type. Absent for a built-in node.",
+          "type": "string"
+        },
+        "module": {
+          "description": "The module id from the root 'modules' table this node references. Only a ModuleNode writes it; the node keeps the same id in its own 'state', which is where the reference lives — this key is the pointer that makes the table readable before any node is built.",
+          "type": "string"
+        },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "executionPolicy": {
+          "enum": ["DROP", "RESTART", "QUEUE", "PARALLEL"]
+        },
+        "maxConcurrency": { "type": "integer", "minimum": 0 },
+        "timeoutMillis": { "type": "integer", "minimum": 0 },
+        "nodeSignature": {
+          "description": "A fingerprint of this node type's ports, flow ports and default state at save time (see the catalog/NodeSignature class). Compare against the same type's currently-installed signature (the 'nodes check' CLI command, or the node catalog's 'signature' field) to detect a library update that changed this node's shape since the graph was saved. Absent on a save written before this field existed.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/valueEntry" }
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/valueEntry" }
+        },
+        "requiredInputs": {
+          "description": "Names of inputs that must have a value source for the node to be considered configured.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "state": {
+          "description": "Node-specific configuration beyond input/output values (BaseNode.saveState()).",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": true,
+      "description": "additionalProperties stays open: a node type this build cannot resolve (MissingNode) is written back byte-for-byte, including keys a newer format added that this schema does not yet know about."
+    },
+    "dataEdge": {
+      "type": "object",
+      "required": ["sourceNode", "sourceVariable", "targetNode", "targetVariable"],
+      "properties": {
+        "sourceNode": { "type": "integer", "minimum": 0 },
+        "sourceVariable": { "$ref": "#/$defs/portRef" },
+        "targetNode": { "type": "integer", "minimum": 0 },
+        "targetVariable": { "$ref": "#/$defs/portRef" },
+        "waypoints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/waypoint" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "flowEdge": {
+      "type": "object",
+      "required": ["sourceNode", "sourcePort", "targetNode", "targetPort"],
+      "properties": {
+        "sourceNode": { "type": "integer", "minimum": 0 },
+        "sourcePort": { "$ref": "#/$defs/portRef" },
+        "targetNode": { "type": "integer", "minimum": 0 },
+        "targetPort": { "$ref": "#/$defs/portRef" },
+        "waypoints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/waypoint" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "camera": {
+      "type": "object",
+      "properties": {
+        "zoom": { "type": "number" },
+        "translateX": { "type": "number" },
+        "translateY": { "type": "number" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

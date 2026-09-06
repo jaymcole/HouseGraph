@@ -49,6 +49,12 @@ private void rebuild() {
 shape in `saveState()` and rebuild from it in `loadState()`. `loadState` runs
 *before* ports are touched, so the ports exist by the time values are applied.
 
+`ModuleNode` in `graph/nodes/module/` is the second example, and the one where this
+is load-bearing rather than merely tidy: its ports come from another graph's
+boundary markers, and it saves the whole derived shape so a consuming graph loads
+with its edges bound before anything has gone looking for the module file — and at
+all when the file is gone.
+
 Without this, the node's shape on load depends on the order edges happen to be
 reconnected — which is not a guarantee the loader makes. See
 [state-and-startup.md](state-and-startup.md) and

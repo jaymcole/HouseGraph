@@ -4,15 +4,19 @@ import io.github.jaymcole.housegraph.catalog.GraphStructureValidator;
 import io.github.jaymcole.housegraph.cli.Args;
 import io.github.jaymcole.housegraph.cli.Command;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.modules.ModuleLibrary;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginLoader;
 import io.github.jaymcole.housegraph.saveformat.GraphFileIO;
+import io.github.jaymcole.housegraph.storage.AppDirectories;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Runs {@link GraphStructureValidator} against a save file from the terminal: the structural checks
@@ -23,6 +27,13 @@ import java.io.PrintStream;
  * <p>Like {@code nodes check}, this loads every enabled node library to read each node's real ports,
  * so it answers a different question than {@code check}: point this at a graph only once its
  * libraries are installed ({@code check} is what answers that first).
+ *
+ * <p>This is also where the module-reference cycle check gets its teeth. {@code
+ * GraphStructureValidator} does no I/O, so following a reference into another graph's file is a
+ * capability handed in rather than taken — and a command-line tool already reading a file from disk
+ * is where doing so is uncontroversial. The resolver searches
+ * {@link AppDirectories#modules()} plus the directory the graph being validated sits in, so a module
+ * kept beside its consumer is found without being published first.
  */
 public final class ValidateCommand implements Command {
 
@@ -46,9 +57,10 @@ public final class ValidateCommand implements Command {
     public String usage() {
         return "  " + name() + " <graph.json> [--json]\n\n"
                 + "Reports a dangling node/port reference, a data edge whose types are\n"
-                + "incompatible, more than one data edge feeding the same input, and a cycle in\n"
-                + "the data graph (which would fail at run time, not on load). Each finding\n"
-                + "carries a JSON Pointer into the save file naming exactly what to fix.\n\n"
+                + "incompatible, more than one data edge feeding the same input, a cycle in the\n"
+                + "data graph (which would fail at run time, not on load), a module boundary\n"
+                + "marker nothing could bind to, and a module that references itself. Each\n"
+                + "finding carries a JSON Pointer into the save file naming exactly what to fix.\n\n"
                 + "--json emits a machine-readable report instead of log lines.\n\n"
                 + "Exits 0 when nothing is wrong, 1 when a finding was reported.";
     }
@@ -70,7 +82,9 @@ public final class ValidateCommand implements Command {
         try (PluginLoader loader = PluginLoader.from(plugins, getClass().getClassLoader())) {
             NodeRegistry registry = new NodeRegistry(loader.scanRoots());
             JSONObject root = GraphFileIO.readRoot(file);
-            GraphStructureValidator.Report report = GraphStructureValidator.inspect(root, registry);
+            ModuleLibrary modules = ModuleLibrary.over(searchRoots(file), registry);
+            GraphStructureValidator.Report report =
+                    GraphStructureValidator.inspect(root, registry, modules::rootOf);
 
             if (json) {
                 out.println(toJson(file, report).toString(2));
@@ -86,6 +100,17 @@ public final class ValidateCommand implements Command {
             }
             return 1;
         }
+    }
+
+    /**
+     * Where to look for a referenced module: the machine's module directory, and the directory the
+     * graph itself is in. The second is what makes a repository of graphs — where a module and its
+     * consumer are checked into the same folder — validate without anything being installed first.
+     */
+    private static List<Path> searchRoots(File graph) {
+        Path beside = graph.getAbsoluteFile().toPath().getParent();
+        return beside == null ? List.of(AppDirectories.get().modules())
+                : List.of(AppDirectories.get().modules(), beside);
     }
 
     private void printHuman(File file, GraphStructureValidator.Report report) {

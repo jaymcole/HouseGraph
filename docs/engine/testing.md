@@ -17,7 +17,11 @@ rule: **pure logic does not import JavaFX.**
   `NodeGraph` is tested with no canvas, scene or node view (`loader/GraphLoaderTest`).
 - `ObjectProperties`, `CommandMatcher` and `AppDirectories.resolveRoot` are pure
   and tested as such.
-- `loader/`, `saveformat/`, `headless/`, `plugin/`, `cli/` and `remote/` are headless for the same
+- `modules/` is headless and tested against real save files written by the format
+  itself, never hand-typed JSON: `ModuleFixture` builds them through
+  `SaveFileFixture.toJson`, so a change to the format cannot leave a module test
+  agreeing with a shape nothing writes.
+- `loader/`, `saveformat/`, `modules/`, `headless/`, `plugin/`, `cli/` and `remote/` are headless for the same
   reason. Nothing worth testing may live in a window. `headless/HeadlessGraphTest`
   is the strongest form of it: a real save file onto a real `NodeGraph`, with a
   saved-running node resuming and firing, and no toolkit started.

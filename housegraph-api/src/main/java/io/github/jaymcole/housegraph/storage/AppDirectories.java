@@ -17,8 +17,8 @@ import java.util.function.UnaryOperator;
  *   <li><b>Linux/other</b>: {@code $XDG_DATA_HOME/HouseGraph}, else {@code ~/.local/share/HouseGraph}</li>
  * </ul>
  * with a subdirectory per purpose — {@link #secrets()}, {@link #nodes()}, {@link #plugins()},
- * {@link #config()}, {@link #cache()}, {@link #logs()}. Every accessor creates its directory on demand,
- * so callers can simply resolve a path and read/write it.
+ * {@link #modules()}, {@link #config()}, {@link #cache()}, {@link #logs()}. Every accessor creates
+ * its directory on demand, so callers can simply resolve a path and read/write it.
  * <p>
  * Use the shared machine instance via {@link #get()} (e.g. {@code AppDirectories.get().secrets()}).
  * The root can be overridden with the {@code housegraph.home} system property or the
@@ -140,6 +140,21 @@ public final class AppDirectories {
      */
     public Path saves() {
         return ensure(root.resolve("saves"));
+    }
+
+    /**
+     * Graphs published for use as <b>modules</b> — an ordinary saved graph that another graph
+     * references as a single node.
+     * <p>
+     * Distinct from {@link #saves()}, which is wherever the user happens to keep their own graphs:
+     * this directory is the one place resolution <em>searches</em>. A module is referenced by the
+     * stable id in its root, never by a path, so a consumer keeps working when a module file is
+     * moved or renamed within here — see {@code docs/decisions/0011-modules-are-referenced-by-id.md}.
+     *
+     * @return the modules directory, created if needed
+     */
+    public Path modules() {
+        return ensure(root.resolve("modules"));
     }
 
     /**

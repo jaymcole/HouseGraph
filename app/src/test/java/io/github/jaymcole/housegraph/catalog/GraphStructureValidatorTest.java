@@ -186,4 +186,128 @@ class GraphStructureValidatorTest {
 
         assertTrue(report.isValid(), report.findings().toString());
     }
+
+    // --- Modules --------------------------------------------------------------------------------
+
+    /** A graph carrying a module identity of its own, plus a table of the modules it references. */
+    private static JSONObject moduleRoot(String ownId, JSONArray nodes, String... references) {
+        JSONObject root = root(nodes, new JSONArray(), new JSONArray());
+        root.put("version", 3);
+        if (ownId != null) {
+            root.put("module", new JSONObject().put("id", ownId));
+        }
+        if (references.length > 0) {
+            JSONArray modules = new JSONArray();
+            for (String reference : references) {
+                modules.put(new JSONObject().put("id", reference));
+            }
+            root.put("modules", modules);
+        }
+        return root;
+    }
+
+    private static List<GraphStructureValidator.Finding> findings(GraphStructureValidator.Report report, String code) {
+        return report.findings().stream().filter(finding -> finding.code().equals(code)).toList();
+    }
+
+    @Test
+    void aModuleReferencingItselfIsReportedWithNoResolverAtAll() {
+        JSONObject root = moduleRoot("m-1", new JSONArray(List.of(node("AddNode"))), "m-1");
+
+        GraphStructureValidator.Report report = GraphStructureValidator.inspect(root, REGISTRY);
+
+        List<GraphStructureValidator.Finding> cycles =
+                findings(report, GraphStructureValidator.Codes.MODULE_CYCLE);
+        assertEquals(1, cycles.size());
+        assertEquals("/modules/0", cycles.get(0).pointer());
+    }
+
+    @Test
+    void aCycleThroughAnotherModuleIsReportedRatherThanStackOverflowed() {
+        // A references B, B references A. Walking it without cycle detection would recurse forever.
+        JSONObject a = moduleRoot("m-a", new JSONArray(List.of(node("AddNode"))), "m-b");
+        JSONObject b = moduleRoot("m-b", new JSONArray(List.of(node("AddNode"))), "m-a");
+
+        GraphStructureValidator.Report report = GraphStructureValidator.inspect(a, REGISTRY,
+                id -> "m-b".equals(id) ? b : null);
+
+        List<GraphStructureValidator.Finding> cycles =
+                findings(report, GraphStructureValidator.Codes.MODULE_CYCLE);
+        assertEquals(1, cycles.size());
+        assertTrue(cycles.get(0).message().contains("m-a"), cycles.get(0).message());
+        assertTrue(cycles.get(0).message().contains("m-b"), cycles.get(0).message());
+    }
+
+    @Test
+    void aLongerCycleTerminatesInsteadOfRecursing() {
+        // A -> B -> C -> B. The repeat is not the graph being validated, so only the on-path check
+        // catches it; without one, the walk never returns.
+        JSONObject a = moduleRoot("m-a", new JSONArray(List.of(node("AddNode"))), "m-b");
+        JSONObject b = moduleRoot("m-b", new JSONArray(List.of(node("AddNode"))), "m-c");
+        JSONObject c = moduleRoot("m-c", new JSONArray(List.of(node("AddNode"))), "m-b");
+
+        GraphStructureValidator.Report report = GraphStructureValidator.inspect(a, REGISTRY,
+                id -> switch (id) {
+                    case "m-b" -> b;
+                    case "m-c" -> c;
+                    default -> null;
+                });
+
+        assertEquals(1, findings(report, GraphStructureValidator.Codes.MODULE_CYCLE).size());
+    }
+
+    @Test
+    void anAcyclicModuleReferenceIsFine() {
+        JSONObject a = moduleRoot("m-a", new JSONArray(List.of(node("AddNode"))), "m-b");
+        JSONObject b = moduleRoot("m-b", new JSONArray(List.of(node("AddNode"))));
+
+        GraphStructureValidator.Report report = GraphStructureValidator.inspect(a, REGISTRY,
+                id -> "m-b".equals(id) ? b : null);
+
+        assertTrue(report.isValid(), report.findings().toString());
+    }
+
+    @Test
+    void anUnresolvableModuleReferenceIsNotGuessedAtAsACycle() {
+        JSONObject a = moduleRoot("m-a", new JSONArray(List.of(node("AddNode"))), "m-gone");
+
+        GraphStructureValidator.Report report = GraphStructureValidator.inspect(a, REGISTRY);
+
+        assertTrue(report.isValid(), report.findings().toString());
+    }
+
+    @Test
+    void aBoundaryMarkerNothingCouldBindToIsReportedAgainstTheFileThatDeclaresIt() {
+        // Two Module Inputs, neither named: one blank-name problem each.
+        JSONArray nodes = new JSONArray(List.of(node("ModuleInputNode"), node("ModuleInputNode")));
+        JSONObject root = moduleRoot(null, nodes);
+
+        GraphStructureValidator.Report report = GraphStructureValidator.inspect(root, REGISTRY);
+
+        List<GraphStructureValidator.Finding> conflicts =
+                findings(report, GraphStructureValidator.Codes.MODULE_BOUNDARY_CONFLICT);
+        assertEquals(2, conflicts.size());
+        assertEquals("/nodes/0", conflicts.get(0).pointer());
+        assertEquals(List.of("/nodes/1"), conflicts.get(0).relatedPointers());
+    }
+
+    @Test
+    void aSoundlyDeclaredModuleReportsNothing() {
+        JSONArray nodes = new JSONArray(List.of(
+                node("ModuleInputNode").put("state", new JSONObject().put("name", "A")),
+                node("ModuleExitNode").put("state", new JSONObject().put("name", "Done"))));
+
+        GraphStructureValidator.Report report =
+                GraphStructureValidator.inspect(moduleRoot(null, nodes), REGISTRY);
+
+        assertTrue(report.isValid(), report.findings().toString());
+    }
+
+    @Test
+    void anOrdinaryGraphIsNeverCheckedForBoundaryConflicts() {
+        GraphStructureValidator.Report report = GraphStructureValidator.inspect(
+                root(new JSONArray(List.of(node("AddNode"))), new JSONArray(), new JSONArray()), REGISTRY);
+
+        assertTrue(report.isValid(), report.findings().toString());
+    }
 }

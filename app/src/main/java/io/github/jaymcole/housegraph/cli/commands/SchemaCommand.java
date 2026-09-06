@@ -20,8 +20,16 @@ import java.util.Map;
  */
 public final class SchemaCommand implements Command {
 
+    /**
+     * {@code graph} serves the version this build <em>writes</em>, so a harness generating a file
+     * gets a schema matching what will be read back. Each superseded version stays reachable under
+     * its own name, because a tool checking files it did not write still needs them: an older graph
+     * is not invalid, it is older.
+     */
     private static final Map<String, String> RESOURCES = Map.of(
-            "graph", "/schema/graph-save.v2.schema.json",
+            "graph", "/schema/graph-save.v3.schema.json",
+            "graph-v3", "/schema/graph-save.v3.schema.json",
+            "graph-v2", "/schema/graph-save.v2.schema.json",
             "catalog", "/schema/node-catalog.v1.schema.json");
 
     private final PrintStream out;
@@ -42,9 +50,11 @@ public final class SchemaCommand implements Command {
 
     @Override
     public String usage() {
-        return "  schema [graph|catalog]\n\n"
+        return "  schema [graph|graph-v3|graph-v2|catalog]\n\n"
                 + "graph (default) is the JSON Schema for the save-file format this build writes\n"
-                + "(version 2). catalog is the schema for `nodes list --json`'s output.\n\n"
+                + "(version 3). graph-v3 and graph-v2 name a specific format version, for checking a\n"
+                + "file this build did not write. catalog is the schema for `nodes list --json`'s\n"
+                + "output.\n\n"
                 + "Redirect it to a file to hand to any standard JSON Schema validator:\n"
                 + "  housegraph schema > graph.schema.json";
     }
@@ -54,7 +64,7 @@ public final class SchemaCommand implements Command {
         String which = args.positional(0).orElse("graph");
         String resource = RESOURCES.get(which);
         if (resource == null) {
-            out.println("Unknown schema: " + which + " (expected graph or catalog)");
+            out.println("Unknown schema: " + which + " (expected graph, graph-v3, graph-v2 or catalog)");
             out.println(usage());
             return 2;
         }

@@ -38,7 +38,15 @@ class CommandLineTest {
         assertEquals(0, commandLine.run("schema"));
 
         assertTrue(output().contains("\"$schema\""));
-        assertTrue(output().contains("HouseGraph save file"));
+        assertTrue(output().contains("HouseGraph save file (format version 3)"));
+    }
+
+    @Test
+    void aSupersededSchemaVersionStaysReachableByName() {
+        // A tool checking files it did not write still needs them: an older graph is not invalid.
+        assertEquals(0, commandLine.run("schema", "graph-v2"));
+
+        assertTrue(output().contains("HouseGraph save file (format version 2)"));
     }
 
     @Test

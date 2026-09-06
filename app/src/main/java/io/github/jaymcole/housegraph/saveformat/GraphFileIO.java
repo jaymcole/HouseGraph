@@ -8,8 +8,13 @@ import io.github.jaymcole.housegraph.graph.NodeMetadata;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
+import io.github.jaymcole.housegraph.graph.nodes.module.ModuleNode;
+import io.github.jaymcole.housegraph.modules.ModuleDirectory;
+import io.github.jaymcole.housegraph.modules.ModuleEntry;
+import io.github.jaymcole.housegraph.modules.ModuleFile;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginDirectory;
 import javafx.geometry.Point2D;
@@ -84,7 +89,8 @@ import java.util.TreeSet;
  * positional {@code requiredInputs} boolean array; all three are still read positionally (detected by
  * JSON shape). Beyond that: a missing {@code executionPolicy} loads as the default {@code QUEUE},
  * missing {@code maxConcurrency}/{@code timeoutMillis} as 0 (unlimited / no timeout), a missing
- * {@code camera} restores {@link CameraState#DEFAULT}, a missing
+ * {@code camera} restores {@link CameraState#DEFAULT}, missing
+ * {@code inputs}/{@code outputs} leave every value at the node's own default, a missing
  * {@code requiredInputs} leaves each input's author-declared default, an unknown node type loads as a
  * null-node placeholder (rather than failing the whole load) that holds its index slot so later nodes
  * — and the edges that reference them — stay correctly aligned, and an edge whose named endpoint no
@@ -100,8 +106,11 @@ import java.util.TreeSet;
  * is a node's {@code state} ({@link BaseNode#saveState()} can hand back any {@code Map}, ordered or
  * not — {@code ObjectDecomposerNode} hands back a {@code HashMap}), so that one map's keys are
  * {@code put} in sorted order rather than the map's own iteration order, making the result the
- * same regardless of what the node returned. This is what keeps an agent's or a script's edit to
- * one value a small, stable diff instead of an unpredictable rewrite of surrounding keys.
+ * same regardless of what the node returned. The {@code plugins} and {@code modules} tables are
+ * accumulated into {@code LinkedHashMap}s for the same reason: their rows are written in
+ * first-reference order on every run rather than in whatever order a {@code HashMap} iterates. This
+ * is what keeps an agent's or a script's edit to one value a small, stable diff instead of an
+ * unpredictable rewrite of surrounding keys.
  */
 public final class GraphFileIO {
 
@@ -113,7 +122,7 @@ public final class GraphFileIO {
      * this when a change can't be handled by the shape-sniffing forgiving reads below, and add the
      * corresponding step to {@link #migrate}.
      */
-    static final int CURRENT_VERSION = 2;
+    static final int CURRENT_VERSION = 3;
 
     /** The version assumed for a save file that has no {@code version} key (written before versioning). */
     static final int LEGACY_VERSION = 0;
@@ -178,11 +187,31 @@ public final class GraphFileIO {
         return toJson(snapshot, registry, plugins, CameraState.DEFAULT);
     }
 
+    /**
+     * Writes a graph with no module library to hand, so every {@code modules} row degrades to what
+     * the referencing node itself remembers. See
+     * {@link #toJson(GraphSnapshot, NodeRegistry, PluginDirectory, ModuleDirectory, CameraState)}.
+     */
     public static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry, PluginDirectory plugins, CameraState camera) {
+        return toJson(snapshot, registry, plugins, ModuleDirectory.EMPTY, camera);
+    }
+
+    /**
+     * Writes a graph, recording each node library and each referenced module it depends on.
+     *
+     * @param plugins consulted for the name/version/repository of each library in use
+     * @param modules consulted for the name, location and <em>own library requirements</em> of each
+     *                referenced module; {@link ModuleDirectory#EMPTY} is a valid answer and simply
+     *                falls back to what each {@link ModuleNode} already carries
+     */
+    public static JSONObject toJson(GraphSnapshot snapshot, NodeRegistry registry, PluginDirectory plugins,
+                                    ModuleDirectory modules, CameraState camera) {
         List<ClipboardNode> snapshotNodes = snapshot.nodes();
         JSONArray nodesJson = new JSONArray();
         // Keyed by library id, insertion-ordered so the written table is stable between saves.
         Map<String, JSONObject> pluginRows = new LinkedHashMap<>();
+        // Same discipline for the modules table: keyed by module id, written in first-reference order.
+        Map<String, JSONObject> moduleRows = new LinkedHashMap<>();
         for (ClipboardNode entry : snapshotNodes) {
             BaseNode node = entry.node();
 
@@ -212,6 +241,14 @@ public final class GraphFileIO {
             if (!NodeRegistry.CORE_PLUGIN_ID.equals(pluginId)) {
                 nodeJson.put("plugin", pluginId);
                 pluginRows.computeIfAbsent(pluginId, id -> pluginRow(id, plugins));
+            }
+            // A ModuleNode names its row in the root modules table, so a load-time check can read
+            // every module a graph needs in one pure pass before a node is built - exactly what the
+            // per-node "plugin" key does for libraries. The node keeps the same id in its own state;
+            // this key is the pointer, that is the reference.
+            if (node instanceof ModuleNode module && !module.getModuleId().isEmpty()) {
+                nodeJson.put(ModuleFile.NODE_MODULE_KEY, module.getModuleId());
+                moduleRows.computeIfAbsent(module.getModuleId(), id -> moduleRow(module, modules));
             }
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
@@ -279,6 +316,11 @@ public final class GraphFileIO {
         if (!pluginRows.isEmpty()) {
             root.put("plugins", new JSONArray(pluginRows.values()));
         }
+        // Written only when the graph references a module, so a modules-free graph produces a v3
+        // file differing from its v2 form by exactly the version number.
+        if (!moduleRows.isEmpty()) {
+            root.put(ModuleFile.MODULES_KEY, new JSONArray(moduleRows.values()));
+        }
         root.put("nodes", nodesJson);
         root.put("dataEdges", dataEdgesJson);
         root.put("flowEdges", flowEdgesJson);
@@ -310,6 +352,54 @@ public final class GraphFileIO {
         return row;
     }
 
+    /**
+     * One row of the root {@code modules} table: the module's id, plus whatever can be said about it.
+     *
+     * <p><b>The {@code plugins} array is the load-bearing field.</b> A module built from a Discord
+     * node needs that library wherever the module runs — including in a consuming graph whose own
+     * canvas holds no Discord node, so whose own {@code plugins} table will never mention it. That
+     * requirement is recorded <em>here</em>, at save time, from the module file while it is
+     * resolvable, which is what lets {@code GraphDependencyCheck} stay a single pure pass over one
+     * root with no I/O at all. The rows are full plugin rows rather than bare ids for the same
+     * reason the root table's are: an id alone names a missing library without saying where to get
+     * it.
+     *
+     * <p>When the directory cannot find the module, the node's <b>retained row</b> is written back
+     * verbatim — the same treatment, and the same reasoning, as a {@code MissingNode}'s preserved
+     * {@code plugins} row. The library requirements it carries exist nowhere else on a machine that
+     * does not have the module file, so re-deriving the row would quietly drop them and the graph
+     * would open "clean" the next time. Failing that, the row is rebuilt from what the node itself
+     * remembers, which is at least enough to name what is missing.
+     */
+    private static JSONObject moduleRow(ModuleNode node, ModuleDirectory modules) {
+        ModuleEntry resolved = modules.byId(node.getModuleId()).orElse(null);
+        if (resolved == null) {
+            JSONObject retained = node.rawModuleRow();
+            if (retained != null) {
+                return new JSONObject(retained.toString());
+            }
+            JSONObject row = new JSONObject().put("id", node.getModuleId());
+            putIfPresent(row, "name", node.getModuleName());
+            putIfPresent(row, "path", node.getModulePath());
+            return row;
+        }
+        JSONObject row = new JSONObject().put("id", resolved.id());
+        putIfPresent(row, "name", resolved.name());
+        putIfPresent(row, "path", resolved.path());
+        if (!resolved.requiredPlugins().isEmpty()) {
+            JSONArray required = new JSONArray();
+            for (GraphDependencyCheck.RequiredPlugin plugin : resolved.requiredPlugins()) {
+                JSONObject pluginJson = new JSONObject().put("id", plugin.id());
+                putIfPresent(pluginJson, "name", plugin.name());
+                putIfPresent(pluginJson, "version", plugin.version());
+                putIfPresent(pluginJson, "repository", plugin.repository());
+                required.put(pluginJson);
+            }
+            row.put("plugins", required);
+        }
+        return row;
+    }
+
     /** Writes {@code key} only when {@code value} says something, mirroring {@link PluginCatalog}. */
     private static void putIfPresent(JSONObject json, String key, String value) {
         if (value != null && !value.isBlank()) {
@@ -324,6 +414,8 @@ public final class GraphFileIO {
         // A v1 file has no plugins table; optJSONArray gives null and the map stays empty, which is
         // exactly the legacy behaviour (every node resolves with a null owning library).
         Map<String, JSONObject> pluginRows = readPluginRows(root.optJSONArray("plugins"));
+        // Likewise absent before v3, leaving every ModuleNode with only what its own state carries.
+        Map<String, JSONObject> moduleRows = readIdKeyedRows(root.optJSONArray(ModuleFile.MODULES_KEY));
 
         List<ClipboardNode> nodes = new ArrayList<>();
         JSONArray nodesJson = root.getJSONArray("nodes");
@@ -358,12 +450,21 @@ public final class GraphFileIO {
             if (nodeJson.has("state")) {
                 node.loadState(readState(nodeJson.getJSONObject("state")));
             }
+            // After loadState, because the node's own state is the authority on which module it
+            // references; the per-node key only fills in an id the state did not carry.
+            if (node instanceof ModuleNode module) {
+                String moduleId = nodeJson.optString(ModuleFile.NODE_MODULE_KEY, null);
+                module.adoptSavedRow(moduleId, moduleRows.get(moduleId));
+            }
             // Absent in saves written before execution policies existed; default to QUEUE.
             node.setExecutionPolicy(parsePolicy(nodeJson.optString("executionPolicy", null)));
             node.setMaxConcurrency(nodeJson.optInt("maxConcurrency", 0));
             node.setTimeoutMillis(nodeJson.optLong("timeoutMillis", 0));
-            applyValues(node.getInputs(), nodeJson.getJSONArray("inputs"));
-            applyValues(node.getOutputs(), nodeJson.getJSONArray("outputs"));
+            // optJSONArray, not getJSONArray: the schema marks both optional, and a hand-written or
+            // agent-generated graph that names only its type and position must load with the node's
+            // author-declared defaults rather than throwing out the whole file.
+            applyValues(node.getInputs(), nodeJson.optJSONArray("inputs"));
+            applyValues(node.getOutputs(), nodeJson.optJSONArray("outputs"));
             // Absent in saves written before inputs could be required, and in saves where no input
             // was required — either way the node keeps its author-declared defaults untouched.
             if (nodeJson.has("requiredInputs")) {
@@ -449,14 +550,22 @@ public final class GraphFileIO {
 
     /** The root {@code plugins} table as a lookup by library id. Empty for a v1 file, which has none. */
     private static Map<String, JSONObject> readPluginRows(JSONArray pluginsJson) {
-        // A LinkedHashMap rather than Map.of() even when empty: a node with no "plugin" key looks it
-        // up with a null id, and the immutable maps throw on a null key.
+        return readIdKeyedRows(pluginsJson);
+    }
+
+    /**
+     * An {@code id}-keyed root table ({@code plugins}, {@code modules}) as a lookup. Absent for a
+     * file written before that table existed, which reads as an empty map — the legacy behaviour.
+     */
+    private static Map<String, JSONObject> readIdKeyedRows(JSONArray tableJson) {
+        // A LinkedHashMap rather than Map.of() even when empty: a node with no "plugin"/"module" key
+        // looks it up with a null id, and the immutable maps throw on a null key.
         Map<String, JSONObject> rows = new LinkedHashMap<>();
-        if (pluginsJson == null) {
+        if (tableJson == null) {
             return rows;
         }
-        for (int i = 0; i < pluginsJson.length(); i++) {
-            JSONObject row = pluginsJson.optJSONObject(i);
+        for (int i = 0; i < tableJson.length(); i++) {
+            JSONObject row = tableJson.optJSONObject(i);
             if (row == null) {
                 continue;
             }
@@ -557,7 +666,7 @@ public final class GraphFileIO {
      */
     @SuppressWarnings("unchecked")
     private static void applyValues(List<NodeVariable> variables, JSONArray values) {
-        if (values.isEmpty()) {
+        if (values == null || values.isEmpty()) {
             return;
         }
         if (values.get(0) instanceof JSONObject) {

@@ -296,17 +296,20 @@ class GraphFileIOTest {
         assertEquals(1, again.flowEdges().size());
     }
 
-    // --- Format version 2 -----------------------------------------------------------------------
+    // --- Format versions ------------------------------------------------------------------------
 
     @Test
     void aCoreOnlyGraphWritesNoPluginKeysAtAll() {
         JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(new AddNode(), 0.0, 0.0)), List.of(), List.of()));
 
-        assertEquals(2, json.getInt("version"));
+        assertEquals(3, json.getInt("version"));
         assertFalse(json.has("plugins"), "no plugins table when nothing outside core is used");
         assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("plugin"),
                 "a built-in node carries no plugin key, so a core-only v2 file differs from v1 only in its version");
+        assertFalse(json.has("modules"), "no modules table when no module is referenced");
+        assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("module"),
+                "a node that is not a ModuleNode carries no module key");
     }
 
     @Test
