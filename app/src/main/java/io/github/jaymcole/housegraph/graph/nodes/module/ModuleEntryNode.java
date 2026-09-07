@@ -1,7 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.module;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Node.Disabled;
 import io.github.jaymcole.housegraph.annotations.Node.Keywords;
 import io.github.jaymcole.housegraph.annotations.Node.Kind;
 import io.github.jaymcole.housegraph.annotations.NodeKind;
@@ -35,7 +34,6 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 @Display.Description("Declares a named way into this graph's control flow; control arriving that way emerges here.")
 @Kind(NodeKind.CONTROL)
 @Keywords({"module", "entry", "enter", "start", "begin", "in", "boundary", "subgraph", "interface", "flow"})
-@Disabled("Boundary marker: nothing consumes a graph as a module yet")
 public class ModuleEntryNode extends ModuleBoundaryNode {
 
     /**

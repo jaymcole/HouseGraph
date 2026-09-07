@@ -15,7 +15,6 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -31,9 +30,10 @@ import java.util.List;
  * <p>This is also where the module-reference cycle check gets its teeth. {@code
  * GraphStructureValidator} does no I/O, so following a reference into another graph's file is a
  * capability handed in rather than taken — and a command-line tool already reading a file from disk
- * is where doing so is uncontroversial. The resolver searches
- * {@link AppDirectories#modules()} plus the directory the graph being validated sits in, so a module
- * kept beside its consumer is found without being published first.
+ * is where doing so is uncontroversial. The resolver is
+ * {@link ModuleLibrary#forGraph}, which searches {@link AppDirectories#modules()} plus the directory
+ * the graph being validated sits in, so a module kept beside its consumer is found without being
+ * installed first.
  */
 public final class ValidateCommand implements Command {
 
@@ -82,7 +82,7 @@ public final class ValidateCommand implements Command {
         try (PluginLoader loader = PluginLoader.from(plugins, getClass().getClassLoader())) {
             NodeRegistry registry = new NodeRegistry(loader.scanRoots());
             JSONObject root = GraphFileIO.readRoot(file);
-            ModuleLibrary modules = ModuleLibrary.over(searchRoots(file), registry);
+            ModuleLibrary modules = ModuleLibrary.forGraph(file, registry);
             GraphStructureValidator.Report report =
                     GraphStructureValidator.inspect(root, registry, modules::rootOf);
 
@@ -100,17 +100,6 @@ public final class ValidateCommand implements Command {
             }
             return 1;
         }
-    }
-
-    /**
-     * Where to look for a referenced module: the machine's module directory, and the directory the
-     * graph itself is in. The second is what makes a repository of graphs — where a module and its
-     * consumer are checked into the same folder — validate without anything being installed first.
-     */
-    private static List<Path> searchRoots(File graph) {
-        Path beside = graph.getAbsoluteFile().toPath().getParent();
-        return beside == null ? List.of(AppDirectories.get().modules())
-                : List.of(AppDirectories.get().modules(), beside);
     }
 
     private void printHuman(File file, GraphStructureValidator.Report report) {

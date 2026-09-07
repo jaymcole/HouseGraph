@@ -1,7 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.module;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Node.Disabled;
 import io.github.jaymcole.housegraph.annotations.Node.Keywords;
 import io.github.jaymcole.housegraph.annotations.Node.Kind;
 import io.github.jaymcole.housegraph.annotations.NodeKind;
@@ -33,7 +32,6 @@ import io.github.jaymcole.housegraph.graph.FlowPort;
 @Display.Description("Declares a named way out of this graph's control flow; reaching it means the graph is done that way.")
 @Kind(NodeKind.CONTROL)
 @Keywords({"module", "exit", "leave", "end", "finish", "return", "done", "out", "boundary", "subgraph", "interface", "flow"})
-@Disabled("Boundary marker: nothing consumes a graph as a module yet")
 public class ModuleExitNode extends ModuleBoundaryNode {
 
     /**

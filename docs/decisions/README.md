@@ -26,3 +26,4 @@ Do not write one for an ordinary implementation choice.
 | [0010](0010-node-search-is-ranked-not-filtered.md) | Node search is ranked, and does not index ports |
 | [0011](0011-modules-are-referenced-by-id.md) | A module is referenced by stable id, not by path |
 | [0012](0012-a-module-runs-as-a-nested-graph.md) | A module runs as a nested graph, not flattened into its consumer |
+| [0013](0013-publishing-a-module-is-explicit.md) | Publishing a module is an explicit command, not a side effect of saving |

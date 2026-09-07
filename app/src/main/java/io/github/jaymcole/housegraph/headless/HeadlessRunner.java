@@ -5,6 +5,7 @@ import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.logging.Logging;
+import io.github.jaymcole.housegraph.modules.ModuleLibrary;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
 import io.github.jaymcole.housegraph.plugin.PluginLoader;
@@ -138,7 +139,11 @@ public final class HeadlessRunner {
         installShutdownHook();
 
         try {
-            HeadlessGraph.open(graphFile, graph, registry, pluginCatalog);
+            // The modules the graph references are looked for in the machine's modules directory and
+            // beside the graph itself, the same two places `housegraph validate` looks — a deployed
+            // repository commonly carries a module and its consumer in one folder.
+            HeadlessGraph.open(graphFile, graph, registry, pluginCatalog,
+                    ModuleLibrary.forGraph(graphFile, registry));
         } catch (IOException | RuntimeException failure) {
             log.error("Cannot run " + graphFile + ": the graph could not be loaded", failure);
             shutdown();

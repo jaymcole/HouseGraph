@@ -234,6 +234,14 @@ identity belongs to the **file**, not to the snapshot a canvas produces, so
 a new path correctly writes no identity: a copy of a module is a new graph until it
 is published.
 
+That read can fail, and the two ways it fails want different answers. **Bytes that
+cannot be read** — a lock, a permission, a share that went away — mean the identity
+is *unknown*, not absent; the file probably still has its id, so the save is refused
+rather than silently writing a module stripped of its id and stranding every
+consumer. **Bytes that are not a graph** hold no recoverable id, so refusing would
+cost the user the work on the canvas to protect nothing: that save goes ahead, logged
+as an error naming the file. Neither is silent.
+
 **A `ModuleNode` records which module it references, and the whole shape of it.**
 `module` on the node names a row in the root `modules` table, the same way `plugin`
 names a row in `plugins`, and for the same reason: the table is readable in one pure

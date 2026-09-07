@@ -75,7 +75,11 @@ not a split package.
   boundary markers declare; `ModuleInstance` is one module standing up and runnable —
   a `NodeGraph` of its own, driven a run at a time by the node that references it
   ([0012](../decisions/0012-a-module-runs-as-a-nested-graph.md)); `ModuleLibrary` is
-  the only component that touches disk, and the only one that assigns an id. It sits beside `saveformat/` and `loader/`
+  the only component that touches disk, and the only one that assigns an id.
+  `ModuleBinding`, `ModulePublisher` and `ModuleChoices` are the decisions the desktop
+  makes about modules — resolve a just-loaded reference, publish a graph, offer a list
+  — kept here rather than in the window that triggers them, exactly as `plugin/`
+  keeps `AutoInstallPlan` out of `PluginWindow`. It sits beside `saveformat/` and `loader/`
   rather than inside either because its callers — `graph/nodes/module/`,
   `saveformat/`, `catalog/` and `cli/` — are below the UI. `catalog/` depends on it,
   never the reverse: `GraphStructureValidator` does no I/O, so following a module

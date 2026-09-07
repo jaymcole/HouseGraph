@@ -8,6 +8,7 @@ explain how the internals work — that is [`../engine/`](../engine/).
 | --- | --- |
 | [getting-started.md](getting-started.md) | Building, running, and your first graph |
 | [node-libraries.md](node-libraries.md) | Installing and managing node libraries |
+| [modules.md](modules.md) | Reusing one graph inside another as a single node |
 | [secrets.md](secrets.md) | Storing tokens and passwords safely |
 | [server-setup.md](server-setup.md) | Running your graphs 24/7 on a dedicated machine |
 | [server-operations.md](server-operations.md) | Day-to-day operation, updates, where files live |

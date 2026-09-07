@@ -1,7 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.module;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Node.Disabled;
 import io.github.jaymcole.housegraph.annotations.Node.Keywords;
 import io.github.jaymcole.housegraph.annotations.Node.Kind;
 import io.github.jaymcole.housegraph.annotations.NodeKind;
@@ -40,7 +39,6 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Display.Description("Declares a named, typed value this graph produces; wire the interior into its input.")
 @Kind(NodeKind.DATA)
 @Keywords({"module", "output", "result", "return", "out", "produce", "boundary", "subgraph", "interface", "data"})
-@Disabled("Boundary marker: nothing consumes a graph as a module yet")
 public class ModuleOutputNode extends ModuleDataBoundaryNode {
 
     /**

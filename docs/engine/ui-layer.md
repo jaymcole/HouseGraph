@@ -9,6 +9,7 @@ concerns and the top of the dependency stack.
 ```
 ui/
 ├── GraphCanvas.java   the hub (canvas host, drag controller, execution listener)
+├── ModuleReferenceAction.java  the host's side of "add a node referencing a module"
 ├── view/              NodeView, PortView, FlowPortView, EdgeView, FlowEdgeView,
 │                      AbstractEdgeView, ConnectionView, EdgeAnchor,
 │                      EdgeInteractionListener, ExecutionPolicyIcons
@@ -17,6 +18,7 @@ ui/
 ├── log/               LogWindow, LogLevelPreferences
 ├── menu/              MainMenuBar, MenuActions
 ├── plugin/            PluginWindow (the node-library manager)
+├── module/            ModulePickerDialog (choose which module a node references)
 ├── export/            GraphComponents, GraphImageExport
 ├── widget/            TaskProgressBar (a Task-bound progress bar, reused across windows)
 └── io/                GraphFileIO (thin save/load wrappers), RecentGraphs
@@ -79,8 +81,8 @@ Interactions, with the class Javadoc as the authoritative list:
 - Left-drag on empty space rubber-band selects; right-click opens the canvas
   context menu — a ranked node search box, focused immediately and showing no
   results until you type, then the Add-Node menu below it for browsing by
-  category folder (`NodeRegistry.discover()`, grouped by `categoryPath`). See
-  "Node search box" below.
+  category folder (`NodeRegistry.discover()`, grouped by `categoryPath`), and an
+  **Add Module…** row under it. See "Node search box" and "Modules" below.
 - The rubber-band also catches individual edge waypoint handles (`AbstractEdgeView.
   waypointIndicesIn`), independently of whether the edge's curve itself is caught.
   Dragging any selected node then translates every selected waypoint by the same
@@ -154,6 +156,39 @@ top-ranked result and closes the menu (a no-op on a still-blank query), Escape j
 closes it. The categorised Add-Node menu stays underneath as the way to browse by
 folder, and `reloadNodeTypes()` calls `NodeSearchIndex.invalidate()` alongside
 rebuilding it.
+
+## Modules
+
+Modules are the one thing the Add-Node menu structurally cannot offer. That menu is
+built from `NodeRegistry.discover()`, which is keyed by **class** — and every module
+is the same `ModuleNode` class pointed at a different id — so they need a listing of
+their own. Two surfaces provide it, and neither decides anything:
+
+- **Add Module…**, the context-menu row under the Add-Node menu. `GraphCanvas`
+  contributes the row and the placement; the answer comes from an injected
+  `ModuleReferenceAction`, which `App` implements. The canvas closes over the drop
+  point when the row is clicked rather than reading it when the node comes back,
+  because the answer may arrive after a worker has been to the filesystem.
+- **File ▸ Publish as Module…**, a `MenuActions` command, for the same reason every
+  other file command is one.
+
+Both run their filesystem work on a worker and come back through `Platform.runLater`:
+listing modules refreshes `ModuleLibrary`'s index and derives each module's interface
+by building its nodes, and publishing writes a file. `ui/module/ModulePickerDialog`
+renders the rows `modules/ModuleChoices` produced; `modules/ModulePublisher` decides
+what may be published and what the user is told. Everything worth testing is in
+`modules/`, which is headless — see [architecture.md](architecture.md).
+
+`GraphCanvas` also takes a `ModuleDirectory`, which it uses for one thing:
+`loadSnapshot` resolves every loaded `ModuleNode` through `modules/ModuleBinding`
+before resuming anything. A module node that is never bound reports itself
+misconfigured and refuses to run, so without that pass a saved graph containing a
+module would open dead. It runs **after** `place` because binding rebuilds a node's
+ports when its module's interface has changed, and a rebuild re-attaches that node's
+edges by name — which needs them to exist. It runs **before** `resumeRunningNodes`
+because a resumed node may pull a value straight through a module. It deliberately
+does **not** run inside `place`, which paste and redo also use: a rebuild replaces the
+`NodeView` a `Command` is holding.
 
 ## Views
 
@@ -290,8 +325,9 @@ rather than more of `App`:
 - **Canvas commands** — undo, redo, copy, paste, delete, select-all, the four zoom
   commands — are called straight on the `GraphCanvas` the menu bar is constructed
   with. This is what the `public` methods listed under `GraphCanvas` above are for.
-- **Application commands** — anything needing the stage, the preferences store or
-  the plugin catalog — go through `menu/MenuActions`, which `App` implements. The
+- **Application commands** — anything needing the stage, the preferences store, the
+  plugin catalog or the module library — go through `menu/MenuActions`, which `App`
+  implements. **File ▸ Publish as Module…** is one of these. The
   menu bar therefore depends on a named set of commands rather than on `App`, which
   would be a cycle since `App` constructs it.
 

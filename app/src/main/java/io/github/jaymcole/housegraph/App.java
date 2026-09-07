@@ -1,7 +1,13 @@
 package io.github.jaymcole.housegraph;
 
+import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.NodeGraph;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
+import io.github.jaymcole.housegraph.graph.nodes.module.ModuleNode;
+import io.github.jaymcole.housegraph.modules.ModuleChoices;
+import io.github.jaymcole.housegraph.modules.ModuleFile;
+import io.github.jaymcole.housegraph.modules.ModuleLibrary;
+import io.github.jaymcole.housegraph.modules.ModulePublisher;
 import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
@@ -25,8 +31,10 @@ import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
 import io.github.jaymcole.housegraph.ui.log.LogWindow;
 import io.github.jaymcole.housegraph.ui.menu.MainMenuBar;
 import io.github.jaymcole.housegraph.ui.menu.MenuActions;
+import io.github.jaymcole.housegraph.ui.module.ModulePickerDialog;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.concurrent.Task;
 import javafx.scene.Cursor;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -49,6 +57,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * JavaFX application entry point for HouseGraph.
@@ -106,6 +115,8 @@ public class App extends Application implements MenuActions {
     private NodeRegistry nodeRegistry;
     private PluginCatalog pluginCatalog;
     private PluginLoader pluginLoader;
+    /** Where a published module is found, and what a saved {@code modules} row is written from. */
+    private ModuleLibrary moduleLibrary;
     private GraphCanvas canvas;
 
     /** The primary stage, kept so the {@link MenuActions} commands have a parent for their dialogs. */
@@ -156,11 +167,17 @@ public class App extends Application implements MenuActions {
 
         graph = new NodeGraph();
         nodeRegistry = new NodeRegistry(pluginLoader.scanRoots());
+        // Published modules, resolved through the same registry the canvas builds nodes with, so a
+        // module made of a library's nodes resolves them rather than loading placeholders. The scan
+        // itself is lazy — nothing has touched the modules directory yet.
+        moduleLibrary = ModuleLibrary.defaultLibrary(nodeRegistry);
         // The node search box resolves a library id to its human name through the same catalog
         // the library window edits, so a renamed or reinstalled library is reflected
-        // without the canvas needing its own copy of that mapping.
+        // without the canvas needing its own copy of that mapping. The library goes along for two
+        // things: resolving a loaded graph's module references, and Add Module….
         canvas = new GraphCanvas(graph, nodeRegistry,
-                id -> pluginCatalog.byId(id).map(PluginCatalog.Installed::name).orElse(null));
+                id -> pluginCatalog.byId(id).map(PluginCatalog.Installed::name).orElse(null),
+                moduleLibrary, this::chooseModule);
 
         // A non-blocking notice, shown only when the last-opened graph turned out to need libraries
         // that aren't installed. Deliberately not a dialog: see openGraph.
@@ -425,6 +442,9 @@ public class App extends Application implements MenuActions {
         pluginLoader = PluginLoader.from(pluginCatalog, App.class.getClassLoader());
         Thread.currentThread().setContextClassLoader(pluginLoader.classLoader());
         nodeRegistry.setRoots(pluginLoader.scanRoots());
+        // Every module interface in the index was derived with the old set of node types, so a module
+        // built from the library that just arrived would still read as placeholders until re-derived.
+        moduleLibrary.refresh();
         canvas.reloadNodeTypes();
         return true;
     }
@@ -436,6 +456,154 @@ public class App extends Application implements MenuActions {
             return;
         }
         saveTo(canvas, file);
+    }
+
+    // --- Modules -------------------------------------------------------------------
+
+    /**
+     * Writes the canvas into the modules directory and gives it a stable id.
+     *
+     * <p>Save-As shaped, and deliberately so: publishing writes a file, and the file it writes
+     * becomes the open document, so the next File ▸ Save edits the module rather than leaving the
+     * canvas and the module to drift apart. Re-publishing an already-published module over its own
+     * file keeps the id — {@code ui.io.GraphFileIO} carries it across the write and
+     * {@code ModuleLibrary.publish} mints one only when there is none.
+     *
+     * <p>Refused before the dialog when the canvas declares no interface, because there is nothing to
+     * ask about; every other refusal needs the file on disk and comes back from
+     * {@link ModulePublisher#publish}. The scan and the id write go to a worker: they are filesystem
+     * work, and the FX thread may not wait on it.
+     */
+    @Override
+    public void publishAsModule() {
+        if (!ModulePublisher.declaresInterface(canvas.snapshotAll())) {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION,
+                    "A module needs at least one Module Input, Module Output, Module Entry or Module"
+                            + " Exit node: those are what become its ports. Add one and publish again.");
+            alert.initOwner(stage);
+            alert.setHeaderText("This graph has no module interface.");
+            alert.showAndWait();
+            return;
+        }
+
+        FileChooser chooser = createFileChooser("Publish as Module");
+        chooser.setInitialDirectory(AppDirectories.get().modules().toFile());
+        chooser.setInitialFileName(currentFile == null ? "module.json" : currentFile.getName());
+        File file = chooser.showSaveDialog(stage);
+        if (file == null) {
+            return;
+        }
+
+        try {
+            io.github.jaymcole.housegraph.ui.io.GraphFileIO.save(canvas, file, pluginCatalog, moduleLibrary);
+        } catch (IOException ex) {
+            new Alert(Alert.AlertType.ERROR, "Failed to write the module: " + ex.getMessage()).showAndWait();
+            return;
+        }
+        rememberLastFile(file);
+
+        Task<ModulePublisher.Result> publishing = new Task<>() {
+            @Override
+            protected ModulePublisher.Result call() {
+                // Refreshed first so a module added or edited on disk since this session started is
+                // in the index the cycle check reads, and so the new module is not the only thing in it.
+                moduleLibrary.refresh();
+                return ModulePublisher.publish(file.toPath(), moduleLibrary);
+            }
+        };
+        publishing.setOnSucceeded(event -> reportPublish(publishing.getValue()));
+        publishing.setOnFailed(event -> {
+            log.error("Publishing " + file + " failed", publishing.getException());
+            new Alert(Alert.AlertType.ERROR, "Failed to publish the module: "
+                    + publishing.getException()).showAndWait();
+        });
+        runInBackground(publishing, "housegraph-publish-module");
+    }
+
+    /** Renders one {@link ModulePublisher.Result}; the decisions in it were all made headlessly. */
+    private void reportPublish(ModulePublisher.Result result) {
+        if (!result.isPublished()) {
+            Alert alert = new Alert(Alert.AlertType.WARNING, result.reason());
+            alert.initOwner(stage);
+            alert.setHeaderText("This graph cannot be published as a module.");
+            alert.getDialogPane().setMinWidth(560);
+            alert.showAndWait();
+            return;
+        }
+        StringBuilder detail = new StringBuilder("Other graphs can now add it with Add Module…");
+        for (String warning : result.warnings()) {
+            detail.append("\n\n").append(warning);
+        }
+        Alert alert = new Alert(result.warnings().isEmpty()
+                ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING, detail.toString());
+        alert.initOwner(stage);
+        alert.setHeaderText("\"" + result.module().name() + "\" is published as a module.");
+        alert.getDialogPane().setMinWidth(560);
+        alert.showAndWait();
+    }
+
+    /**
+     * The canvas's Add Module… command: loads what is on offer, asks, and hands back a node already
+     * bound to the answer.
+     *
+     * <p>The load is a directory scan and a node build per module file, so it runs on a worker and the
+     * dialog opens from its success handler, back on the FX thread. The graph being edited is left
+     * out of the offer — a graph referencing itself is a cycle nothing could load.
+     */
+    private void chooseModule(Consumer<BaseNode> place) {
+        // Read here rather than from the worker: currentFile is FX-thread state.
+        File open = currentFile;
+        Task<List<ModuleChoices.Choice>> loading = new Task<>() {
+            @Override
+            protected List<ModuleChoices.Choice> call() {
+                moduleLibrary.refresh();
+                return ModuleChoices.offer(moduleLibrary.all(), moduleIdOf(open));
+            }
+        };
+        loading.setOnSucceeded(event -> ModulePickerDialog.show(stage, loading.getValue())
+                .ifPresent(choice -> place.accept(referenceTo(choice))));
+        loading.setOnFailed(event -> {
+            log.error("Could not list the published modules", loading.getException());
+            new Alert(Alert.AlertType.ERROR, "Could not read the modules directory: "
+                    + loading.getException()).showAndWait();
+        });
+        runInBackground(loading, "housegraph-list-modules");
+    }
+
+    /** A module node pointed at {@code choice} and already resolved, so it arrives on the canvas with ports. */
+    private ModuleNode referenceTo(ModuleChoices.Choice choice) {
+        ModuleNode node = new ModuleNode();
+        node.setModuleId(choice.id());
+        node.bindTo(moduleLibrary);
+        return node;
+    }
+
+    /**
+     * The module id of {@code file}, or null when it has none — what must not be offered as a module
+     * of itself.
+     *
+     * <p>Read from the file rather than remembered, because publishing writes the id straight into it
+     * and nothing on the canvas carries it. Called from the worker, with the rest of the listing.
+     */
+    private static String moduleIdOf(File file) {
+        if (file == null || !file.isFile()) {
+            return null;
+        }
+        try {
+            return ModuleFile.idOf(GraphFileIO.readRoot(file));
+        } catch (IOException | RuntimeException e) {
+            // Not knowing costs one row of the picker being offered that should not be, which the
+            // publish-time cycle check would still refuse. Not worth failing the listing over.
+            log.debug("Could not read {} to exclude it from the module picker: {}", file, e.toString());
+            return null;
+        }
+    }
+
+    /** Runs one background task on a daemon thread, so a pending scan can never hold the JVM open. */
+    private static void runInBackground(Task<?> task, String threadName) {
+        Thread worker = new Thread(task, threadName);
+        worker.setDaemon(true);
+        worker.start();
     }
 
     /**
@@ -500,8 +668,10 @@ public class App extends Application implements MenuActions {
         try {
             // The catalog goes along so each node library this graph uses is recorded with the
             // repository it can be installed from, not just its id — that's what lets another
-            // machine offer to fetch what's missing rather than only name it.
-            io.github.jaymcole.housegraph.ui.io.GraphFileIO.save(canvas, file, pluginCatalog);
+            // machine offer to fetch what's missing rather than only name it. The module library is
+            // there for the same reason one level further out: a referenced module's own libraries
+            // are recorded in its row, and this graph's own nodes could never name them.
+            io.github.jaymcole.housegraph.ui.io.GraphFileIO.save(canvas, file, pluginCatalog, moduleLibrary);
             rememberLastFile(file);
         } catch (IOException ex) {
             new Alert(Alert.AlertType.ERROR, "Failed to save graph: " + ex.getMessage()).showAndWait();

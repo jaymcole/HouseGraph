@@ -72,12 +72,13 @@ public class MainMenuBar extends MenuBar {
 
         MenuItem save = item("Save", shortcut(KeyCode.S), actions::saveGraph);
         MenuItem saveAs = item("Save As…", shortcut(KeyCode.S, KeyCombination.SHIFT_DOWN), actions::saveGraphAs);
+        MenuItem publish = item("Publish as Module…", null, actions::publishAsModule);
         MenuItem export = item("Export Images…", shortcut(KeyCode.E), actions::exportImages);
         MenuItem exit = item("Exit", shortcut(KeyCode.Q), actions::exit);
 
         Menu menu = new Menu("File");
         menu.getItems().addAll(newGraph, open, recent, new SeparatorMenuItem(),
-                save, saveAs, new SeparatorMenuItem(),
+                save, saveAs, publish, new SeparatorMenuItem(),
                 export, new SeparatorMenuItem(), exit);
         // Save reads "Save" once there is a file to write and "Save…" before then, because until
         // one has been chosen it prompts — the ellipsis is the only warning that it will.

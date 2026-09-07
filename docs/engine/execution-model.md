@@ -43,7 +43,12 @@ unit of isolation throughout the engine — see [concurrency.md](concurrency.md)
 ## Driving another graph's run
 
 A node whose work *is* another graph — a module node running the graph it references —
-starts a run on that second `NodeGraph` and blocks until **that run** settles.
+starts a run on that second `NodeGraph` and blocks until **that run** settles. It can do
+that only once it has been **bound**: loading a graph does no I/O, so a `ModuleNode`
+comes back with its ports and no confirmation that the module behind them still exists,
+which it reports as misconfigured and refuses to run on. `modules/ModuleBinding.bindAll`
+is that pass, and every path that opens a graph meaning to run it ends in one — see
+[ui-layer.md](ui-layer.md) for where each puts it and why.
 `NodeGraph.runToCompletion(entry, seed, harvest, cancelled)` is the primitive, and
 `runToCompletion(seed, harvest, cancelled)` is its data-only shape, which seeds a context
 and fires nothing.

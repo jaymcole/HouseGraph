@@ -9,6 +9,7 @@ import io.github.jaymcole.housegraph.graph.nodes.constants.ConstantFloatNode;
 import io.github.jaymcole.housegraph.graph.nodes.math.AddNode;
 import io.github.jaymcole.housegraph.headless.fixture.SignallingStartNode;
 import io.github.jaymcole.housegraph.headless.fixture.UnadoptedLibraryNode;
+import io.github.jaymcole.housegraph.modules.ModuleDirectory;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.saveformat.ClipboardDataEdge;
 import io.github.jaymcole.housegraph.saveformat.ClipboardFlowEdge;
@@ -99,7 +100,7 @@ class HeadlessGraphTest {
             }
         });
 
-        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, emptyCatalog());
+        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, emptyCatalog(), ModuleDirectory.EMPTY);
 
         assertEquals(3, opened.loaded().nodes().size());
         assertEquals(1, opened.loaded().dataEdges().size(), "the data edge is wired");
@@ -118,7 +119,7 @@ class HeadlessGraphTest {
         File file = saveFixture(snapshotOf(new SignallingStartNode()));
 
         graph = new NodeGraph();
-        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, emptyCatalog());
+        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, emptyCatalog(), ModuleDirectory.EMPTY);
 
         assertFalse(((SignallingStartNode) opened.loaded().nodes().get(0)).isRunning(),
                 "the supervisor opens a graph, it never presses Start");
@@ -146,7 +147,7 @@ class HeadlessGraphTest {
             }
         });
 
-        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, catalogNaming(FIXTURE_PLUGIN_ID, "Fixtures"));
+        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, catalogNaming(FIXTURE_PLUGIN_ID, "Fixtures"), ModuleDirectory.EMPTY);
 
         assertEquals(1, opened.resumeFailures().size(), "the throw is reported, not swallowed");
         HeadlessGraph.ResumeFailure failure = opened.resumeFailures().get(0);
@@ -177,7 +178,7 @@ class HeadlessGraphTest {
         File file = write(root);
 
         graph = new NodeGraph();
-        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, emptyCatalog());
+        HeadlessGraph.Opened opened = HeadlessGraph.open(file, graph, REGISTRY, emptyCatalog(), ModuleDirectory.EMPTY);
 
         assertEquals(1, opened.missingLibraries().size(), "the missing library is reported");
         assertEquals("Widgets 1.2.0", opened.missingLibraries().get(0).label());

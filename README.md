@@ -26,6 +26,11 @@ design idea:
   GitHub repository and loaded at runtime, with no rebuild. A graph using a library
   you do not have still opens — the node is preserved exactly and offered for
   install, never silently lost. The app never installs on its own.
+- **Modules** — publish a graph as a reusable node. Its Module Input/Output/Entry/Exit
+  markers become the ports other graphs see, and it runs as a nested graph of its own
+  rather than being copied in, so editing it reaches every graph that uses it. A
+  module referenced by a graph on a machine that does not have it is kept exactly as
+  saved rather than lost. See [docs/guides/modules.md](docs/guides/modules.md).
 - **Watch mode** — **Run ▸ Watch Speed** slows every run to a set pace, so a cascade
   can be followed node by node as it fires instead of finishing in a blink. Off by
   default and never saved with the graph.
@@ -138,7 +143,7 @@ directly from the same tag (see [`jitpack.yml`](jitpack.yml) and
 
 | Section | For |
 | --- | --- |
-| [docs/guides/](docs/guides/) | Using HouseGraph: setup, node libraries, secrets, servers, troubleshooting |
+| [docs/guides/](docs/guides/) | Using HouseGraph: setup, node libraries, modules, secrets, servers, troubleshooting |
 | [docs/nodes/](docs/nodes/) | Writing nodes and publishing node libraries |
 | [docs/engine/](docs/engine/) | Engine internals: execution, concurrency, save format, plugin runtime |
 | [docs/decisions/](docs/decisions/) | Why things are the way they are |

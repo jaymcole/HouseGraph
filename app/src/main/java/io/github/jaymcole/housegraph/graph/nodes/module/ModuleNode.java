@@ -1,7 +1,6 @@
 package io.github.jaymcole.housegraph.graph.nodes.module;
 
 import io.github.jaymcole.housegraph.annotations.Display;
-import io.github.jaymcole.housegraph.annotations.Node.Disabled;
 import io.github.jaymcole.housegraph.annotations.Node.Keywords;
 import io.github.jaymcole.housegraph.annotations.Node.Kind;
 import io.github.jaymcole.housegraph.annotations.NodeKind;
@@ -68,9 +67,14 @@ import java.util.Set;
  * Exit they reach selects nothing here. What crosses back out is what one invocation reached. A
  * module that must drive its consumer's flow needs a trigger in the consuming graph.
  * <p>
- * {@code @Disabled} keeps this out of the Add-Node menu because there is still no way to
- * <em>create</em> a module reference through the GUI, while leaving the class resolvable so a graph
- * saved against a build that has one still opens.
+ * <b>The Add-Node menu cannot point one of these at a module.</b> That menu is built from
+ * {@code NodeRegistry.discover()}, which is keyed by class — and every module in the world is this
+ * one class pointed at a different id, so the menu can only ever offer a node referencing nothing.
+ * The canvas context menu's <b>Add Module…</b> row is the one that offers modules: it lists what
+ * {@code ModuleLibrary} found and hands back a node with {@link #setModuleId} and {@link #bindTo}
+ * already called on it. See {@code io.github.jaymcole.housegraph.modules.ModuleChoices}. A node
+ * added from the Add-Node menu instead says on its own face that it references nothing, and where to
+ * go to fix that.
  *
  * <h2>The reference is an id, and the shape is not derived from it</h2>
  * What this node stores is the module's <b>stable id</b> — plus a last-known name and path, which
@@ -104,7 +108,6 @@ import java.util.Set;
 @Display.Description("Runs another saved graph as a single node, with ports from that graph's boundary markers.")
 @Kind(NodeKind.ACTION)
 @Keywords({"module", "subgraph", "graph", "nested", "reuse", "call", "invoke", "component", "macro"})
-@Disabled("There is no way to create a module reference through the GUI yet, so this would be unusable in the Add-Node menu")
 public class ModuleNode extends BaseNode implements NodeContentProvider {
 
     private static final Logger log = Log.get(ModuleNode.class);
@@ -406,7 +409,13 @@ public class ModuleNode extends BaseNode implements NodeContentProvider {
             arguments.put(input.name, input.getValue());
         }
 
-        ModuleInstance.Invocation invocation = module.invoke(entryFor(ctx), arguments, ctx::isCancelled);
+        String entry = entryFor(ctx);
+        ModuleInstance.Invocation invocation = module.invoke(entry, arguments, ctx::isCancelled);
+        // A module is an opaque box in its consumer's graph: nothing else on the canvas says which
+        // way control went into it or came back out. At debug, so it is in the log file an operator
+        // reads after the fact and nowhere else.
+        log.debug("Module \"{}\" invoked {}, reached exits {}", label(),
+                entry == null ? "as a pull" : "at entry \"" + entry + "\"", invocation.exitsReached());
 
         for (NodeVariable<?> output : getOutputs()) {
             set(output, invocation.outputs().get(output.name));
@@ -739,7 +748,9 @@ public class ModuleNode extends BaseNode implements NodeContentProvider {
         }
         List<String> lines = new ArrayList<>();
         if (moduleId.isEmpty()) {
+            // The Add-Node menu can only produce this state, so the label is also the way out of it.
             lines.add("No module referenced");
+            lines.add("Right-click the canvas and choose Add Module… to pick one.");
         } else {
             lines.add(label());
             if (resolution == Resolution.UNRESOLVED) {

@@ -42,6 +42,16 @@ public interface MenuActions {
     /** Whether a file has been chosen, i.e. whether {@link #saveGraph()} would write without prompting. */
     boolean hasCurrentFile();
 
+    /**
+     * Writes the canvas into the modules directory and gives it a stable id, so other graphs can
+     * reference it as a single node. Prompts for the destination, and reports what it did.
+     *
+     * <p>An explicit command rather than something File ▸ Save works out for itself: a graph that
+     * happens to contain a boundary marker is not necessarily meant to be a reusable module, and an
+     * id, once other graphs reference it, cannot be taken back.
+     */
+    void publishAsModule();
+
     /** Prompts for a directory and writes one PNG per distinct graph on the canvas into it. */
     void exportImages();
 

@@ -7,6 +7,8 @@ import io.github.jaymcole.housegraph.loader.GraphLoader;
 import io.github.jaymcole.housegraph.loader.LoadedGraph;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.modules.ModuleBinding;
+import io.github.jaymcole.housegraph.modules.ModuleDirectory;
 import io.github.jaymcole.housegraph.plugin.GraphDependencyCheck;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.sdk.AutoStartable;
@@ -25,9 +27,16 @@ import java.util.List;
  *
  * <h2>What one open does</h2>
  * Read the file, report the node libraries it names that are not installed, build the snapshot,
- * hand it to {@link GraphLoader} with no listener — nothing is drawing anything — and then make one
- * pass over the loaded nodes resuming every {@link AutoStartable}. That last step is what turns a
- * loaded graph into a running one: the supervisor opens a graph, it never presses Start.
+ * hand it to {@link GraphLoader} with no listener — nothing is drawing anything — then resolve every
+ * module the graph references, and finally make one pass over the loaded nodes resuming every
+ * {@link AutoStartable}. That last step is what turns a loaded graph into a running one: the
+ * supervisor opens a graph, it never presses Start.
+ *
+ * <h2>Modules are bound before anything resumes</h2>
+ * A {@code ModuleNode} loads unresolved and refuses to run, so a supervised graph containing one
+ * would do nothing at all without {@link ModuleBinding#bindAll}. It runs after every edge is wired,
+ * because binding can rebuild the node's ports, and before the resume pass, because a resumed node
+ * may pull a value straight through a module.
  *
  * <h2>Missing libraries are reported, not refused</h2>
  * A graph naming a library that is not installed still opens. Its nodes load as {@code MissingNode}
@@ -53,10 +62,12 @@ public final class HeadlessGraph {
      * @param missingLibraries libraries the file names that are not installed or are switched off;
      *                         their nodes are placeholders
      * @param resumeFailures   the nodes whose resume threw, in load order
+     * @param modules          what the module-binding pass resolved, reshaped and could not find
      */
     public record Opened(LoadedGraph loaded,
                          List<GraphDependencyCheck.RequiredPlugin> missingLibraries,
-                         List<ResumeFailure> resumeFailures) {
+                         List<ResumeFailure> resumeFailures,
+                         ModuleBinding.Result modules) {
     }
 
     /**
@@ -79,12 +90,14 @@ public final class HeadlessGraph {
      * @param graph    a fresh graph to load into
      * @param registry resolves node types, and says which library each came from
      * @param catalog  what is installed, for both the dependency report and the library names in it
+     * @param modules  resolves the modules the graph references; {@link ModuleDirectory#EMPTY} leaves
+     *                 every module node unresolved, which is honest for a caller with no library
      * @return what was loaded, what was missing, and what failed to resume
      * @throws IOException      the file could not be read
      * @throws RuntimeException the file is not a save file this build can parse
      */
-    public static Opened open(File file, NodeGraph graph, NodeRegistry registry, PluginCatalog catalog)
-            throws IOException {
+    public static Opened open(File file, NodeGraph graph, NodeRegistry registry, PluginCatalog catalog,
+                              ModuleDirectory modules) throws IOException {
         // Parsed before anything is constructed, so the libraries in use are known before a class
         // from one of them is loaded - the same order App opens a graph in.
         JSONObject root = GraphFileIO.readRoot(file);
@@ -97,7 +110,16 @@ public final class HeadlessGraph {
         log.info("Loaded {}: nodes {}, data edges {}, flow edges {}",
                 file.getName(), loaded.nodes().size(), loaded.dataEdges().size(), loaded.flowEdges().size());
 
-        return new Opened(loaded, report.blocking(), resumeRunningNodes(loaded, registry, catalog));
+        ModuleBinding.Result modulesBound = ModuleBinding.bindAll(loaded.nodes(), modules);
+        if (modulesBound.total() > 0) {
+            // Worth a line of its own: a module that did not resolve is a part of the graph that will
+            // not run, and the per-node warnings alone do not say how much of the graph that is.
+            log.info("{} references {} module(s): {} bound, {} rebuilt to a changed interface, {} not found",
+                    file.getName(), modulesBound.total(), modulesBound.bound().size(),
+                    modulesBound.reshaped().size(), modulesBound.unresolved().size());
+        }
+
+        return new Opened(loaded, report.blocking(), resumeRunningNodes(loaded, registry, catalog), modulesBound);
     }
 
     /**

@@ -20,11 +20,17 @@ rule: **pure logic does not import JavaFX.**
 - `modules/` is headless and tested against real save files written by the format
   itself, never hand-typed JSON: `ModuleFixture` builds them through
   `SaveFileFixture.toJson`, so a change to the format cannot leave a module test
-  agreeing with a shape nothing writes.
+  agreeing with a shape nothing writes. The desktop's module commands are tested
+  there too rather than through the window that triggers them: `ModuleBindingTest`
+  covers resolving a just-loaded reference (which is what the canvas's load path
+  calls), `ModulePublisherTest` what may be published, and `ModuleChoicesTest` what
+  the picker offers.
 - `loader/`, `saveformat/`, `modules/`, `headless/`, `plugin/`, `cli/` and `remote/` are headless for the same
   reason. Nothing worth testing may live in a window. `headless/HeadlessGraphTest`
   is the strongest form of it: a real save file onto a real `NodeGraph`, with a
   saved-running node resuming and firing, and no toolkit started.
+  `headless/HeadlessGraphModulesTest` is the same shape for a graph that references a
+  module, which is the `housegraph run --headless` path.
 
 When you extend any of these, keep the JavaFX-free core JavaFX-free. If new logic
 must touch the UI, factor the testable part out.

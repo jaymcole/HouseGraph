@@ -25,6 +25,9 @@ import io.github.jaymcole.housegraph.saveformat.ClipboardFlowEdge;
 import io.github.jaymcole.housegraph.saveformat.ClipboardNode;
 import io.github.jaymcole.housegraph.saveformat.GraphSnapshot;
 
+import io.github.jaymcole.housegraph.modules.ModuleBinding;
+import io.github.jaymcole.housegraph.modules.ModuleDirectory;
+
 import io.github.jaymcole.housegraph.loader.GraphLoader;
 import io.github.jaymcole.housegraph.loader.LoadedDataEdge;
 import io.github.jaymcole.housegraph.loader.LoadedFlowEdge;
@@ -91,8 +94,9 @@ import java.util.function.Function;
  * node then carries any selected waypoints along with it, as one undo step; right-click
  * opens a menu led by a ranked node search box, focused immediately; it shows
  * no results until you type, with the categorised "Add Node" menu kept below it for
- * browsing. Delete/Backspace removes the current selection; Ctrl/Cmd+A selects
- * everything on the canvas; Ctrl/Cmd+C copies the selection and Ctrl/Cmd+V pastes it
+ * browsing and an "Add Module…" row under that — modules are not node types, so they
+ * cannot be menu entries; see {@link ModuleReferenceAction}. Delete/Backspace removes
+ * the current selection; Ctrl/Cmd+A selects everything on the canvas; Ctrl/Cmd+C copies the selection and Ctrl/Cmd+V pastes it
  * at the cursor; Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo (currently: adding a
  * node via the menu, and deleting nodes/connections - see {@link UndoManager}). Data edges are created by dragging from
  * one data port's circle to another; flow edges by dragging between the triangular
@@ -163,7 +167,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     private final ContextMenu contextMenu;
     private final TextField nodeSearchField;
+    private final MenuItem addModuleItem;
     private final NodeRegistry nodeRegistry;
+    /** Resolves the modules a loaded graph references; {@link ModuleDirectory#EMPTY} when none was given. */
+    private final ModuleDirectory modules;
     private final NodeSearchIndex nodeSearchIndex;
     private Menu addNodeMenu;
     private Point2D pendingDropPoint = Point2D.ZERO;
@@ -183,13 +190,33 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private final UndoManager undoManager = new UndoManager();
 
     /**
+     * A canvas with no module support: every {@code ModuleNode} it loads stays unresolved and the
+     * context menu offers no way to add one. For a caller with no module library to hand.
+     *
      * @param libraryNames maps a node library's id to its human name, for the node search box; see
      *                     {@link NodeSearchIndex}. May be null.
      */
     public GraphCanvas(NodeGraph graph, NodeRegistry nodeRegistry, Function<String, String> libraryNames) {
+        this(graph, nodeRegistry, libraryNames, ModuleDirectory.EMPTY, null);
+    }
+
+    /**
+     * @param libraryNames maps a node library's id to its human name, for the node search box; see
+     *                     {@link NodeSearchIndex}. May be null.
+     * @param modules      resolves the modules a loaded graph references, so a module node comes back
+     *                     runnable rather than unresolved; {@link ModuleDirectory#EMPTY} for none
+     * @param moduleAdder  asks the user which module to reference; null leaves the item out of the
+     *                     context menu, which is what a canvas with no library should show
+     */
+    public GraphCanvas(NodeGraph graph, NodeRegistry nodeRegistry, Function<String, String> libraryNames,
+                       ModuleDirectory modules, ModuleReferenceAction moduleAdder) {
         this.graph = graph;
         this.nodeRegistry = nodeRegistry;
+        this.modules = modules == null ? ModuleDirectory.EMPTY : modules;
         this.nodeSearchIndex = new NodeSearchIndex(nodeRegistry, libraryNames);
+        // Built once and kept, like the Add-Node menu: updateSearchResultsIn re-adds the same item
+        // rather than a new one on every keystroke.
+        this.addModuleItem = buildAddModuleItem(moduleAdder);
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
         setFocusTraversable(true);
@@ -1372,16 +1399,51 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * Not itself undoable, and wipes prior undo history - loading a different graph is
      * a new-document boundary, not an edit you'd undo back through.
      * <p>
-     * After the whole graph is in place — every node built and activated, every edge wired —
-     * any {@link AutoStartable} node that was running when the graph was saved is resumed (its
-     * Start/Connect path re-run). This happens here, not on plain node placement, so it fires
-     * only on a load: paste and undo/redo never auto-start a copied resource.
+     * After the whole graph is in place — every node built and activated, every edge wired — two
+     * passes run, in this order:
+     * <ol>
+     *   <li>every {@code ModuleNode} is resolved against the injected {@link ModuleDirectory}
+     *       ({@link ModuleBinding}), because one that is never bound reports itself misconfigured and
+     *       refuses to run;</li>
+     *   <li>any {@link AutoStartable} node that was running when the graph was saved is resumed (its
+     *       Start/Connect path re-run).</li>
+     * </ol>
+     * Binding comes first because a resumed node may pull a value straight through a module, and both
+     * come after {@link #place} because binding rebuilds a node's ports when its module's interface
+     * has changed — which drops and re-attaches its edges <em>by name</em>, and so needs those edges
+     * to exist. Neither pass runs on plain node placement: paste and undo/redo never auto-start a
+     * copied resource, and a rebuilt view would strand the {@code Command} holding the old one.
      */
     public void loadSnapshot(GraphSnapshot snapshot) {
         clearAll();
         List<NodeView> placed = place(snapshot, ClipboardNode::node, 0, 0);
         undoManager.clear();
+        bindModules(placed);
         resumeRunningNodes(placed);
+    }
+
+    /**
+     * Resolves every just-loaded module reference. The decision is entirely
+     * {@link ModuleBinding}'s — this only supplies the nodes and re-reads the views afterwards,
+     * since a rebuilt shape replaces the {@link NodeView} the load produced.
+     */
+    private void bindModules(List<NodeView> placed) {
+        List<BaseNode> nodes = new ArrayList<>();
+        for (NodeView nodeView : placed) {
+            nodes.add(nodeView.getNode());
+        }
+        ModuleBinding.Result result = ModuleBinding.bindAll(nodes, modules);
+        if (result.total() == 0) {
+            return;
+        }
+        // A rebuild swaps the view out from under `placed`, so anything that still needs a view for
+        // one of these nodes has to ask nodeViewByNode rather than trust the list.
+        for (int i = 0; i < placed.size(); i++) {
+            NodeView current = nodeViewByNode.get(placed.get(i).getNode());
+            if (current != null) {
+                placed.set(i, current);
+            }
+        }
     }
 
     /**
@@ -1527,6 +1589,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         }
         items.add(new SeparatorMenuItem());
         items.add(addNodeMenu);
+        if (addModuleItem != null) {
+            items.add(addModuleItem);
+        }
         menu.getItems().setAll(items);
     }
 
@@ -1559,9 +1624,23 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private void addNodeFromRegistry(Class<? extends BaseNode> nodeClass) {
         BaseNode instance = NodeRegistry.instantiate(nodeClass);
         if (instance != null) {
-            NodeView nodeView = new NodeView(instance, content, this);
-            undoManager.execute(new AddNodeCommand(this, nodeView, pendingDropPoint.getX(), pendingDropPoint.getY()));
+            addNodeAt(instance, pendingDropPoint.getX(), pendingDropPoint.getY());
         }
+    }
+
+    /**
+     * Puts an already-built node on the canvas at a content-space point, as one undoable step.
+     *
+     * <p>Public because a node the canvas cannot build itself still has to land the same way
+     * everything else does — a {@code ModuleNode} is built by whoever resolved the module (see
+     * {@link ModuleReferenceAction}), not from the node registry.
+     *
+     * @param node the node to add; it must not already be on a graph
+     * @param x    content-space x
+     * @param y    content-space y
+     */
+    public void addNodeAt(BaseNode node, double x, double y) {
+        undoManager.execute(new AddNodeCommand(this, new NodeView(node, content, this), x, y));
     }
 
     /**
@@ -1600,6 +1679,25 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             }
         }
         return false;
+    }
+
+    /**
+     * The "Add Module…" row under the Add-Node menu, or null when this canvas was given no way to
+     * choose one. The drop point is read when the item is clicked and closed over, not when the
+     * chosen node comes back: the answer may arrive after a worker has been to the filesystem, and
+     * the node belongs where the menu was opened.
+     */
+    private MenuItem buildAddModuleItem(ModuleReferenceAction moduleAdder) {
+        if (moduleAdder == null) {
+            return null;
+        }
+        MenuItem item = new MenuItem("Add Module…");
+        item.setOnAction(event -> {
+            double x = pendingDropPoint.getX();
+            double y = pendingDropPoint.getY();
+            moduleAdder.chooseModule(node -> addNodeAt(node, x, y));
+        });
+        return item;
     }
 
     private Menu buildAddNodeMenu() {

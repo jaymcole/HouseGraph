@@ -40,7 +40,13 @@ import java.util.stream.Stream;
  * <h2>The index is a snapshot</h2>
  * The scan runs once and is cached, because deriving an interface builds every node in every module
  * file. Call {@link #refresh()} after something has changed on disk. Nothing here watches the
- * filesystem.
+ * filesystem, so a module edited under a running app is picked up when something asks for a refresh
+ * — the desktop does that on each user-initiated module action — and not before.
+ *
+ * <h2>Safe to hand to a worker</h2>
+ * Every method that touches the index is {@code synchronized}, because the desktop scans and
+ * publishes on a background thread while the FX thread resolves the modules in a graph it is
+ * opening. The lock is held across the scan, which is the point: two threads must not both build it.
  *
  * <h2>An unreadable file costs only itself</h2>
  * A file that will not parse, or that carries no module id, is logged and skipped: one broken graph
@@ -85,14 +91,40 @@ public final class ModuleLibrary implements ModuleDirectory {
         return new ModuleLibrary(searchRoots, registry);
     }
 
+    /**
+     * The library for resolving the modules one graph file references: the machine's modules
+     * directory, plus the directory that graph is in. The second root is what makes a repository of
+     * graphs — where a module and its consumer are checked into the same folder — resolve with
+     * nothing installed first.
+     *
+     * @param graph    the graph whose references are about to be resolved
+     * @param registry resolves each module's node types so its interface can be derived
+     * @return a library over both roots, the modules directory first
+     */
+    public static ModuleLibrary forGraph(File graph, NodeRegistry registry) {
+        Path beside = graph.getAbsoluteFile().toPath().getParent();
+        Path modules = AppDirectories.get().modules();
+        return over(beside == null ? List.of(modules) : List.of(modules, beside), registry);
+    }
+
+    /**
+     * The directories this library scans, in precedence order — what a caller needs to tell someone
+     * where a module has to live to be found.
+     *
+     * @return the search roots, never null
+     */
+    public List<Path> searchRoots() {
+        return searchRoots;
+    }
+
     /** Drops the cached scan, so the next lookup re-reads the search roots. */
-    public void refresh() {
+    public synchronized void refresh() {
         rootsById = null;
         filesById = null;
     }
 
     @Override
-    public Optional<ModuleEntry> byId(String id) {
+    public synchronized Optional<ModuleEntry> byId(String id) {
         if (id == null || id.isBlank()) {
             return Optional.empty();
         }
@@ -116,7 +148,7 @@ public final class ModuleLibrary implements ModuleDirectory {
      * @return its parsed root, or null
      */
     @Override
-    public JSONObject rootOf(String moduleId) {
+    public synchronized JSONObject rootOf(String moduleId) {
         return moduleId == null || moduleId.isBlank() ? null : index().get(moduleId);
     }
 
@@ -144,7 +176,7 @@ public final class ModuleLibrary implements ModuleDirectory {
      * @param pathHint where it was last found, or null/blank when nothing was recorded
      * @return the resolved module, or empty when neither the search roots nor the hint has it
      */
-    public Optional<ModuleEntry> resolve(String id, String pathHint) {
+    public synchronized Optional<ModuleEntry> resolve(String id, String pathHint) {
         Optional<ModuleEntry> found = byId(id);
         if (found.isPresent() || id == null || id.isBlank() || pathHint == null || pathHint.isBlank()) {
             return found;
@@ -173,7 +205,7 @@ public final class ModuleLibrary implements ModuleDirectory {
      * @throws IOException              if the file cannot be read or written
      * @throws IllegalArgumentException if the graph declares no boundary markers, so has no interface
      */
-    public ModuleEntry publish(Path file) throws IOException {
+    public synchronized ModuleEntry publish(Path file) throws IOException {
         JSONObject root = GraphFileIO.readRoot(file.toFile());
         if (!ModuleFile.isModule(root)) {
             throw new IllegalArgumentException(
@@ -190,6 +222,20 @@ public final class ModuleLibrary implements ModuleDirectory {
         return entry;
     }
 
+    /**
+     * Every module the search roots hold, in scan order — what a picker offers, and the one thing
+     * {@link #byId} cannot answer for a caller that has no id yet.
+     *
+     * @return one entry per indexed module, never null
+     */
+    public synchronized List<ModuleEntry> all() {
+        List<ModuleEntry> entries = new ArrayList<>();
+        for (Map.Entry<String, JSONObject> indexed : index().entrySet()) {
+            entries.add(entryFor(indexed.getKey(), indexed.getValue(), filesById.get(indexed.getKey())));
+        }
+        return List.copyOf(entries);
+    }
+
     /** Derives everything a consumer wants to know about one already-parsed module root. */
     private ModuleEntry entryFor(String id, JSONObject root, Path file) {
         String declared = ModuleFile.nameOf(root);
@@ -201,7 +247,7 @@ public final class ModuleLibrary implements ModuleDirectory {
     }
 
     /** The cached id -> root index, scanning the search roots on first use. */
-    private Map<String, JSONObject> index() {
+    private synchronized Map<String, JSONObject> index() {
         if (rootsById != null) {
             return rootsById;
         }

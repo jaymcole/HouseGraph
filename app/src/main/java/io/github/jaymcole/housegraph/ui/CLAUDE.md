@@ -9,8 +9,9 @@ the dependency stack: it depends on `graph/` and below, never the reverse.
 
 ## Layout
 
-`GraphCanvas` is the hub and stays at the package root; everything else is split by
-concern.
+`GraphCanvas` is the hub and stays at the package root, alongside
+`ModuleReferenceAction` — the host's side of Add Module…, for the same reason
+`menu/MenuActions` exists. Everything else is split by concern.
 
 | Sub-package | Holds |
 | --- | --- |
@@ -21,6 +22,7 @@ concern.
 | `log/` | the log viewer (`LogWindow`) and `LogLevelPreferences` |
 | `menu/` | the application menu bar (`MainMenuBar`) and the `MenuActions` the host app implements |
 | `plugin/` | the node-library manager (`PluginWindow`) |
+| `module/` | the module picker (`ModulePickerDialog`) |
 | `export/` | rendering the canvas to PNGs, one per connected component |
 | `widget/` | small controls with no graph-model dependency, reused across windows (`TaskProgressBar`) |
 
@@ -42,6 +44,13 @@ package.
   `Platform::runLater`. Never call into JavaFX from an engine thread, and never do
   blocking work on the FX thread — use a worker, then `Platform.runLater` the UI
   update. `PluginWindow`'s install flow is the in-tree example.
+- **Modules decide nothing here.** `modules/` is headless and tested: what may be
+  published (`ModulePublisher`), what the picker offers (`ModuleChoices`), and how a
+  loaded module reference is resolved (`ModuleBinding`). `ui/module/` renders, and
+  `App` runs both filesystem actions on a worker. `GraphCanvas.loadSnapshot` calls
+  `ModuleBinding` after `place` and before `resumeRunningNodes`, and never from
+  `place` itself — a rebuilt shape swaps out the `NodeView` a paste `Command` holds.
+  See [`docs/engine/ui-layer.md`](../../../../../../../../../docs/engine/ui-layer.md).
 - **Reversible canvas mutations are `Command`s.** Anything undoable goes through
   `UndoManager` as a `Command`, not an ad-hoc mutation. Use `record()` for gestures
   applied live, such as a drag, that become one undo step at the end.
@@ -50,9 +59,11 @@ package.
   read and write) are free of JavaFX so they can be unit-tested, and live in their
   own headless package for the same reason `loader/GraphLoader` does — a headless
   caller (`cli/`, `remote/`, `catalog/`, `headless/`) cannot reach up into `ui/` to
-  parse a save file. `ui.io.GraphFileIO`'s `save`/`load` are the only two methods
-  here: thin wrappers pulling a snapshot and camera state off a real `GraphCanvas`
-  and handing them to `saveformat/`. The other half of *opening* a graph is
+  parse a save file. `ui.io.GraphFileIO`'s `save`/`load` are the only two
+  canvas-facing methods here: thin wrappers pulling a snapshot and camera state off a
+  real `GraphCanvas` and handing them to `saveformat/`. The one decision it makes on
+  its own — what an unreadable file means for the module identity it was about to
+  carry across — takes a `File` and is tested headlessly, like `RecentGraphs`. The other half of *opening* a graph is
   `loader/GraphLoader`: it turns a `GraphSnapshot` into live nodes and edges on the
   `NodeGraph` with no view involved, and `GraphCanvas.place` is only the drawing on
   top of it. When you change the JSON format, keep the forgiving-read behaviour and
@@ -78,6 +89,6 @@ package.
   section of
   [`docs/engine/ui-layer.md`](../../../../../../../../../docs/engine/ui-layer.md).
 
-**When you change canvas interaction, views, commands, editors, or either
-auxiliary window, update
+**When you change canvas interaction, views, commands, editors, the module surface,
+or either auxiliary window, update
 [`docs/engine/ui-layer.md`](../../../../../../../../../docs/engine/ui-layer.md).**
