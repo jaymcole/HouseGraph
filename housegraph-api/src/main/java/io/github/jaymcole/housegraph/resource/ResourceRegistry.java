@@ -25,6 +25,14 @@ import java.util.function.Consumer;
  * Thread-safe: events may be published from a resource's own thread while nodes
  * register/subscribe from the UI thread. A single app-wide {@link #shared()} instance is
  * used today; it could become per-document later without touching callers.
+ * <p>
+ * <b>App-wide is load-bearing, and has one sharp edge.</b> Because a name is global, two
+ * copies of the same set of nodes register the same name and the second displaces the
+ * first — which is exactly what happens when one saved graph is used as a <em>module</em>
+ * by two consumers. Nothing here can prevent it: every node reaches {@link #shared()}
+ * directly, so a scope they were not passed is a scope they would not honour. A module
+ * that publishes a resource name can therefore be used once; see
+ * {@code docs/nodes/long-lived-resources.md}.
  */
 public final class ResourceRegistry {
 

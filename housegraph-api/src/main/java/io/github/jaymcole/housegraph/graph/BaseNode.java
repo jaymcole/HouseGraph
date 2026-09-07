@@ -164,6 +164,30 @@ public abstract class BaseNode {
         requireGraph().runFlowBranchToCompletion(this, port, seed);
     }
 
+    /**
+     * The graph this node belongs to, or null while it belongs to none.
+     *
+     * <h4>What it is for</h4>
+     * A node whose work is to stand up and drive a <em>second</em> {@link NodeGraph} — a module node
+     * running the graph it references — has to give that graph the parts of its host's setup that do
+     * not cross a graph boundary by themselves: the
+     * {@linkplain NodeGraph#getCallbackExecutor() callback executor} (a fresh graph dispatches
+     * inline, which in the app is not the FX thread), the
+     * {@linkplain NodeGraph#getStepDelayMillis() step delay} (per-graph, so a watched run goes
+     * opaque inside a graph that did not inherit it) and the
+     * {@linkplain NodeGraph#getReleaseTimeout() release timeout}. There is no other way to reach
+     * them, and every one of them is wrong by default rather than merely absent.
+     * <p>
+     * It is not a hook for reaching around the engine. Trigger through {@link #execute()}, pull
+     * through {@link #beginProcessing()}, and loop through {@link #runFlowBranchToCompletion}; those
+     * exist so a node does not need this.
+     *
+     * @return the owning graph, or null if this node has not been added to one
+     */
+    protected final NodeGraph getOwningGraph() {
+        return graph;
+    }
+
     private NodeGraph requireGraph() {
         if (graph == null) {
             throw new IllegalStateException(getName() + " has not been added to a NodeGraph yet");

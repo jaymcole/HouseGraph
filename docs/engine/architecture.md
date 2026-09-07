@@ -72,8 +72,10 @@ not a split package.
 - **A module is a graph identified by an id, and `modules/` is the only place that
   looks for one.** `ModuleFile` answers "is this parsed root a module, what is its
   id, what does it reference" purely; `ModuleInterface` derives the ports a graph's
-  boundary markers declare; `ModuleLibrary` is the only component that touches disk,
-  and the only one that assigns an id. It sits beside `saveformat/` and `loader/`
+  boundary markers declare; `ModuleInstance` is one module standing up and runnable —
+  a `NodeGraph` of its own, driven a run at a time by the node that references it
+  ([0012](../decisions/0012-a-module-runs-as-a-nested-graph.md)); `ModuleLibrary` is
+  the only component that touches disk, and the only one that assigns an id. It sits beside `saveformat/` and `loader/`
   rather than inside either because its callers — `graph/nodes/module/`,
   `saveformat/`, `catalog/` and `cli/` — are below the UI. `catalog/` depends on it,
   never the reverse: `GraphStructureValidator` does no I/O, so following a module
@@ -101,6 +103,7 @@ not a split package.
 | `GraphLoader` | Builds a `saveformat.GraphSnapshot`'s nodes and edges onto a `NodeGraph`, headlessly. |
 | `ModuleLibrary` | Finds a module file by the stable id in its root; assigns that id on publish. |
 | `ModuleInterface` | The ports a graph's boundary markers declare, in the consuming graph's orientation. |
+| `ModuleInstance` | One module as a live `NodeGraph`, invoked a run at a time by the node referencing it. |
 | `HeadlessRunner` | Runs one graph with no window, until the process is signalled. |
 | `GraphCanvas` | The JavaFX canvas hosting node and edge views. |
 | `ResourceRegistry` | App-wide, name-keyed lookup and event pub/sub. |

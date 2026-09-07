@@ -103,6 +103,9 @@ public final class ModuleLibrary implements ModuleDirectory {
     /**
      * The parsed root of the module with this id, or null when it is not in the index.
      *
+     * <p>Also the running half of {@link ModuleDirectory}: a consumer that resolved a module through
+     * this library builds its nodes from the root this returns.
+     *
      * <p>Shaped to be passed as {@code library::rootOf} where a
      * {@code GraphStructureValidator.ModuleResolver} is wanted — but deliberately not
      * {@code implements}, so that {@code catalog/} depends on this package and not the other way
@@ -112,8 +115,21 @@ public final class ModuleLibrary implements ModuleDirectory {
      * @param moduleId the module's stable id
      * @return its parsed root, or null
      */
+    @Override
     public JSONObject rootOf(String moduleId) {
         return moduleId == null || moduleId.isBlank() ? null : index().get(moduleId);
+    }
+
+    /**
+     * The registry this library derives interfaces with, and which a consumer standing one of these
+     * modules up must build its nodes with — the host's own, so a module made of a plugin's nodes
+     * resolves them.
+     *
+     * @return the node registry, never null
+     */
+    @Override
+    public NodeRegistry nodeRegistry() {
+        return registry;
     }
 
     /**

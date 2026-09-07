@@ -226,14 +226,41 @@ class ModuleNodeTest {
     // --- Behaviour ------------------------------------------------------------------------------
 
     @Test
-    void runningAModuleFailsLoudlyRatherThanQuietlyDoingNothing() {
+    void aDirectoryThatDescribesAModuleButCannotSupplyItFailsLoudly() {
+        // The shape half of ModuleDirectory answered and the running half did not, which is what a
+        // stub directory is. A node that quietly did nothing would leave its outputs null and read
+        // to the user as a wiring mistake in their own graph.
         ModuleNode node = new ModuleNode();
         node.setModuleId("m-1");
         node.bindTo(directoryOf("m-1", "Doorbell", "", FULL));
+        assertFalse(node.isMisconfigured(), "the module resolved and its interface is sound");
 
-        IllegalStateException failure = assertThrows(IllegalStateException.class, () -> node.process(null));
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> node.process(ProcessContext.uncancelled()));
 
-        assertTrue(failure.getMessage().contains("not implemented"));
+        assertTrue(failure.getMessage().contains("could not be read back"), failure.getMessage());
+    }
+
+    @Test
+    void anUnboundNodeRefusesToRunForTheSameReasonItReportsMisconfigured() {
+        ModuleNode node = new ModuleNode();
+        node.setModuleId("m-1");
+
+        assertTrue(node.isMisconfigured(), "nothing has resolved it, so there is nothing to run it from");
+        IllegalStateException failure =
+                assertThrows(IllegalStateException.class, () -> node.process(ProcessContext.uncancelled()));
+        assertTrue(failure.getMessage().contains("has not been resolved"), failure.getMessage());
+    }
+
+    @Test
+    void aModuleNodeIsNeverAnExecutionEntryPoint() {
+        ModuleNode node = new ModuleNode();
+        // A flow OUT and no flow IN, which is the structural definition the default would match.
+        node.adopt(new ModuleInterface(List.of(DONE), List.of()));
+
+        assertFalse(node.isExecutionEntryPoint(),
+                "a module runs when it is triggered or pulled; its own interior triggers fire runs"
+                        + " on its own graph, which are not the invocation this node drove");
     }
 
     @Test

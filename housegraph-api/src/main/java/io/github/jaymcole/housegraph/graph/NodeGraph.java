@@ -31,6 +31,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /**
  * Owns a set of {@link BaseNode}s and the {@link Edge}/{@link FlowEdge} connections
@@ -120,6 +121,14 @@ import java.util.function.BooleanSupplier;
  * it complete there — so body nodes pull the seeded values without re-running the driver's
  * {@code process()}. The driver's {@code process()} blocks on each such call, running iterations
  * sequentially; its own outer run stays non-idle throughout. See {@code ForEachNode}.
+ * <p>
+ * <b>A run of one graph can be driven from another.</b> {@link #runToCompletion} fires one entry
+ * node and <em>blocks until that run quiesces</em>, seeding its context first and handing the caller
+ * a {@link RunScope} on it afterwards — which is what a node whose work <em>is</em> another graph (a
+ * module node) needs and neither {@link #execute} (returns immediately) nor {@link #awaitIdle()}
+ * (waits for the whole graph, which a repeating trigger never lets settle) can give it. The driver's
+ * cancellation is OR-ed into the driven run's, so being superseded or timed out crosses the
+ * boundary. See {@code docs/engine/execution-model.md}.
  * <p>
  * <b>A run can be slowed down to be watched.</b> {@link #setStepDelayMillis} pauses before each
  * node's {@code process()} in a flow-driven run, stretching a cascade out to a pace the execution
@@ -224,6 +233,13 @@ public class NodeGraph {
     private static final long STEP_DELAY_SLICE_MILLIS = 50;
 
     /**
+     * How long {@link #awaitRun} waits on a driven run before re-reading its driver's cancellation.
+     * Short enough that a cancelled driver returns promptly, long enough that waiting out a normal
+     * invocation costs a handful of wake-ups rather than a spin.
+     */
+    private static final long CANCELLATION_POLL_MILLIS = 25;
+
+    /**
      * How long {@link #dispose()} waits for {@link BaseNode#releaseResources()}, per node and — since
      * they run concurrently — for the pass as a whole.
      *
@@ -250,6 +266,20 @@ public class NodeGraph {
      */
     public void setCallbackExecutor(Executor callbackExecutor) {
         this.callbackExecutor = Objects.requireNonNull(callbackExecutor, "callbackExecutor");
+    }
+
+    /**
+     * The executor this graph dispatches its outward notifications through, so a caller standing up
+     * a <em>second</em> graph can give it the same one. The seam does not cross a graph boundary by
+     * itself: a fresh {@link NodeGraph} defaults to {@code Runnable::run} and would run a node's
+     * {@code onExecuted()} on whichever thread it happened to fire on, which in the app is not the
+     * FX application thread. A host that drives another graph — a module node running the graph it
+     * references — hands this on so callbacks land where the host's own do.
+     *
+     * @return the callback executor, never null; {@code Runnable::run} until one is set
+     */
+    public Executor getCallbackExecutor() {
+        return callbackExecutor;
     }
 
     /**
@@ -692,6 +722,130 @@ public class NodeGraph {
     }
 
     /**
+     * Runs {@code entry} and everything that cascades from it as <b>one isolated run</b>, blocking
+     * until that run quiesces, then hands the caller a {@link RunScope} on it before its context is
+     * discarded. This is what a node in another graph uses to <em>drive</em> this one — a module
+     * node running the graph it references.
+     *
+     * <h4>Why neither {@link #execute} nor {@link #awaitIdle()} does this</h4>
+     * {@code execute} returns immediately, so a driver could not act on what the run produced; a
+     * driving {@code process()} has to block, because {@link Run#fire} reads its
+     * {@linkplain BaseNode#activate activated} flow-out ports the moment it returns. And
+     * {@code awaitIdle()} waits for the <em>whole graph</em>, which never settles if it holds a
+     * repeating trigger. What is needed, and what this is, is waiting for exactly this run.
+     *
+     * <h4>Seeding and harvesting, both inside the run</h4>
+     * {@code seed} runs in the run's own {@link ExecutionContext} before {@code entry} fires — the
+     * same mechanism, and for the same reason, as {@link #execute(BaseNode, Runnable)}'s
+     * {@code prepare}: values written there land in this run's overlay, so concurrent runs cannot
+     * clobber one another through a shared field. Note that it runs on a run thread with this run's
+     * context bound, so it must carry the values it writes rather than read them from the driving
+     * graph, whose overlay is not visible from here.
+     * <p>
+     * {@code harvest} runs once the run has quiesced and <em>still inside its context</em>, which is
+     * the only moment its computed values can be read as its own rather than as the last-run-wins
+     * mirror. See {@link RunScope}.
+     *
+     * <h4>Cancellation crosses the boundary</h4>
+     * {@code cancelled} is OR-ed into this run's own cancellation, so a driver that is superseded,
+     * timed out or interrupted stops the run it drives: nodes inside it see it through their
+     * {@link ProcessContext} and the cascade stops at the next node boundary. The wait polls it, and
+     * on cancellation throws {@link CancellationException} rather than waiting the run out — a
+     * cancelled driver has to return promptly, and a node inside that ignores cancellation would
+     * otherwise hold it. The abandoned run finishes into a context nothing reads.
+     *
+     * <h4>This node's {@link ExecutionPolicy} is not consulted</h4>
+     * As with {@link #runFlowBranchToCompletion}, the run is built directly rather than through
+     * {@code execute}, so the entry-scope gate does not apply: two drivers may run this graph at
+     * once, each in its own context. That is deliberate — coalescing a driven run would leave its
+     * driver blocked on a run that never starts — and it is safe for the same reason concurrent runs
+     * are safe anywhere: nothing per-run is shared. Nodes <em>inside</em> the run are gated by their
+     * own policies exactly as usual, so a stateful interior node still serializes on the default
+     * {@code QUEUE}.
+     *
+     * @param entry     the node to fire; must be in this graph
+     * @param seed      work run in the run's context before {@code entry} fires
+     * @param harvest   work run in the run's context once it has quiesced
+     * @param cancelled the driver's cancellation signal, polled while waiting and OR-ed into the run's
+     * @throws CancellationException if {@code cancelled} trips, or the waiting thread is interrupted
+     */
+    public void runToCompletion(BaseNode entry, Runnable seed, Consumer<RunScope> harvest, BooleanSupplier cancelled) {
+        Objects.requireNonNull(entry, "entry");
+        Objects.requireNonNull(seed, "seed");
+        Objects.requireNonNull(harvest, "harvest");
+        Objects.requireNonNull(cancelled, "cancelled");
+        requireRegistered(entry);
+        CountDownLatch done = new CountDownLatch(1);
+        // Counted like a triggered run, so this graph's own awaitIdle() covers an invocation driven
+        // from outside it. The balancing endPass runs when the run quiesces, including after this
+        // call has abandoned a cancelled one.
+        beginPass();
+        Run run = new Run(() -> {
+            done.countDown();
+            endPass();
+        }, startsStepDelayed(), cancelled);
+        try {
+            runExecutor.execute(() -> run.start(entry, seed));
+        } catch (RuntimeException e) {
+            // A disposed graph rejects the task, and nothing will ever count the latch down: balance
+            // the pass here rather than leaving the wait below polling a run that never started.
+            endPass();
+            throw e;
+        }
+        awaitRun(done, run, entry);
+        run.harvest(harvest);
+    }
+
+    /**
+     * The data-only shape of {@link #runToCompletion(BaseNode, Runnable, Consumer, BooleanSupplier)}:
+     * an isolated context with nothing fired into it, so {@code harvest} pulls whatever it asks for
+     * and nothing else runs. This is how a driver <em>resolves</em> another graph rather than
+     * triggering it — a module with no flow entry, or one reached as a data dependency.
+     * <p>
+     * {@link #resolve} could not serve: it starts a fresh context per call with no way to seed it,
+     * so the graph's inputs would be unset by the time anything pulled them. Unlike the flow shape
+     * this needs no run thread and no wait — a pull blocks its caller anyway — so it runs inline on
+     * the calling thread, which is already a firing thread of the driving graph.
+     *
+     * @param seed      work run in the run's context first
+     * @param harvest   work run in the same context, pulling what the driver needs
+     * @param cancelled the driver's cancellation signal, exposed to any node the harvest pulls
+     */
+    public void runToCompletion(Runnable seed, Consumer<RunScope> harvest, BooleanSupplier cancelled) {
+        Objects.requireNonNull(seed, "seed");
+        Objects.requireNonNull(harvest, "harvest");
+        Objects.requireNonNull(cancelled, "cancelled");
+        // Nothing to do on completion: with no entry fired there is no cascade to wait for, and the
+        // run is finished the moment the harvest returns.
+        Run run = new Run(() -> {
+        }, startsStepDelayed(), cancelled);
+        run.seedOnly(seed);
+        run.harvest(harvest);
+    }
+
+    /**
+     * Waits for one driven run, polling the driver's cancellation rather than blocking on the latch
+     * outright, so a driver whose own run was superseded is not held by an interior node that never
+     * checks. Polling is the only shape available: the cancellation sources a driver exposes
+     * ({@link ProcessContext#isCancelled()}) are read, not subscribed to.
+     */
+    private void awaitRun(CountDownLatch done, Run run, BaseNode entry) {
+        try {
+            while (!done.await(CANCELLATION_POLL_MILLIS, TimeUnit.MILLISECONDS)) {
+                if (run.isCancelled()) {
+                    throw new CancellationException(
+                            "The run driving \"" + entry.getName() + "\" was cancelled");
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            run.cancel();
+            throw new CancellationException(
+                    "Interrupted while running \"" + entry.getName() + "\" to completion");
+        }
+    }
+
+    /**
      * Whether a sub-run started from the calling thread should honour the step delay. Flow-driven
      * execution steps; only the synchronous {@link #resolve} pull is exempt, and the exemption is
      * inherited rather than assumed, because only the enclosing context knows which of the two the
@@ -1051,11 +1205,20 @@ public class NodeGraph {
      * {@link #onComplete} runs. Data is still pulled synchronously within each firing. Non-static:
      * a run uses the enclosing graph's executor, topology and callbacks.
      */
-    private final class Run {
+    private final class Run implements RunScope {
         private final ExecutionContext context = new ExecutionContext();
         private final PassToken token = new PassToken();
         private final AtomicInteger pending = new AtomicInteger();
         private final Runnable onComplete;
+
+        /**
+         * A second cancellation source outside this graph: the {@link ProcessContext} of whatever
+         * node in another graph is driving this run (see {@link #runToCompletion}). OR-ed with
+         * {@link #token} everywhere cancellation is read, so a driver being superseded, timing out
+         * or being interrupted stops the run it drives as surely as a {@code RESTART} here would.
+         * Constantly false for a run nothing outside is driving.
+         */
+        private final BooleanSupplier drivenCancelled;
 
         /**
          * The node this run was triggered on. Its re-entrancy was already decided by the whole-run
@@ -1065,15 +1228,62 @@ public class NodeGraph {
         private BaseNode entryNode;
 
         Run(Runnable onComplete, boolean stepDelayed) {
+            this(onComplete, stepDelayed, () -> false);
+        }
+
+        Run(Runnable onComplete, boolean stepDelayed, BooleanSupplier drivenCancelled) {
             this.onComplete = onComplete;
-            // A node's process() sees this run's cancellation (a superseding RESTART) through its
-            // ProcessContext, which reads it off the context; point the context at this run's token.
-            context.setCancellationSignal(token::isCancelled);
+            this.drivenCancelled = drivenCancelled;
+            // A node's process() sees this run's cancellation (a superseding RESTART, or a driver's
+            // own) through its ProcessContext, which reads it off the context; point the context at
+            // both sources at once.
+            context.setCancellationSignal(this::isCancelled);
             context.setStepDelayed(stepDelayed);
         }
 
         PassToken token() {
             return token;
+        }
+
+        /** Whether this run has been cancelled, from either source. */
+        boolean isCancelled() {
+            return token.isCancelled() || drivenCancelled.getAsBoolean();
+        }
+
+        /** Cancels this run's remaining cascade, as a superseding {@code RESTART} would. */
+        void cancel() {
+            token.cancel();
+        }
+
+        /**
+         * Runs {@code seed} in this run's context and nothing else — the data-only shape of
+         * {@link #runToCompletion(Runnable, Consumer, BooleanSupplier)}, where the run exists only
+         * to give a seeded, isolated context for the harvest's pulls to resolve in. A throw is
+         * logged rather than propagated, exactly as {@link #start}'s prepare is, so the harvest
+         * still gets the context it was promised.
+         */
+        void seedOnly(Runnable seed) {
+            try {
+                context.run(seed);
+            } catch (RuntimeException e) {
+                log.error("Seeding a driven run failed: {}", rootCause(e));
+            }
+        }
+
+        /** Runs {@code harvest} against this run while its context is still bound. See {@link RunScope}. */
+        void harvest(Consumer<RunScope> harvest) {
+            context.run(() -> harvest.accept(this));
+        }
+
+        @Override
+        public void pull(BaseNode node) {
+            requireRegistered(node);
+            resolveInternal(context, node);
+        }
+
+        @Override
+        public boolean hasRun(BaseNode node) {
+            return context.statusOf(node).isComplete();
         }
 
         /** Runs {@code prepare} in this run's context (so an event payload lands in its own value overlay), then fires {@code entry}. */
@@ -1186,7 +1396,7 @@ public class NodeGraph {
         private void fire(BaseNode node) {
             ReentryGate held = null;
             try {
-                if (token.isCancelled()) {
+                if (isCancelled()) {
                     return;
                 }
                 ExecutionPolicy policy = node.getExecutionPolicy();
@@ -1216,7 +1426,7 @@ public class NodeGraph {
                     if (firesNothing || (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort()))) {
                         continue;
                     }
-                    if (token.isCancelled()) {
+                    if (isCancelled()) {
                         break;
                     }
                     callbackExecutor.execute(() -> notifyFlowEdgeTraversed(flowEdge));
