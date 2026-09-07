@@ -35,6 +35,15 @@ import java.util.List;
  * each menu item, which is where most people find out the shortcut exists. A text field being
  * edited consumes these keys too, so typing in a node's inline editor never reaches the menu.
  *
+ * <h2>The bar renders in the window on every platform</h2>
+ * Deliberately <b>not</b> {@code setUseSystemMenuBar(true)}, which on macOS moves the menus to the
+ * screen-top bar. That call blanks the in-window bar while leaving the node holding its layout
+ * slot, so the window shows an empty strip above the toolbar; and the native integration behind it
+ * is unreliable for an app that is not a bundled {@code .app}, which this is not — {@code Launcher}
+ * exists so JavaFX starts from a plain classpath jar. The two together lose the menus entirely:
+ * blank in the window, never populated in the system bar. One in-window bar behaves the same on all
+ * three platforms and is the thing that was actually tested.
+ *
  * <h2>Enablement</h2>
  * Items whose command would be a no-op are greyed out rather than silently doing nothing, and the
  * state is refreshed in {@code setOnShowing} on the menu that owns them. There is no model to
@@ -52,9 +61,6 @@ public class MainMenuBar extends MenuBar {
     public MainMenuBar(GraphCanvas canvas, MenuActions actions) {
         this.canvas = canvas;
         this.actions = actions;
-        // macOS puts the menus in the screen-top system bar, where a Mac user looks for them.
-        // Ignored on every other platform, so it costs nothing to ask for unconditionally.
-        setUseSystemMenuBar(true);
         getMenus().addAll(fileMenu(), editMenu(), viewMenu(), runMenu(), toolsMenu(), helpMenu());
     }
 
