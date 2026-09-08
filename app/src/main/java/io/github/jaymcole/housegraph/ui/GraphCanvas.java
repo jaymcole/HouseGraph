@@ -79,6 +79,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.CubicCurve;
 import javafx.scene.shape.Rectangle;
@@ -161,6 +162,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
 
     private final NodeGraph graph;
     private final Group content = new Group();
+    /**
+     * Holds every {@code GroupView}'s title bar, as a sibling of {@code content} stacked above it —
+     * see the "title bar paints in a layer above every node" section of {@code GroupView}'s Javadoc.
+     * Shares {@code content}'s pan/zoom transform (kept in step by {@link #updateTransform()}) so a
+     * title bar tracks its frame while panning and zooming, even though it is not part of the same
+     * subtree.
+     */
+    private final Group titleOverlay = new Group();
     private final List<PortView> ports = new ArrayList<>();
     private final List<FlowPortView> flowPorts = new ArrayList<>();
     private final List<NodeView> nodeViews = new ArrayList<>();
@@ -264,6 +273,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
         this.addGroupItem = buildAddGroupItem();
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
+        // Above content, so every group's title bar paints over every node and edge; below the
+        // find bar and context menu, added further down, which should float over everything.
+        getChildren().add(titleOverlay);
         setFocusTraversable(true);
         // Lets this canvas flash a node/edge whenever the graph actually runs it,
         // without NodeGraph needing to know anything about JavaFX.
@@ -1216,6 +1228,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
      */
     public void addGroup(GroupView groupView) {
         content.getChildren().add(groupView);
+        titleOverlay.getChildren().add(groupView.getTitleBar());
         groupViews.add(groupView);
         groupView.setZoom(zoom);
         restackGroups();
@@ -1225,12 +1238,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     public void removeGroup(GroupView groupView) {
         deselectGroup(groupView);
         content.getChildren().remove(groupView);
+        titleOverlay.getChildren().remove(groupView.getTitleBar());
         groupViews.remove(groupView);
     }
 
     /**
      * Re-sorts the frames in the content group's child list: largest first, and all of them ahead of
-     * every node and edge.
+     * every node and edge. Their title bars, in {@link #titleOverlay}, are sorted the same way so a
+     * smaller frame's title still wins over a larger frame's where two happen to overlap.
      *
      * <p>Child order <em>is</em> paint order in a JavaFX {@link Group}, so this is the whole of
      * "frames render behind the graph, and a smaller frame renders on top of a larger one". Sorting
@@ -1247,6 +1262,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
         // one operation that would otherwise present one.
         content.getChildren().removeAll(ordered);
         content.getChildren().addAll(0, ordered);
+
+        List<Region> titleBars = new ArrayList<>();
+        for (GroupView view : ordered) {
+            titleBars.add(view.getTitleBar());
+        }
+        titleOverlay.getChildren().removeAll(titleBars);
+        titleOverlay.getChildren().addAll(0, titleBars);
     }
 
     /** A frame's rectangle as canvas-coordinate bounds, for a hit test against nodes, edges or a rubber band. */
@@ -2403,7 +2425,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     }
 
     private void updateTransform() {
-        content.getTransforms().setAll(new Affine(zoom, 0, translateX, 0, zoom, translateY));
+        // The same Affine instance on both: content and titleOverlay stay in lock-step with a
+        // single write instead of two that could drift.
+        Affine transform = new Affine(zoom, 0, translateX, 0, zoom, translateY);
+        content.getTransforms().setAll(transform);
+        titleOverlay.getTransforms().setAll(transform);
         for (GroupView group : groupViews) {
             group.setZoom(zoom);
         }
@@ -2475,14 +2501,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
      * visible, and puts the canvas back exactly as it was afterwards.
      *
      * <p>This is what {@code ui/export} renders one picture per distinct graph through, and each of
-     * the three things it changes is load-bearing:
+     * the things it changes is load-bearing:
      *
      * <ul>
      *   <li><b>Non-member views are hidden</b>, not merely cropped around. Nothing constrains two
      *       disjoint components to occupy separate regions of the canvas — a user may lay one out
      *       right through the middle of another — so a crop to the component's bounding box would
      *       pull foreign nodes into its picture. Hiding also shrinks {@link Group#getLayoutBounds()}
-     *       to just what remains, which is what gives the renderer its crop rectangle for free.</li>
+     *       to just what remains, which is what gives the renderer its crop rectangle for free. A
+     *       hidden frame's title bar is hidden with it, since {@code GroupView} keeps that bar in
+     *       {@link #titleOverlay} rather than as its own child.</li>
      *   <li><b>The selection is cleared</b>, because {@code NodeView}'s selection border is a child
      *       of the node and would otherwise render into the image: whatever happened to be selected
      *       when the user hit Export would come out ringed in amber. <b>Find-in-graph highlights go
@@ -2491,10 +2519,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
      *   <li><b>Pan/zoom is reset to 1:1</b>, so the render doesn't depend on where the user had
      *       scrolled to, and so the content group's local coordinates and its parent's coincide —
      *       which is what lets the renderer derive its viewport from {@code getLayoutBounds()}.</li>
+     *   <li><b>{@link #titleOverlay} is reparented under {@code content}</b>, on top of every node
+     *       view exactly as it always paints, since {@code renderer} only ever sees {@code content}'s
+     *       own subtree and a title bar that stayed a sibling would be invisible to it.</li>
      * </ul>
      *
-     * <p>All three are restored in a {@code finally}, so a renderer that throws still leaves a
-     * usable canvas rather than a half-hidden one.
+     * <p>All of it is restored in a {@code finally}, so a renderer that throws still leaves a usable
+     * canvas rather than a half-hidden one.
      *
      * <p>FX thread only.
      *
@@ -2529,13 +2560,22 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
             }
             // A frame is drawn only into the pictures of the components it actually holds something
             // of. It is not a node and so belongs to no component, and one laid across the canvas
-            // would otherwise stretch every component's crop rectangle out to cover it.
+            // would otherwise stretch every component's crop rectangle out to cover it. Its title
+            // bar is hidden the same way, since it is not this Region's child and so is otherwise
+            // untouched by hiding the frame itself.
             for (GroupView view : groupViews) {
                 if (!holdsAnyOf(view, component)) {
                     view.setVisible(false);
+                    view.getTitleBar().setVisible(false);
                     hiddenGroups.add(view);
                 }
             }
+            // content is what the renderer snapshots, so every title bar has to be part of its
+            // subtree for the duration of the render — normally it lives in titleOverlay, a sibling
+            // stacked above content precisely so it is not, see GroupView's Javadoc. Appending it
+            // puts it on top here too, matching how it always paints relative to node views.
+            getChildren().remove(titleOverlay);
+            content.getChildren().add(titleOverlay);
             // Testing the source node alone is enough: a component is maximal, so an edge with one
             // endpoint inside it has both inside it.
             for (Map.Entry<Edge, EdgeView> entry : edgeViews.entrySet()) {
@@ -2558,11 +2598,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
 
             return renderer.apply(content);
         } finally {
+            content.getChildren().remove(titleOverlay);
+            // Index 1: content is always index 0 (added first in the constructor and never
+            // removed), and titleOverlay always sat directly after it, ahead of the find bar.
+            getChildren().add(1, titleOverlay);
             for (NodeView view : hiddenNodes) {
                 view.setVisible(true);
             }
             for (GroupView view : hiddenGroups) {
                 view.setVisible(true);
+                view.getTitleBar().setVisible(true);
             }
             for (AbstractEdgeView view : hiddenEdges) {
                 view.setVisible(true);

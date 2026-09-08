@@ -195,6 +195,16 @@ read at a glance. It is a frame, not a node: it has no ports, never runs, and a 
 loaded without its frames behaves identically. `saveformat/NodeGroup` is the whole of
 one — a title, a rectangle and a colour — and `view/GroupView` draws it.
 
+**The title bar paints above every node.** The frame's body renders behind the graph
+(see "Paint order" below), but its title bar lives in `GraphCanvas.titleOverlay`
+instead — a sibling `Group` stacked above `content` — so a node placed near a frame's
+corner can never cover its label. `GroupView.getTitleBar()` hands the bar over;
+`addGroup`/`removeGroup` add and remove it from `titleOverlay` alongside the frame
+itself, and `setGroup` repositions it there directly in content coordinates, since it
+is no longer a child `GroupView`'s own `layoutChildren` can place. `titleOverlay`
+shares `content`'s pan/zoom `Affine` (one instance, kept in step by `updateTransform`)
+so a title bar tracks its frame while panning and zooming despite living outside it.
+
 **The title bar counteracts zoom-out.** Below 1:1, `GroupView.setZoom` scales the
 title bar up by `1 / zoom`, holding its on-screen size at what it is at 1:1 instead
 of shrinking into an unreadable smear alongside the rest of the graph; at 1:1 and
@@ -226,6 +236,8 @@ behind the graph, and a smaller frame renders on top of a larger one". Sorting o
 the whole set rather than only over nested pairs is what makes two merely-overlapping
 frames stack predictably too. It runs whenever the set of frames or any frame's size
 changes — including from `SetGroupCommand`, so undoing a resize restacks as well.
+`restackGroups()` sorts the title bars in `titleOverlay` the same way, so a smaller
+frame's title still wins over a larger frame's title where two happen to overlap.
 
 ### What an action does to a frame's contents
 
@@ -400,7 +412,13 @@ renderer against the content group, and restores all three in a `finally`.
 Group frames are hidden by a rule of their own: a frame is drawn only into the
 pictures of the components it actually holds something of. A frame is not a node and
 so belongs to no component, and one laid across the canvas would otherwise stretch
-every component's crop rectangle out to cover it.
+every component's crop rectangle out to cover it. Hiding a frame hides its title bar
+too — `GroupView.getTitleBar()` — since that bar lives in `titleOverlay`, not as the
+frame's own child, and is otherwise untouched by hiding the frame. For the same
+reason, `withComponentIsolated` reparents `titleOverlay` under `content` for the
+duration of the render (on top of every node, exactly as it always paints) and moves
+it back afterwards: the renderer only ever sees `content`'s own subtree, and a title
+bar left as `content`'s sibling would be invisible to it.
 
 Hiding rather than cropping is the point. Nothing constrains two disjoint components
 to occupy separate regions — a user may lay one out straight through the middle of
