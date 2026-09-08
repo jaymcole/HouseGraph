@@ -38,7 +38,7 @@ class CommandLineTest {
         assertEquals(0, commandLine.run("schema"));
 
         assertTrue(output().contains("\"$schema\""));
-        assertTrue(output().contains("HouseGraph save file (format version 3)"));
+        assertTrue(output().contains("HouseGraph save file (format version 4)"));
     }
 
     @Test

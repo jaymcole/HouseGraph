@@ -10,7 +10,8 @@ concerns and the top of the dependency stack.
 ui/
 ├── GraphCanvas.java   the hub (canvas host, drag controller, execution listener)
 ├── ModuleReferenceAction.java  the host's side of "add a node referencing a module"
-├── view/              NodeView, PortView, FlowPortView, EdgeView, FlowEdgeView,
+├── PlacedGraph.java   what `place` drew: the node views and the group frames
+├── view/              NodeView, GroupView, PortView, FlowPortView, EdgeView, FlowEdgeView,
 │                      AbstractEdgeView, ConnectionView, EdgeAnchor,
 │                      EdgeInteractionListener, ExecutionPolicyIcons
 ├── editor/            SecretsEditor
@@ -31,7 +32,7 @@ an intentional API surface. Anything used within a single sub-package stays
 package-private.
 
 The snapshot data model — `GraphSnapshot`, `ClipboardNode`, `ClipboardDataEdge`,
-`ClipboardFlowEdge` and `CameraState` — is a plain captured slice of the graph
+`ClipboardFlowEdge`, `NodeGroup` and `CameraState` — is a plain captured slice of the graph
 shared by copy/paste, `command/`, `io/` and the headless `loader/` package, so it
 does not live nested inside the canvas widget. It lives in `saveformat/`, outside
 this layer entirely, alongside the JSON conversion that reads and writes it — see
@@ -71,9 +72,10 @@ work on the FX thread — move it to a worker and `Platform.runLater` the UI upd
 ## `GraphCanvas`
 
 `GraphCanvas extends Pane` is an infinite, pannable, zoomable canvas hosting
-`NodeView`s and the edge views between them. It owns a single `NodeGraph` and
-implements three roles: `NodeView.DragController`, `GraphExecutionListener` (to
-flash nodes and edges as they fire), and `EdgeInteractionListener`.
+`NodeView`s, the group frames behind them, and the edge views between them. It owns a
+single `NodeGraph` and implements four roles: `NodeView.DragController`,
+`GroupView.GroupController`, `GraphExecutionListener` (to flash nodes and edges as
+they fire), and `EdgeInteractionListener`.
 
 Interactions, with the class Javadoc as the authoritative list:
 
@@ -91,7 +93,8 @@ Interactions, with the class Javadoc as the authoritative list:
   selected (`selectedWaypoints`, keyed by edge); `AbstractEdgeView` only exposes the
   hit-test, the highlight, and the translate.
 - Delete/Backspace removes the selection; `Ctrl/Cmd+A` selects everything on the
-  canvas, connections included; `Ctrl/Cmd+C`/`V` copy and paste; `Ctrl/Cmd+Z` and
+  canvas, connections and group frames included; `Ctrl/Cmd+C`/`V` copy and paste;
+  `Ctrl/Cmd+G` frames the selected nodes in a group; `Ctrl/Cmd+Z` and
   `Shift+Z` undo and redo. Each of these is also a `public` method, because the menu
   bar drives the same commands — see "Menu bar" below.
 - A paste lands at the pointer: the copied nodes keep their relative layout and the
@@ -105,6 +108,8 @@ Interactions, with the class Javadoc as the authoritative list:
   node in yellow; Escape closes it. See "Find bar" below.
 - Dragging between port circles makes a data edge; dragging between the triangular
   anchors at a node's top corners makes a flow edge.
+- A group frame's title bar drags it and everything inside it; its corner grips
+  resize it. See "Groups" below.
 
 While a data edge is dragged, every other port's anchor is coloured by how faithful
 that connection would be. `GraphCanvas.connectionSafety` calls
@@ -180,6 +185,68 @@ on the views.
 Closing drops every highlight but keeps the query text, so the shortcut both repeats a
 search and starts a new one (it reopens with the text selected).
 
+## Groups
+
+A **group** is a labelled rectangle drawn behind the graph so a large canvas can be
+read at a glance. It is a frame, not a node: it has no ports, never runs, and a graph
+loaded without its frames behaves identically. `saveformat/NodeGroup` is the whole of
+one — a title, a rectangle and a colour — and `view/GroupView` draws it.
+
+**Membership is geometry, and nothing else.** A frame holds no list of what it
+contains. It *commands* a node, or another frame, exactly while that thing's
+rectangle lies wholly inside its own, recomputed at the moment an action needs the
+answer. So dragging a node out of a frame is all it takes to leave the frame, there
+is nothing to keep in step with the canvas, and a frame needs no id — nothing refers
+to one. Wholly inside rather than overlapping, because taking along a node the user
+can see is half out would read as a bug.
+
+**Nesting is by size, and the relation is one-way.** `NodeGroup.commands(NodeGroup)`
+is "strictly larger, and containing": the outer frame carries the inner one, never
+the reverse. Two frames on the same rectangle therefore command each other in
+neither direction, which is what stops "apply this to everything I contain" running
+in a circle; two frames that merely overlap likewise, with a node in the overlap
+commanded by both. Nesting needs no recursion at any depth — a node inside an inner
+frame is inside the outer one by the same test, so one pass over the frames being
+dragged already reaches everything.
+
+**Paint order is the same rule.** `restackGroups()` sorts every frame by descending
+area and moves the lot to the front of the content group's child list. Child order
+*is* paint order in a JavaFX `Group`, so that one sort is the whole of "frames render
+behind the graph, and a smaller frame renders on top of a larger one". Sorting over
+the whole set rather than only over nested pairs is what makes two merely-overlapping
+frames stack predictably too. It runs whenever the set of frames or any frame's size
+changes — including from `SetGroupCommand`, so undoing a resize restacks as well.
+
+### What an action does to a frame's contents
+
+| Action | Reaches |
+| --- | --- |
+| Drag the title bar | the frame, every frame it commands, every node any of those commands, and every routing waypoint inside one — recorded as one `CompositeCommand` |
+| Drag a corner grip | the frame's rectangle only. That *is* the point: growing a frame over a node is how the node joins it |
+| Copy | the frame plus everything it commands, whether or not those nodes were selected — copying a labelled region has to copy the region |
+| Delete | **the frame only.** A frame is a large target laid over real work, and cascading a delete through it would put an automation one mis-aimed keystroke from gone |
+| Rubber band | the frame, but only when the band encloses it **whole** — a node is caught on a mere intersection, but a frame is a background region, and catching it from any band drawn inside it would mean the next drag moved everything else in it too |
+
+Dragging nodes never moves a frame: containment runs one way, from the frame to what
+is inside it.
+
+**The frame's body takes no mouse input at all** — only the title bar and the four
+corner grips do. A large background region that swallowed clicks would make the
+canvas inside it unusable: no rubber band, no click-through to what is behind. That
+is the same division `NodeView` makes, where the title bar drags and the body does
+not. The title bar is inset by one grip width so the top-left grip stays reachable
+beside it, and capped so it never grows over the top-right one.
+
+Frames are created from the canvas context menu's last row and from **Edit ▸ Group
+Selection** (`Ctrl/Cmd+G`). With a selection the new frame is fitted around it, with
+extra headroom at the top for the title bar; with nothing selected it is a default-
+sized empty frame at the click point. The context-menu row relabels itself in
+`setOnShowing` to say which it will do.
+
+`GraphCanvas` keeps `groupViews` in **creation** order, not paint order, which is
+what keeps a re-save of an unchanged canvas byte-identical even after a resize has
+reordered the painting.
+
 ## Modules
 
 Modules are the one thing the Add-Node menu structurally cannot offer. That menu is
@@ -218,6 +285,7 @@ does **not** run inside `place`, which paste and redo also use: a rebuild replac
 | View | Renders |
 | --- | --- |
 | `NodeView` | a `BaseNode`: title bar with drag handle and corner flow anchors, left input column, right output column |
+| `GroupView` | a `NodeGroup`: a translucent labelled rectangle behind the graph. Mouse-transparent body, a draggable/editable title bar at the top-left, four corner resize grips |
 | `PortView` (`EdgeAnchor`) | one `NodeVariable`; drag its circle to make a data edge; inline editable field when the variable is manually editable and its type is in `ValueEditors` |
 | `FlowPortView` (`EdgeAnchor`) | one `FlowPort` anchor |
 | `EdgeView` / `FlowEdgeView` | the connecting curves, blue for data and green for flow |
@@ -308,6 +376,11 @@ insertion order, so a component's index — and therefore its filename — is st
 view outside `component`, clears the selection, resets pan/zoom to 1:1, runs the
 renderer against the content group, and restores all three in a `finally`.
 
+Group frames are hidden by a rule of their own: a frame is drawn only into the
+pictures of the components it actually holds something of. A frame is not a node and
+so belongs to no component, and one laid across the canvas would otherwise stretch
+every component's crop rectangle out to cover it.
+
 Hiding rather than cropping is the point. Nothing constrains two disjoint components
 to occupy separate regions — a user may lay one out straight through the middle of
 another — so a crop to a bounding box would pull foreign nodes into the picture.
@@ -349,8 +422,9 @@ Commands come from two places, and that split is why the menu bar is its own cla
 rather than more of `App`:
 
 - **Canvas commands** — undo, redo, copy, paste, delete, select-all, find, the four
-  zoom commands — are called straight on the `GraphCanvas` the menu bar is constructed
-  with. This is what the `public` methods listed under `GraphCanvas` above are for.
+  zoom commands, Group Selection — are called straight on the `GraphCanvas` the menu
+  bar is constructed with. This is what the `public` methods listed under
+  `GraphCanvas` above are for.
 - **Application commands** — anything needing the stage, the preferences store, the
   plugin catalog or the module library — go through `menu/MenuActions`, which `App`
   implements. **File ▸ Publish as Module…** is one of these. The
@@ -405,10 +479,16 @@ headlessly against a temp preferences file.
 
 Current commands: `AddNodeCommand`, `RemoveNodesCommand`, `MoveNodesCommand`,
 `CreateEdgeCommand`, `CreateFlowEdgeCommand`, `PasteCommand`,
-`SetWaypointsCommand`, `CompositeCommand` (bundles several already-applied commands
+`SetWaypointsCommand`, `AddGroupCommand`, `RemoveGroupsCommand`, `SetGroupCommand`,
+`CompositeCommand` (bundles several already-applied commands
 into one undo step — e.g. a node drag that also carries selected waypoints along
 records a `MoveNodesCommand` plus a `SetWaypointsCommand` per moved edge, wrapped
 together so one undo reverts both).
+
+`SetGroupCommand` covers a frame's move, resize, rename **and** recolour with one
+class, because `NodeGroup` is a frame's whole state as a single immutable value:
+"what it was" and "what it is now" are two of them and there is nothing else to
+capture.
 
 **Model new reversible canvas mutations as a `Command`** rather than mutating the
 canvas ad hoc, so they participate in undo.
@@ -443,7 +523,8 @@ to refresh the table when a download starts or finishes.
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the context menu, change the
-menus or the toolbar, change a node's visual states, change either auxiliary window, change what image export
+menus or the toolbar, change a node's visual states, change what a group frame
+commands or how frames stack, change either auxiliary window, change what image export
 draws, or change when a node's `NodePresentation` is installed or cleared. Save-format changes belong in
 [save-format.md](save-format.md); extension-point changes also touch
 [`../nodes/`](../nodes/).

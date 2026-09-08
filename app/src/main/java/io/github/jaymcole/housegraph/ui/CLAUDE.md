@@ -15,7 +15,7 @@ the dependency stack: it depends on `graph/` and below, never the reverse.
 
 | Sub-package | Holds |
 | --- | --- |
-| `view/` | node/edge/port views and the `ExecutionPolicyIcons` glyphs |
+| `view/` | node/edge/port views, `GroupView`, and the `ExecutionPolicyIcons` glyphs |
 | `editor/` | the secrets dialog (`SecretsEditor`) |
 | `command/` | undo/redo — `Command`, `UndoManager`, every `*Command` |
 | `io/` | the canvas-facing save/load wrappers (`GraphFileIO`) |
@@ -54,6 +54,12 @@ package.
 - **Reversible canvas mutations are `Command`s.** Anything undoable goes through
   `UndoManager` as a `Command`, not an ad-hoc mutation. Use `record()` for gestures
   applied live, such as a drag, that become one undo step at the end.
+- **Group frames decide nothing here either.** What a frame commands, how frames
+  nest, and what order they paint in are all `saveformat/NodeGroup`, which is
+  headless and unit-tested. `GroupView` draws a frame and reports its gestures;
+  `GraphCanvas` applies them to whatever the rules say is inside. Never store what a
+  frame contains — membership is recomputed from the rectangle, which is why nothing
+  has to be kept in step with the canvas.
 - **Save/load logic is headless, and lives outside this package.**
   `saveformat.GraphFileIO`'s `toJson`/`fromJson` (and the `GraphSnapshot` shape they
   read and write) are free of JavaFX so they can be unit-tested, and live in their

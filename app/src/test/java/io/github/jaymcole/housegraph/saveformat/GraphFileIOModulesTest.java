@@ -45,7 +45,7 @@ class GraphFileIOModulesTest {
     void aReferencedModuleGetsARowAndTheNodeNamesIt() {
         JSONObject root = write(moduleNode("m-1"), directoryOf(List.of()));
 
-        assertEquals(3, root.getInt("version"));
+        assertEquals(GraphFileIO.CURRENT_VERSION, root.getInt("version"));
         JSONArray modules = root.getJSONArray("modules");
         assertEquals(1, modules.length());
         assertEquals("m-1", modules.getJSONObject(0).getString("id"));
@@ -80,18 +80,22 @@ class GraphFileIOModulesTest {
 
     @Test
     void aModulesFreeGraphDiffersFromItsV2FormOnlyByTheVersionNumber() {
-        JSONObject v3 = GraphFileIO.toJson(new GraphSnapshot(
+        JSONObject current = GraphFileIO.toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(new AddNode(), 10.0, 20.0)), List.of(), List.of()), REGISTRY);
 
-        JSONObject asV2 = new JSONObject(v3.toString());
+        JSONObject asV2 = new JSONObject(current.toString());
         asV2.put("version", 2);
 
         assertEquals(2, asV2.getInt("version"));
-        assertEquals(3, v3.getInt("version"));
+        assertEquals(GraphFileIO.CURRENT_VERSION, current.getInt("version"));
         // toString() is a pure function of the put sequence and the key set, so changing only the
-        // version's value has to leave the rest of the text identical.
-        assertEquals(asV2.toString(2).replace("\"version\": 2", "\"version\": 3"), v3.toString(2));
-        assertFalse(v3.has("modules"));
+        // version's value has to leave the rest of the text identical. That has held across every
+        // bump so far, because each one only added a table an unaffected graph does not write:
+        // no modules, and no group frames.
+        assertEquals(asV2.toString(2).replace("\"version\": 2", "\"version\": " + GraphFileIO.CURRENT_VERSION),
+                current.toString(2));
+        assertFalse(current.has("modules"));
+        assertFalse(current.has("groups"));
     }
 
     @Test
@@ -200,7 +204,7 @@ class GraphFileIOModulesTest {
     @Test
     void theBundledSchemaDescribesExactlyWhatThisBuildWrites() throws Exception {
         JSONObject schema = new JSONObject(new String(
-                GraphFileIO.class.getResourceAsStream("/schema/graph-save.v3.schema.json").readAllBytes(),
+                GraphFileIO.class.getResourceAsStream("/schema/graph-save.v4.schema.json").readAllBytes(),
                 java.nio.charset.StandardCharsets.UTF_8));
 
         assertEquals(SaveFileFixture.currentVersion(),
@@ -213,17 +217,17 @@ class GraphFileIOModulesTest {
         JSONObject root = write(moduleNode("m-1"), directoryOf(List.of(DISCORD)));
         for (String key : root.keySet()) {
             assertTrue(schema.getJSONObject("properties").has(key),
-                    "the v3 schema does not describe the root key \"" + key + "\"");
+                    "the current schema does not describe the root key \"" + key + "\"");
         }
         JSONObject moduleRowSchema = schema.getJSONObject("$defs").getJSONObject("moduleRow");
         for (String key : root.getJSONArray("modules").getJSONObject(0).keySet()) {
             assertTrue(moduleRowSchema.getJSONObject("properties").has(key),
-                    "the v3 schema does not describe the modules[] key \"" + key + "\"");
+                    "the current schema does not describe the modules[] key \"" + key + "\"");
         }
         JSONObject nodeSchema = schema.getJSONObject("$defs").getJSONObject("node");
         for (String key : root.getJSONArray("nodes").getJSONObject(0).keySet()) {
             assertTrue(nodeSchema.getJSONObject("properties").has(key),
-                    "the v3 schema does not describe the node key \"" + key + "\"");
+                    "the current schema does not describe the node key \"" + key + "\"");
         }
     }
 

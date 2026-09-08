@@ -303,13 +303,14 @@ class GraphFileIOTest {
         JSONObject json = toJson(new GraphSnapshot(
                 List.of(new ClipboardNode(new AddNode(), 0.0, 0.0)), List.of(), List.of()));
 
-        assertEquals(3, json.getInt("version"));
+        assertEquals(GraphFileIO.CURRENT_VERSION, json.getInt("version"));
         assertFalse(json.has("plugins"), "no plugins table when nothing outside core is used");
         assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("plugin"),
                 "a built-in node carries no plugin key, so a core-only v2 file differs from v1 only in its version");
         assertFalse(json.has("modules"), "no modules table when no module is referenced");
         assertFalse(json.getJSONArray("nodes").getJSONObject(0).has("module"),
                 "a node that is not a ModuleNode carries no module key");
+        assertFalse(json.has("groups"), "no groups table when the canvas holds no frame");
     }
 
     @Test

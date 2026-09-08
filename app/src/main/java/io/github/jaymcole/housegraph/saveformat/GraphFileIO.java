@@ -78,6 +78,12 @@ import java.util.TreeSet;
  * anchors — the failure mode of the old purely positional format. {@code requiredInputs} is likewise
  * an array of the <em>names</em> of the required inputs.
  * <p>
+ * The root also carries a {@code groups} table (written only when the canvas holds one) of the
+ * labelled rectangles drawn behind the graph — see {@link NodeGroup}. Each row is a title, a
+ * rectangle and a colour, and nothing else: a frame owns no membership list, because what it
+ * contains is recomputed from the rectangle whenever an action needs it. Unlike {@code plugins} and
+ * {@code modules} nothing references a row, so rows are addressed by position and carry no id.
+ * <p>
  * The root also carries a {@code camera} object recording the canvas's pan/zoom
  * ({@link CameraState}) at save time, restored on load so opening a graph returns the view to where
  * it was left rather than resetting it. Unlike the node/edge tables it is not part of
@@ -122,7 +128,7 @@ public final class GraphFileIO {
      * this when a change can't be handled by the shape-sniffing forgiving reads below, and add the
      * corresponding step to {@link #migrate}.
      */
-    static final int CURRENT_VERSION = 3;
+    static final int CURRENT_VERSION = 4;
 
     /** The version assumed for a save file that has no {@code version} key (written before versioning). */
     static final int LEGACY_VERSION = 0;
@@ -324,6 +330,25 @@ public final class GraphFileIO {
         root.put("nodes", nodesJson);
         root.put("dataEdges", dataEdgesJson);
         root.put("flowEdges", flowEdgesJson);
+        // Written only when the canvas actually carries a frame, so a graph with none produces a v4
+        // file differing from its v3 form by exactly the version number - the same property v3 has
+        // relative to v2. Rows go out in snapshot order, which is the order the frames were created
+        // rather than the order they are painted in, so re-saving an unchanged canvas is byte-identical
+        // even though a resize reorders the painting.
+        if (!snapshot.groups().isEmpty()) {
+            JSONArray groupsJson = new JSONArray();
+            for (NodeGroup group : snapshot.groups()) {
+                JSONObject groupJson = new JSONObject();
+                groupJson.put("title", group.title());
+                groupJson.put("x", group.x());
+                groupJson.put("y", group.y());
+                groupJson.put("width", group.width());
+                groupJson.put("height", group.height());
+                groupJson.put("color", group.color());
+                groupsJson.put(groupJson);
+            }
+            root.put("groups", groupsJson);
+        }
         root.put("camera", new JSONObject()
                 .put("zoom", camera.zoom())
                 .put("translateX", camera.translateX())
@@ -517,7 +542,33 @@ public final class GraphFileIO {
                     waypointsFromJson(edgeJson)));
         }
 
-        return new GraphSnapshot(nodes, dataEdges, flowEdges);
+        return new GraphSnapshot(nodes, dataEdges, flowEdges, groupsFromJson(root));
+    }
+
+    /**
+     * Reads the root {@code groups} table. Absent before v4 — and absent in any graph nobody has
+     * framed — so the whole table is optional, and so is every key in a row but the geometry: a
+     * hand-written frame naming only a rectangle loads untitled in the default colour rather than
+     * throwing out the file it came in. {@link NodeGroup} clamps a degenerate rectangle to something
+     * drawable, so no row can load as a frame the user cannot grab.
+     */
+    private static List<NodeGroup> groupsFromJson(JSONObject root) {
+        JSONArray groupsJson = root.optJSONArray("groups");
+        if (groupsJson == null) {
+            return List.of();
+        }
+        List<NodeGroup> groups = new ArrayList<>();
+        for (int i = 0; i < groupsJson.length(); i++) {
+            JSONObject groupJson = groupsJson.getJSONObject(i);
+            groups.add(new NodeGroup(
+                    groupJson.optString("title", ""),
+                    groupJson.optDouble("x", 0),
+                    groupJson.optDouble("y", 0),
+                    groupJson.optDouble("width", 0),
+                    groupJson.optDouble("height", 0),
+                    groupJson.optString("color", NodeGroup.DEFAULT_COLOR)));
+        }
+        return groups;
     }
 
     /**
@@ -525,11 +576,13 @@ public final class GraphFileIO {
      * (possibly transformed) root. The single seam for structural format migrations that the
      * shape-sniffing forgiving reads elsewhere can't express.
      * <p>
-     * There are no such migrations yet — every shipped format (positional values, name-keyed values,
-     * class-name and type-id node identity) is read directly by the loaders below regardless of
-     * version — so this currently passes the root through unchanged after logging anything newer than
-     * it understands. When you introduce one, add a step here (typically a {@code while (version <
-     * CURRENT_VERSION)} ladder that transforms and bumps) and bump {@link #CURRENT_VERSION}.
+     * Every version bump so far has been purely additive — a new optional root table (v2's
+     * {@code plugins}, v3's {@code modules}, v4's {@code groups}) that an older file simply does not
+     * have — and each is read directly by the loaders below regardless of version, so every step is a
+     * passthrough. They are named here rather than left silent because a step that does nothing is
+     * still a decision, and the next person needs to see it was made. When a change does need a
+     * transform, add a step here (typically a {@code while (version < CURRENT_VERSION)} ladder that
+     * transforms and bumps) and bump {@link #CURRENT_VERSION}.
      *
      * @param root    the parsed save file
      * @param version the file's declared version ({@link #LEGACY_VERSION} if it had none)

@@ -74,6 +74,35 @@ is usually what tells two nodes of the same kind apart. Values you cannot see ar
 searched: a secret is never matched, and neither is a value the graph computed while
 running.
 
+### Grouping a region
+
+Once a graph is big enough that you have to hunt for things, wrap parts of it in a
+**group**: a labelled, coloured rectangle drawn behind the nodes.
+
+Select the nodes you want and press `Ctrl/Cmd+G` (or right-click and choose **Group
+Selection**) and a frame appears around them. Right-clicking empty canvas and
+choosing **Add Group** drops an empty one you can then drag nodes into.
+
+| To | Do |
+| --- | --- |
+| Move the group and everything in it | drag its title bar |
+| Resize it | drag any corner grip |
+| Rename it | double-click the title, or right-click it ▸ **Rename…** |
+| Recolour it | right-click the title ▸ **Colour** |
+| Delete the frame | click its title bar, then Delete — **the nodes inside stay put** |
+
+**A group has no memory of what is in it.** Whatever sits entirely inside the
+rectangle is in the group, worked out fresh each time you move it. Drag a node out
+and it is out; grow the frame over a node and it is in. Nothing to maintain.
+
+Frames can be nested: draw a smaller one inside a larger one and the smaller always
+draws on top, while dragging the larger one carries the smaller one and its contents
+along. The reverse never happens — moving an inner group never disturbs the group
+around it.
+
+Groups are saved with the graph and appear in exported images. They are decoration:
+they never change what a graph does or how fast it runs.
+
 ### Canvas controls
 
 | Action | Gesture |
@@ -85,9 +114,11 @@ running.
 | Find nodes | `Ctrl/Cmd+F`, then type — every match is ringed in yellow |
 | Delete selection | Delete or Backspace |
 | Copy / paste | `Ctrl/Cmd+C` / `Ctrl/Cmd+V` (paste lands at the cursor) |
+| Group the selection | `Ctrl/Cmd+G` — see "Grouping a region" above |
 | Undo / redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` |
 | Bend an edge | double-click it to add a waypoint |
 | Node options | right-click a node |
+| Group options | right-click a group's title bar |
 
 The full list, including the file and zoom shortcuts, is under **Help ▸ Keyboard
 Shortcuts**.
@@ -99,7 +130,7 @@ Commands live in the menu bar; the strip under it repeats the handful used most.
 | Menu | Holds |
 | --- | --- |
 | **File** | New, Open, Open Recent, Save, Save As, Export Images, Exit |
-| **Edit** | Undo, Redo, Copy, Paste, Delete, Select All, Find in Graph |
+| **Edit** | Undo, Redo, Copy, Paste, Delete, Group Selection, Select All, Find in Graph |
 | **View** | Zoom In / Out, Actual Size, Zoom to Fit |
 | **Run** | Watch Speed |
 | **Tools** | Secrets, Node Libraries, Logs, Open Data Folder |

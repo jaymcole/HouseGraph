@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.ui;
 
+import io.github.jaymcole.housegraph.ui.command.AddGroupCommand;
 import io.github.jaymcole.housegraph.ui.command.AddNodeCommand;
 import io.github.jaymcole.housegraph.ui.command.Command;
 import io.github.jaymcole.housegraph.ui.command.CompositeCommand;
@@ -7,7 +8,9 @@ import io.github.jaymcole.housegraph.ui.command.CreateEdgeCommand;
 import io.github.jaymcole.housegraph.ui.command.CreateFlowEdgeCommand;
 import io.github.jaymcole.housegraph.ui.command.MoveNodesCommand;
 import io.github.jaymcole.housegraph.ui.command.PasteCommand;
+import io.github.jaymcole.housegraph.ui.command.RemoveGroupsCommand;
 import io.github.jaymcole.housegraph.ui.command.RemoveNodesCommand;
+import io.github.jaymcole.housegraph.ui.command.SetGroupCommand;
 import io.github.jaymcole.housegraph.ui.command.SetWaypointsCommand;
 import io.github.jaymcole.housegraph.ui.command.UndoManager;
 import io.github.jaymcole.housegraph.ui.view.AbstractEdgeView;
@@ -17,6 +20,7 @@ import io.github.jaymcole.housegraph.ui.view.EdgeInteractionListener;
 import io.github.jaymcole.housegraph.ui.view.EdgeView;
 import io.github.jaymcole.housegraph.ui.view.FlowEdgeView;
 import io.github.jaymcole.housegraph.ui.view.FlowPortView;
+import io.github.jaymcole.housegraph.ui.view.GroupView;
 import io.github.jaymcole.housegraph.ui.view.NodeView;
 import io.github.jaymcole.housegraph.ui.view.PortView;
 import io.github.jaymcole.housegraph.saveformat.CameraState;
@@ -24,6 +28,7 @@ import io.github.jaymcole.housegraph.saveformat.ClipboardDataEdge;
 import io.github.jaymcole.housegraph.saveformat.ClipboardFlowEdge;
 import io.github.jaymcole.housegraph.saveformat.ClipboardNode;
 import io.github.jaymcole.housegraph.saveformat.GraphSnapshot;
+import io.github.jaymcole.housegraph.saveformat.NodeGroup;
 
 import io.github.jaymcole.housegraph.modules.ModuleBinding;
 import io.github.jaymcole.housegraph.modules.ModuleDirectory;
@@ -81,7 +86,9 @@ import javafx.scene.transform.Affine;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -112,7 +119,8 @@ import java.util.function.Function;
  * Each of those editing commands, plus the zoom commands, is also a public method, because
  * the application's menu bar drives the same ones — see {@code ui/menu/MainMenuBar}.
  */
-public class GraphCanvas extends Pane implements NodeView.DragController, GraphExecutionListener, EdgeInteractionListener {
+public class GraphCanvas extends Pane implements NodeView.DragController, GroupView.GroupController,
+        GraphExecutionListener, EdgeInteractionListener {
 
     private static final Logger log = Log.get(GraphCanvas.class);
 
@@ -124,6 +132,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private static final KeyCodeCombination SELECT_ALL_COMBO =
             new KeyCodeCombination(KeyCode.A, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCodeCombination FIND_COMBO = new KeyCodeCombination(KeyCode.F, KeyCombination.SHORTCUT_DOWN);
+    private static final KeyCodeCombination GROUP_COMBO = new KeyCodeCombination(KeyCode.G, KeyCombination.SHORTCUT_DOWN);
 
     /** Gap between the find bar and the canvas's top and right edges, in screen pixels. */
     private static final double FIND_BAR_MARGIN = 12;
@@ -135,6 +144,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     /** Unzoomed and unpanned — what {@link #withComponentIsolated} renders at. */
     private static final CameraState IDENTITY_CAMERA = new CameraState(1.0, 0, 0);
+
+    /** Breathing room left between a fitted group frame and the nodes it wraps. */
+    private static final double GROUP_PADDING = 24;
+
+    /** Extra room above those nodes, so the frame's title bar sits over canvas rather than over a node. */
+    private static final double GROUP_TITLE_HEADROOM = 44;
 
     /** Zoom limits, shared by scroll zoom, the menu's zoom commands and a camera restored from a save file. */
     private static final double MIN_ZOOM = 0.2;
@@ -153,7 +168,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private final Map<Edge, EdgeView> edgeViews = new HashMap<>();
     private final Map<FlowEdge, FlowEdgeView> flowEdgeViews = new HashMap<>();
 
+    /**
+     * The group frames on the canvas, in creation order — <em>not</em> paint order, which
+     * {@link #restackGroups()} derives from their sizes. Keeping this list stable is what makes a
+     * re-save of an unchanged canvas byte-identical even after a resize reorders the painting.
+     */
+    private final List<GroupView> groupViews = new ArrayList<>();
+
     private final Set<NodeView> selectedNodes = new LinkedHashSet<>();
+    private final Set<GroupView> selectedGroups = new LinkedHashSet<>();
     private final Set<ConnectionView> selectedConnections = new LinkedHashSet<>();
     /** Edge waypoints currently rubber-band-selected, so they translate along with a node drag. */
     private final Map<AbstractEdgeView, Set<Integer>> selectedWaypoints = new HashMap<>();
@@ -187,6 +210,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private GraphSearch.Query searchQuery = GraphSearch.compile("");
 
     private final MenuItem addModuleItem;
+    private final MenuItem addGroupItem;
     private final NodeRegistry nodeRegistry;
     /** Resolves the modules a loaded graph references; {@link ModuleDirectory#EMPTY} when none was given. */
     private final ModuleDirectory modules;
@@ -197,6 +221,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private List<ClipboardNode> clipboardNodes = List.of();
     private List<ClipboardDataEdge> clipboardDataEdges = List.of();
     private List<ClipboardFlowEdge> clipboardFlowEdges = List.of();
+    private List<NodeGroup> clipboardGroups = List.of();
     /** How many pastes have already landed at the current anchor - each one steps further, so repeats don't stack. */
     private int pasteOffsetStep = 0;
     /** Content-coordinate point the last paste anchored to, or null if it fell back to a fixed offset. */
@@ -236,6 +261,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         // Built once and kept, like the Add-Node menu: updateSearchResultsIn re-adds the same item
         // rather than a new one on every keystroke.
         this.addModuleItem = buildAddModuleItem(moduleAdder);
+        this.addGroupItem = buildAddGroupItem();
         setStyle("-fx-background-color: #1e1e1e;");
         getChildren().add(content);
         setFocusTraversable(true);
@@ -324,6 +350,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 event.consume();
             } else if (SELECT_ALL_COMBO.match(event)) {
                 selectAll();
+                event.consume();
+            } else if (GROUP_COMBO.match(event)) {
+                groupSelection();
                 event.consume();
             }
         });
@@ -931,6 +960,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     private List<NodeView> dragGestureNodes;
     private double[] dragGestureStartX;
     private double[] dragGestureStartY;
+    private List<GroupView> dragGestureGroups;
+    private List<NodeGroup> dragGestureGroupStart;
+    /** The frame state a resize/rename/recolour started from, captured for undo. */
+    private NodeGroup frameEditBefore;
+    /** Which waypoints the gesture carries, by edge — the rubber-band's, plus any inside a dragged frame. */
+    private Map<AbstractEdgeView, Set<Integer>> dragGestureWaypoints;
     private Map<AbstractEdgeView, List<Point2D>> dragGestureWaypointsBefore;
 
     @Override
@@ -940,12 +975,95 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             clearSelection();
             selectNode(node);
         }
+        // Dragging a node never moves a frame: containment runs one way, from the frame to what is
+        // inside it, so the nodes are the whole gesture here.
+        beginDragGesture(selectedNodes, List.of());
+    }
 
-        // Snapshot positions now, before any movement, so onNodeReleased() can tell
-        // whether this gesture actually moved anything and record one undo step for
-        // the whole group if so - onNodeDragged() below already applies the movement
-        // live, for real-time visual feedback while dragging.
-        dragGestureNodes = new ArrayList<>(selectedNodes);
+    @Override
+    public void onNodeDragged(double deltaContentX, double deltaContentY) {
+        applyDragDelta(deltaContentX, deltaContentY);
+    }
+
+    @Override
+    public void onNodeReleased() {
+        endDragGesture();
+    }
+
+    // --- GroupView.GroupController (group frames reporting back to the canvas) -----
+
+    /**
+     * A frame's title bar was pressed. Selects it if it wasn't already, then works out the whole
+     * gesture: <b>every frame the selected frames command</b>, and <b>every node any of those frames
+     * commands</b>, alongside anything already selected in its own right.
+     *
+     * <p>Nesting needs no recursion. A node inside a sub-frame is inside the enclosing frame too, by
+     * the same containment test, so one pass over the frames being dragged already reaches
+     * everything at every depth.
+     */
+    @Override
+    public void onGroupPressed(GroupView group) {
+        requestFocus();
+        if (!selectedGroups.contains(group)) {
+            clearSelection();
+            selectGroup(group);
+        }
+
+        Set<GroupView> frames = new LinkedHashSet<>(selectedGroups);
+        for (GroupView selected : new ArrayList<>(selectedGroups)) {
+            frames.addAll(groupsCommandedBy(selected));
+        }
+        Set<NodeView> nodes = new LinkedHashSet<>(selectedNodes);
+        for (GroupView frame : frames) {
+            nodes.addAll(nodesCommandedBy(frame));
+        }
+        beginDragGesture(nodes, frames);
+    }
+
+    @Override
+    public void onGroupDragged(double deltaContentX, double deltaContentY) {
+        applyDragDelta(deltaContentX, deltaContentY);
+    }
+
+    @Override
+    public void onGroupReleased() {
+        endDragGesture();
+    }
+
+    @Override
+    public void onGroupFrameEditStarted(GroupView group) {
+        frameEditBefore = group.getGroup();
+    }
+
+    /**
+     * Records a resize, rename or recolour as one undo step. Restacking is unconditional rather than
+     * only on a size change: it is a sort of a handful of views, and making it conditional would put
+     * the paint order one missed case away from being wrong.
+     */
+    @Override
+    public void onGroupFrameEdited(GroupView group) {
+        if (frameEditBefore == null || frameEditBefore.equals(group.getGroup())) {
+            frameEditBefore = null;
+            return;
+        }
+        undoManager.record(new SetGroupCommand(this, group, frameEditBefore, group.getGroup()));
+        frameEditBefore = null;
+        restackGroups();
+    }
+
+    // --- Drag gestures (shared by node drags and frame drags) ---------------------
+
+    /**
+     * Captures everything a drag is about to move, before it moves. The movement itself is applied
+     * live on every mouse-move for real-time feedback (see {@link #applyDragDelta}), so this is what
+     * lets {@link #endDragGesture()} tell whether anything actually moved and record one undo step
+     * for the lot.
+     *
+     * <p>The two entry points differ only in what they hand in: a node drag moves the selected nodes,
+     * a frame drag moves the frames plus everything they command.
+     */
+    private void beginDragGesture(Collection<NodeView> nodes, Collection<GroupView> groups) {
+        dragGestureNodes = new ArrayList<>(nodes);
         dragGestureStartX = new double[dragGestureNodes.size()];
         dragGestureStartY = new double[dragGestureNodes.size()];
         for (int i = 0; i < dragGestureNodes.size(); i++) {
@@ -953,30 +1071,67 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             dragGestureStartY[i] = dragGestureNodes.get(i).getLayoutY();
         }
 
-        // Any waypoints picked up by a rubber-band alongside these nodes ride along with
-        // the drag too; snapshot their "before" routes the same way, for undo.
-        dragGestureWaypointsBefore = new HashMap<>();
+        dragGestureGroups = new ArrayList<>(groups);
+        dragGestureGroupStart = new ArrayList<>(dragGestureGroups.size());
+        for (GroupView frame : dragGestureGroups) {
+            dragGestureGroupStart.add(frame.getGroup());
+        }
+
+        // Waypoints ride along from two directions: any the rubber-band caught alongside these
+        // nodes, and any sitting inside a frame being dragged — a manually-routed edge inside a
+        // frame keeps its shape when the frame moves, for the same reason it does when its nodes do.
+        dragGestureWaypoints = new LinkedHashMap<>();
         for (Map.Entry<AbstractEdgeView, Set<Integer>> entry : selectedWaypoints.entrySet()) {
-            dragGestureWaypointsBefore.put(entry.getKey(), entry.getKey().getWaypoints());
+            dragGestureWaypoints.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+        }
+        for (GroupView frame : dragGestureGroups) {
+            Bounds frameBounds = boundsOf(frame);
+            for (ConnectionView connection : allConnections()) {
+                if (!(connection instanceof AbstractEdgeView edge)) {
+                    continue;
+                }
+                List<Integer> inside = edge.waypointIndicesIn(frameBounds);
+                if (!inside.isEmpty()) {
+                    dragGestureWaypoints.computeIfAbsent(edge, key -> new LinkedHashSet<>()).addAll(inside);
+                }
+            }
+        }
+        dragGestureWaypointsBefore = new HashMap<>();
+        for (AbstractEdgeView edge : dragGestureWaypoints.keySet()) {
+            dragGestureWaypointsBefore.put(edge, edge.getWaypoints());
         }
     }
 
-    @Override
-    public void onNodeDragged(double deltaContentX, double deltaContentY) {
-        for (NodeView node : selectedNodes) {
+    /** Moves everything {@link #beginDragGesture} captured, live, as the pointer moves. */
+    private void applyDragDelta(double deltaContentX, double deltaContentY) {
+        if (dragGestureNodes == null) {
+            return;
+        }
+        for (NodeView node : dragGestureNodes) {
             node.setLayoutX(node.getLayoutX() + deltaContentX);
             node.setLayoutY(node.getLayoutY() + deltaContentY);
         }
-        for (Map.Entry<AbstractEdgeView, Set<Integer>> entry : selectedWaypoints.entrySet()) {
+        for (GroupView frame : dragGestureGroups) {
+            frame.setGroup(frame.getGroup().movedBy(deltaContentX, deltaContentY));
+        }
+        for (Map.Entry<AbstractEdgeView, Set<Integer>> entry : dragGestureWaypoints.entrySet()) {
             entry.getKey().translateWaypoints(entry.getValue(), deltaContentX, deltaContentY);
         }
     }
 
-    @Override
-    public void onNodeReleased() {
+    /**
+     * Ends a drag, turning whatever actually moved into a single undo step. A gesture that moved
+     * nodes, frames and routing at once records one {@link CompositeCommand} covering all three, so
+     * one undo puts the whole thing back.
+     *
+     * <p>A frame drag never changes a frame's size, so nothing here restacks.
+     */
+    private void endDragGesture() {
         if (dragGestureNodes == null) {
             return;
         }
+        List<Command> moves = new ArrayList<>();
+
         double[] endX = new double[dragGestureNodes.size()];
         double[] endY = new double[dragGestureNodes.size()];
         boolean moved = false;
@@ -985,9 +1140,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             endY[i] = dragGestureNodes.get(i).getLayoutY();
             moved |= endX[i] != dragGestureStartX[i] || endY[i] != dragGestureStartY[i];
         }
-        List<Command> moves = new ArrayList<>();
         if (moved) {
             moves.add(new MoveNodesCommand(dragGestureNodes, dragGestureStartX, dragGestureStartY, endX, endY));
+        }
+        for (int i = 0; i < dragGestureGroups.size(); i++) {
+            GroupView frame = dragGestureGroups.get(i);
+            NodeGroup before = dragGestureGroupStart.get(i);
+            if (!before.equals(frame.getGroup())) {
+                moves.add(new SetGroupCommand(this, frame, before, frame.getGroup()));
+            }
         }
         for (Map.Entry<AbstractEdgeView, List<Point2D>> entry : dragGestureWaypointsBefore.entrySet()) {
             List<Point2D> before = entry.getValue();
@@ -996,12 +1157,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 moves.add(new SetWaypointsCommand(entry.getKey(), before, after));
             }
         }
+
         if (moves.size() == 1) {
             undoManager.record(moves.get(0));
         } else if (moves.size() > 1) {
             undoManager.record(new CompositeCommand(moves));
         }
         dragGestureNodes = null;
+        dragGestureGroups = null;
+        dragGestureGroupStart = null;
+        dragGestureWaypoints = null;
         dragGestureWaypointsBefore = null;
     }
 
@@ -1016,6 +1181,128 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         if (selectedNodes.remove(node)) {
             node.setSelected(false);
         }
+    }
+
+    private void selectGroup(GroupView group) {
+        if (selectedGroups.add(group)) {
+            group.setSelected(true);
+        }
+    }
+
+    /** Public for the same reason {@link #deselectNode} is: a Command must be able to drop what it removes. */
+    public void deselectGroup(GroupView group) {
+        if (selectedGroups.remove(group)) {
+            group.setSelected(false);
+        }
+    }
+
+    // --- Group frames -------------------------------------------------------------
+
+    /**
+     * Puts a group frame on the canvas. Public because {@code AddGroupCommand} and
+     * {@code RemoveGroupsCommand} drive it — an undone delete re-adds the very same
+     * {@link GroupView}, which is what keeps a later redo pointed at the frame the user is looking
+     * at rather than a lookalike.
+     */
+    public void addGroup(GroupView groupView) {
+        content.getChildren().add(groupView);
+        groupViews.add(groupView);
+        restackGroups();
+    }
+
+    /** Takes a group frame off the canvas, dropping it from the selection so nothing retains a stale reference. */
+    public void removeGroup(GroupView groupView) {
+        deselectGroup(groupView);
+        content.getChildren().remove(groupView);
+        groupViews.remove(groupView);
+    }
+
+    /**
+     * Re-sorts the frames in the content group's child list: largest first, and all of them ahead of
+     * every node and edge.
+     *
+     * <p>Child order <em>is</em> paint order in a JavaFX {@link Group}, so this is the whole of
+     * "frames render behind the graph, and a smaller frame renders on top of a larger one". Sorting
+     * over the whole set rather than only over nested pairs means two frames that merely overlap
+     * stack predictably too — see {@link NodeGroup#LARGEST_FIRST}.
+     *
+     * <p>Called whenever the set of frames or any frame's size changes. Public because
+     * {@code SetGroupCommand} has to restack when it undoes a resize.
+     */
+    public void restackGroups() {
+        List<GroupView> ordered = new ArrayList<>(groupViews);
+        ordered.sort(Comparator.comparing(GroupView::getGroup, NodeGroup.LARGEST_FIRST));
+        // Removed before being re-inserted: a JavaFX child list rejects a duplicate, and this is the
+        // one operation that would otherwise present one.
+        content.getChildren().removeAll(ordered);
+        content.getChildren().addAll(0, ordered);
+    }
+
+    /** A frame's rectangle as canvas-coordinate bounds, for a hit test against nodes, edges or a rubber band. */
+    private static Bounds boundsOf(GroupView group) {
+        NodeGroup frame = group.getGroup();
+        return new BoundingBox(frame.x(), frame.y(), frame.width(), frame.height());
+    }
+
+    /** Every node view lying entirely within {@code group} — recomputed on demand; nothing is stored. */
+    private List<NodeView> nodesCommandedBy(GroupView group) {
+        List<NodeView> commanded = new ArrayList<>();
+        for (NodeView nodeView : nodeViews) {
+            if (group.commands(nodeView.getBoundsInParent())) {
+                commanded.add(nodeView);
+            }
+        }
+        return commanded;
+    }
+
+    /** Every frame {@code group} commands: strictly smaller, and wholly inside it. */
+    private List<GroupView> groupsCommandedBy(GroupView group) {
+        List<GroupView> commanded = new ArrayList<>();
+        for (GroupView other : groupViews) {
+            if (group.getGroup().commands(other.getGroup())) {
+                commanded.add(other);
+            }
+        }
+        return commanded;
+    }
+
+    /**
+     * Adds a group frame: around the current selection when there is one, otherwise an empty frame at
+     * {@code x},{@code y}. Undoable.
+     *
+     * <p>Wrapping the selection is the case worth having — a graph is usually labelled after it is
+     * built, not before — so the frame is fitted to the selected nodes' bounding box with room above
+     * for its title bar, which puts every one of them inside it from the moment it appears.
+     */
+    public void addGroupAt(double x, double y) {
+        NodeGroup frame = selectedNodes.isEmpty() ? NodeGroup.at(x, y) : frameAround(selectedNodes);
+        undoManager.execute(new AddGroupCommand(this, new GroupView(frame, content, this)));
+    }
+
+    /** Frames the current selection, if there is one. The menu bar's Edit ▸ Group Selection and Ctrl/Cmd+G. */
+    public void groupSelection() {
+        if (selectedNodes.isEmpty()) {
+            return;
+        }
+        undoManager.execute(new AddGroupCommand(this, new GroupView(frameAround(selectedNodes), content, this)));
+    }
+
+    /** The rectangle that wraps these nodes with a margin — wider at the top, where the title bar sits. */
+    private NodeGroup frameAround(Collection<NodeView> nodes) {
+        double minX = Double.MAX_VALUE;
+        double minY = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double maxY = -Double.MAX_VALUE;
+        for (NodeView nodeView : nodes) {
+            Bounds bounds = nodeView.getBoundsInParent();
+            minX = Math.min(minX, bounds.getMinX());
+            minY = Math.min(minY, bounds.getMinY());
+            maxX = Math.max(maxX, bounds.getMaxX());
+            maxY = Math.max(maxY, bounds.getMaxY());
+        }
+        return new NodeGroup("", minX - GROUP_PADDING, minY - GROUP_TITLE_HEADROOM,
+                maxX - minX + 2 * GROUP_PADDING,
+                maxY - minY + GROUP_TITLE_HEADROOM + GROUP_PADDING, NodeGroup.DEFAULT_COLOR);
     }
 
     private void selectConnection(ConnectionView connection) {
@@ -1074,6 +1361,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         for (NodeView node : new ArrayList<>(selectedNodes)) {
             deselectNode(node);
         }
+        for (GroupView group : new ArrayList<>(selectedGroups)) {
+            deselectGroup(group);
+        }
         for (ConnectionView connection : new ArrayList<>(selectedConnections)) {
             deselectConnection(connection);
         }
@@ -1092,12 +1382,21 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return all;
     }
 
-    /** Undoable delete of the current selection: selected nodes, plus every connection touching one, plus any standalone selected connection. */
+    /**
+     * Undoable delete of the current selection: selected nodes, plus every connection touching one,
+     * plus any standalone selected connection, plus any selected group frame.
+     *
+     * <p><b>A frame takes nothing with it.</b> It commands the nodes inside it for a move or a copy,
+     * but a frame is a large target laid over real work and cascading a delete through it would put
+     * an automation one mis-aimed keystroke from gone. Deleting the label around a group of nodes
+     * leaves the nodes exactly where they were.
+     */
     public void deleteSelected() {
-        if (selectedNodes.isEmpty() && selectedConnections.isEmpty()) {
+        if (selectedNodes.isEmpty() && selectedConnections.isEmpty() && selectedGroups.isEmpty()) {
             return;
         }
 
+        List<GroupView> groupsToDelete = new ArrayList<>(selectedGroups);
         List<NodeView> nodesToDelete = new ArrayList<>(selectedNodes);
         // Start from selectedConnections (not just what touches a selected node) so a
         // connection selected on its own - e.g. rubber-banding over just an edge,
@@ -1111,9 +1410,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             }
         }
 
-        undoManager.execute(new RemoveNodesCommand(this, nodesToDelete, connectionsToDelete));
+        List<Command> deletions = new ArrayList<>();
+        if (!nodesToDelete.isEmpty() || !connectionsToDelete.isEmpty()) {
+            deletions.add(new RemoveNodesCommand(this, nodesToDelete, connectionsToDelete));
+        }
+        if (!groupsToDelete.isEmpty()) {
+            deletions.add(new RemoveGroupsCommand(this, groupsToDelete));
+        }
+        undoManager.execute(deletions.size() == 1 ? deletions.get(0) : new CompositeCommand(deletions));
 
         selectedNodes.clear();
+        selectedGroups.clear();
         selectedConnections.clear();
     }
 
@@ -1150,7 +1457,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     /** Removes everything from the canvas, e.g. before loading a graph from file. */
     private void clearAll() {
         deleteNodes(nodeViews);
+        for (GroupView group : new ArrayList<>(groupViews)) {
+            removeGroup(group);
+        }
         selectedNodes.clear();
+        selectedGroups.clear();
         selectedConnections.clear();
     }
 
@@ -1159,10 +1470,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     /**
      * Captures a set of nodes plus any data/flow edges that run between two of them —
      * edges to a node outside the set aren't included, since the other endpoint isn't
-     * part of the snapshot. Used for both copy (a selection) and save-to-file (every
-     * node on the canvas).
+     * part of the snapshot — and the group frames handed in alongside. Used for both copy
+     * (a selection) and save-to-file (everything on the canvas).
      */
-    private GraphSnapshot snapshotOf(Collection<NodeView> views) {
+    private GraphSnapshot snapshotOf(Collection<NodeView> views, Collection<GroupView> groups) {
         List<NodeView> ordered = new ArrayList<>(views);
         Map<BaseNode, Integer> indexOf = new HashMap<>();
         for (int i = 0; i < ordered.size(); i++) {
@@ -1202,7 +1513,12 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                     entry.getValue().getWaypoints()));
         }
 
-        return new GraphSnapshot(nodes, dataEdges, flowEdges);
+        List<NodeGroup> frames = new ArrayList<>();
+        for (GroupView groupView : groups) {
+            frames.add(groupView.getGroup());
+        }
+
+        return new GraphSnapshot(nodes, dataEdges, flowEdges, frames);
     }
 
     /**
@@ -1228,9 +1544,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * edge by index and wiring it — belongs to {@link GraphLoader} and happens with no canvas
      * involved; see {@code docs/engine/architecture.md}. What is left here is the view: a
      * {@link NodeView} per node, and an edge view per edge the loader resolved, carrying the
-     * routing waypoints the snapshot saved (which the engine has no place for).
+     * routing waypoints the snapshot saved and the group frames it captured (neither of which the
+     * engine has a place for).
      */
-    public List<NodeView> place(GraphSnapshot snapshot, Function<ClipboardNode, BaseNode> nodeFactory, double offsetX, double offsetY) {
+    public PlacedGraph place(GraphSnapshot snapshot, Function<ClipboardNode, BaseNode> nodeFactory, double offsetX, double offsetY) {
         // Only the real views, so callers that select/undo the result never see a null. The loader
         // keeps the index-aligned list, holes included, and resolves the saved edges against it.
         List<NodeView> placed = new ArrayList<>();
@@ -1271,7 +1588,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             }
         }
 
-        return placed;
+        // Frames last, so restackGroups() sorts them behind nodes and edges that are already there.
+        List<GroupView> placedGroups = new ArrayList<>();
+        for (NodeGroup frame : snapshot.groups()) {
+            GroupView groupView = new GroupView(frame.movedBy(offsetX, offsetY), content, this);
+            addGroup(groupView);
+            placedGroups.add(groupView);
+        }
+
+        return new PlacedGraph(placed, placedGroups);
     }
 
     /**
@@ -1343,9 +1668,19 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return shifted;
     }
 
-    /** Snapshots the currently selected nodes (works for a single selected node too). */
+    /**
+     * Snapshots the current selection (a single selected node works too).
+     *
+     * <p>A selected group frame brings <b>everything it commands</b> with it, whether or not those
+     * nodes were selected themselves — copying a labelled region has to copy the region, not an
+     * empty rectangle. The edges between the nodes that result come along under the usual rule.
+     */
     public void copySelection() {
-        if (selectedNodes.isEmpty()) {
+        Set<NodeView> selection = new LinkedHashSet<>(selectedNodes);
+        for (GroupView group : selectedGroups) {
+            selection.addAll(nodesCommandedBy(group));
+        }
+        if (selection.isEmpty() && selectedGroups.isEmpty()) {
             return;
         }
         // A MissingNode is a preserved save-file blob, not a working node. Duplicating one would call
@@ -1354,7 +1689,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         // node author would then have to understand, for this one case.
         Set<NodeView> copyable = new LinkedHashSet<>();
         int skipped = 0;
-        for (NodeView view : selectedNodes) {
+        for (NodeView view : selection) {
             if (view.getNode() instanceof MissingNode) {
                 skipped++;
             } else {
@@ -1364,13 +1699,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         if (skipped > 0) {
             log.info("Not copying {} placeholder node(s) for uninstalled types", skipped);
         }
-        if (copyable.isEmpty()) {
+        if (copyable.isEmpty() && selectedGroups.isEmpty()) {
             return;
         }
-        GraphSnapshot snapshot = snapshotOf(copyable);
+        GraphSnapshot snapshot = snapshotOf(copyable, selectedGroups);
         clipboardNodes = snapshot.nodes();
         clipboardDataEdges = snapshot.dataEdges();
         clipboardFlowEdges = snapshot.flowEdges();
+        clipboardGroups = snapshot.groups();
         pasteOffsetStep = 0;
         lastPasteAnchor = null;
     }
@@ -1386,7 +1722,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * nodes become the new selection.
      */
     public void pasteClipboard() {
-        if (clipboardNodes.isEmpty()) {
+        if (clipboardNodes.isEmpty() && clipboardGroups.isEmpty()) {
             return;
         }
         Point2D anchor = cursorContentPoint();
@@ -1400,8 +1736,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         double offsetX;
         double offsetY;
         if (anchor != null) {
-            double minX = clipboardNodes.stream().mapToDouble(ClipboardNode::x).min().orElse(0);
-            double minY = clipboardNodes.stream().mapToDouble(ClipboardNode::y).min().orElse(0);
+            // Over the frames as well as the nodes: a frame is drawn around what it holds, so its
+            // corner is normally the top-left of the whole copied region, and aiming at the nodes
+            // alone would land the frame off the pointer by its own margin.
+            double minX = Math.min(clipboardNodes.stream().mapToDouble(ClipboardNode::x).min().orElse(Double.MAX_VALUE),
+                    clipboardGroups.stream().mapToDouble(NodeGroup::x).min().orElse(Double.MAX_VALUE));
+            double minY = Math.min(clipboardNodes.stream().mapToDouble(ClipboardNode::y).min().orElse(Double.MAX_VALUE),
+                    clipboardGroups.stream().mapToDouble(NodeGroup::y).min().orElse(Double.MAX_VALUE));
             offsetX = anchor.getX() - minX + cascade;
             offsetY = anchor.getY() - minY + cascade;
         } else {
@@ -1409,7 +1750,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             offsetY = PASTE_FALLBACK_OFFSET + cascade;
         }
 
-        GraphSnapshot snapshot = new GraphSnapshot(clipboardNodes, clipboardDataEdges, clipboardFlowEdges);
+        GraphSnapshot snapshot = new GraphSnapshot(clipboardNodes, clipboardDataEdges, clipboardFlowEdges, clipboardGroups);
         undoManager.execute(new PasteCommand(this, snapshot, offsetX, offsetY));
     }
 
@@ -1424,17 +1765,20 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return cursorOverCanvas ? content.sceneToLocal(cursorSceneX, cursorSceneY) : null;
     }
 
-    /** Clears the current selection and selects exactly the given nodes - e.g. what a paste selects afterward. */
-    public void selectOnly(Collection<NodeView> nodes) {
+    /** Clears the current selection and selects exactly what was just placed - e.g. what a paste selects afterward. */
+    public void selectOnly(PlacedGraph placed) {
         clearSelection();
-        for (NodeView nodeView : nodes) {
+        for (NodeView nodeView : placed.nodes()) {
             selectNode(nodeView);
+        }
+        for (GroupView groupView : placed.groups()) {
+            selectGroup(groupView);
         }
     }
 
     /** Everything currently on the canvas, in the same shape used for copy/paste — for save-to-file. */
     public GraphSnapshot snapshotAll() {
-        return snapshotOf(nodeViews);
+        return snapshotOf(nodeViews, groupViews);
     }
 
     /**
@@ -1459,7 +1803,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      */
     public void loadSnapshot(GraphSnapshot snapshot) {
         clearAll();
-        List<NodeView> placed = place(snapshot, ClipboardNode::node, 0, 0);
+        List<NodeView> placed = place(snapshot, ClipboardNode::node, 0, 0).nodes();
         undoManager.clear();
         bindModules(placed);
         resumeRunningNodes(placed);
@@ -1690,6 +2034,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         menu.setOnShowing(event -> {
             nodeSearchField.clear();
             updateSearchResults("");
+            // A selection turns the row into "wrap this", which is how a frame is usually made — a
+            // graph gets labelled after it is built. With nothing selected it drops an empty frame.
+            addGroupItem.setText(selectedNodes.isEmpty() ? "Add Group" : "Group Selection");
         });
         menu.setOnShown(event -> Platform.runLater(nodeSearchField::requestFocus));
 
@@ -1745,6 +2092,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         if (addModuleItem != null) {
             items.add(addModuleItem);
         }
+        items.add(new SeparatorMenuItem());
+        items.add(addGroupItem);
         menu.getItems().setAll(items);
     }
 
@@ -1840,6 +2189,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      * chosen node comes back: the answer may arrive after a worker has been to the filesystem, and
      * the node belongs where the menu was opened.
      */
+    /**
+     * The context menu's group row. Built once and kept, like the Add-Node menu and the Add-Module
+     * row, because {@link #updateSearchResultsIn} re-adds the same items on every keystroke. Its
+     * label is set as the menu opens, since what it will do depends on whether anything is selected.
+     */
+    private MenuItem buildAddGroupItem() {
+        MenuItem item = new MenuItem("Add Group");
+        item.setOnAction(event -> addGroupAt(pendingDropPoint.getX(), pendingDropPoint.getY()));
+        return item;
+    }
+
     private MenuItem buildAddModuleItem(ModuleReferenceAction moduleAdder) {
         if (moduleAdder == null) {
             return null;
@@ -1896,6 +2256,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
     }
 
     private void updateLiveSelection(Bounds rect) {
+        // A frame is caught only when the band encloses it whole, where a node is caught on a mere
+        // intersection. A frame is a large background region, so intersection would catch it from
+        // any band drawn inside it - and rubber-banding a few nodes that happen to sit in a frame
+        // must not pick up the frame, or the next drag would move everything else in it too.
+        for (GroupView group : groupViews) {
+            if (rect.contains(boundsOf(group))) {
+                selectGroup(group);
+            } else {
+                deselectGroup(group);
+            }
+        }
         for (NodeView node : nodeViews) {
             if (node.getBoundsInParent().intersects(rect)) {
                 selectNode(node);
@@ -1962,14 +2333,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         return undoManager.canRedo();
     }
 
-    /** Whether anything — node, connection or both — is selected. */
+    /** Whether anything — node, connection, group frame — is selected. */
     public boolean hasSelection() {
-        return !selectedNodes.isEmpty() || !selectedConnections.isEmpty();
+        return !selectedNodes.isEmpty() || !selectedConnections.isEmpty() || !selectedGroups.isEmpty();
     }
 
     /** Whether a previous copy left something {@link #pasteClipboard()} could place. */
     public boolean canPaste() {
-        return !clipboardNodes.isEmpty();
+        return !clipboardNodes.isEmpty() || !clipboardGroups.isEmpty();
     }
 
     /**
@@ -1982,6 +2353,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         clearSelection();
         for (NodeView node : nodeViews) {
             selectNode(node);
+        }
+        for (GroupView group : groupViews) {
+            selectGroup(group);
         }
         for (ConnectionView connection : allConnections()) {
             selectConnection(connection);
@@ -2038,11 +2412,11 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     /**
      * Frames the whole graph: picks the largest zoom (within the usual limits) at which every node
-     * fits with a margin, and centres it. Does nothing on an empty canvas, or before the canvas has
-     * been laid out and so has no size to fit into.
+     * and group frame fits with a margin, and centres it. Does nothing on an empty canvas, or before
+     * the canvas has been laid out and so has no size to fit into.
      */
     public void zoomToFit() {
-        if (nodeViews.isEmpty() || getWidth() <= 0 || getHeight() <= 0) {
+        if ((nodeViews.isEmpty() && groupViews.isEmpty()) || getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
         // The bounds are pre-transform — the pan/zoom lives on `content` itself — so this is the
@@ -2115,8 +2489,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      */
     public <T> T withComponentIsolated(Set<BaseNode> component, Function<Group, T> renderer) {
         List<NodeView> hiddenNodes = new ArrayList<>();
+        List<GroupView> hiddenGroups = new ArrayList<>();
         List<AbstractEdgeView> hiddenEdges = new ArrayList<>();
         List<NodeView> wasSelected = new ArrayList<>(selectedNodes);
+        List<GroupView> wasSelectedGroups = new ArrayList<>(selectedGroups);
         List<ConnectionView> wasSelectedConnections = new ArrayList<>(selectedConnections);
         List<NodeView> wasFindMatch = new ArrayList<>();
         CameraState wasCamera = getCameraState();
@@ -2135,6 +2511,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 if (!component.contains(view.getNode())) {
                     view.setVisible(false);
                     hiddenNodes.add(view);
+                }
+            }
+            // A frame is drawn only into the pictures of the components it actually holds something
+            // of. It is not a node and so belongs to no component, and one laid across the canvas
+            // would otherwise stretch every component's crop rectangle out to cover it.
+            for (GroupView view : groupViews) {
+                if (!holdsAnyOf(view, component)) {
+                    view.setVisible(false);
+                    hiddenGroups.add(view);
                 }
             }
             // Testing the source node alone is enough: a component is maximal, so an edge with one
@@ -2162,6 +2547,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             for (NodeView view : hiddenNodes) {
                 view.setVisible(true);
             }
+            for (GroupView view : hiddenGroups) {
+                view.setVisible(true);
+            }
             for (AbstractEdgeView view : hiddenEdges) {
                 view.setVisible(true);
             }
@@ -2172,10 +2560,23 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             for (NodeView view : wasSelected) {
                 selectNode(view);
             }
+            for (GroupView view : wasSelectedGroups) {
+                selectGroup(view);
+            }
             for (ConnectionView connection : wasSelectedConnections) {
                 selectConnection(connection);
             }
         }
+    }
+
+    /** Whether this frame commands at least one node of {@code component} — whether it belongs in that component's picture. */
+    private boolean holdsAnyOf(GroupView group, Set<BaseNode> component) {
+        for (NodeView nodeView : nodeViews) {
+            if (component.contains(nodeView.getNode()) && group.commands(nodeView.getBoundsInParent())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The canvas's current pan/zoom, for a save file to carry alongside the graph (see {@code GraphFileIO}). */

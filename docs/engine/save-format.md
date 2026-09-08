@@ -15,7 +15,7 @@ snapshot and camera state off it and handing them to this package.
 
 ```jsonc
 {
-  "version": 3,                    // format version; absent = pre-versioning (legacy)
+  "version": 4,                    // format version; absent = pre-versioning (legacy)
   "plugins": [                     // node libraries this graph depends on; omitted when core-only
     { "id": "housegraph-discord", "name": "Discord", "version": "0.3.1",
       "repository": "https://github.com/jaymcole/housegraph-discord" }
@@ -46,18 +46,21 @@ snapshot and camera state off it and handing them to this package.
   "flowEdges": [ { "sourceNode": 0, "sourcePort": "True",
                    "targetNode": 1, "targetPort": 0,
                    "waypoints": [ ] } ],
+  "groups": [                      // labelled frames drawn behind the graph; omitted when there are none
+    { "title": "Front door", "x": 0.0, "y": 0.0, "width": 400.0, "height": 300.0, "color": "#61afef" }
+  ],
   "camera": { "zoom": 1.0, "translateX": 0.0, "translateY": 0.0 } // pan/zoom; absent = default view
 }
 ```
 
 ## Formal schema
 
-The shape above is documentation; [`graph-save.v3.schema.json`](../../app/src/main/resources/schema/graph-save.v3.schema.json)
+The shape above is documentation; [`graph-save.v4.schema.json`](../../app/src/main/resources/schema/graph-save.v4.schema.json)
 is the JSON Schema an external tool — an agent harness generating or validating a
 graph, in particular — can actually run against a file, via `housegraph schema` or
 directly from the repository. `housegraph schema graph` serves the version this
 build *writes*; each superseded version stays reachable by name
-(`housegraph schema graph-v2`), because a tool checking files it did not write
+(`housegraph schema graph-v3`), because a tool checking files it did not write
 still needs them — an older graph is not invalid, it is older.
 
 Each schema describes the canonical shape its build *writes*; it is stricter than
@@ -160,7 +163,9 @@ format's own addressing, not something a diff can paper over. `dataEdges`,
 `flowEdges` and `plugins` carry no such positional meaning — nothing references
 one by its position in those arrays — so they are matched by content (an edge) or
 `id` (a plugin row) instead, meaning reordering one of those arrays alone reports
-no change. A changed edge is reported as one removal and one addition rather than
+no change. `groups` is compared by position like `nodes`, not because anything
+references a frame by index but because nothing else identifies one: a frame has no
+id, and every field it has can change under a rename, a recolour or a drag. A changed edge is reported as one removal and one addition rather than
 a modification, since nothing identifies "the same edge" across a content change
 other than its content.
 
@@ -185,7 +190,7 @@ explicit `@Node.Type` id. On load, `NodeRegistry.resolveClass` matches it agains
 an index of every type's ids — simple names plus `@Node.Type` ids and aliases —
 falling back to fully-qualified-class-name resolution for older saves.
 
-**The root is versioned.** `GraphFileIO.CURRENT_VERSION` is 3; a file without it
+**The root is versioned.** `GraphFileIO.CURRENT_VERSION` is 4; a file without it
 reads as legacy. `GraphFileIO.migrate` is the single seam for structural migrations
 that shape-sniffing reads cannot express. Bump the version and add a step there
 together.
@@ -194,9 +199,10 @@ together.
 | --- | --- | --- |
 | v1 → v2 | the `plugins` table and the per-node `plugin` key | none — purely additive |
 | v2 → v3 | the `modules` table, the per-node `module` key, and a module file's own root `module` object | none — purely additive |
+| v3 → v4 | the `groups` table | none — purely additive |
 
-Both are passthroughs, and `migrate` says so rather than being silent about it: a
-step that does nothing is a decision, and the next person needs to see it was made.
+All three are passthroughs, and `migrate` says so rather than being silent about it:
+a step that does nothing is a decision, and the next person needs to see it was made.
 
 **Nodes record which library provides them.** A built-in node writes no `plugin`
 key, so a graph using only core nodes produces a v2 file differing from its v1 form
@@ -359,7 +365,11 @@ whole file. An edge whose named endpoint no longer resolves on its node is dropp
 rather than mis-wired. A file with no `camera` key — every save before this one —
 restores the default view (zoom 1, no pan). A v2 file has no `modules` table and no
 per-node `module` key, and reads as a graph that references no module — which it
-could not have.
+could not have. A v3 file has no `groups` table and reads as an unframed graph, for
+the same reason. Within that table every key but the rectangle is optional — a frame
+naming only its bounds loads untitled in the default colour — and a width or height
+below `NodeGroup`'s minimum is clamped to something the user can still grab, rather
+than loading as a frame with no handle to drag.
 
 **Keep this behaviour when you change the format**, and document new fields.
 
@@ -423,7 +433,7 @@ A reopened graph resumes any node that was running when it was saved — see
 
 **When you change this, update…** this file and the `GraphFileIO` Javadoc whenever
 you change the JSON shape, the versioning or migration seam, the identity rules, or
-the compatibility behaviour, **and** `graph-save.v3.schema.json` in the same change
+the compatibility behaviour, **and** `graph-save.v4.schema.json` in the same change
 — a schema that drifts from what `GraphFileIO` actually writes is worse than no
 schema at all. A change to the `plugins` table, or to what a `modules` row records about a module's
 own libraries, also touches [plugin-runtime.md](plugin-runtime.md); a change to how a

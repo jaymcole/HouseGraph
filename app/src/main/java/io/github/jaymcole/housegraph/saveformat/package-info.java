@@ -19,6 +19,13 @@
  * {@code ui.command} (the paste command), {@code ui.io} (save/load) and the headless
  * {@link io.github.jaymcole.housegraph.loader} package all build on the same shape.
  * <p>
+ * {@link io.github.jaymcole.housegraph.saveformat.NodeGroup} is the odd one out: a group frame is
+ * pure canvas decoration the engine never sees, but it rides in the same snapshot for the same
+ * reason an edge's waypoints do — a slice of the canvas is not faithfully copied, pasted or saved
+ * without it. It carries the grouping rules themselves (what a frame commands, and how frames
+ * nest and stack), so they are unit-testable with no display; {@code ui/view/GroupView} only draws
+ * the answers.
+ * <p>
  * Its own package, headless like {@code loader}, {@code plugin}, {@code cli} and {@code remote},
  * because of who reads it: {@code cli/}, {@code remote/}, {@code catalog/} and {@code headless/} all
  * parse a save file directly, and none of them may reach up into {@code ui/} to do it. It cannot live

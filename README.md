@@ -34,6 +34,10 @@ design idea:
 - **Watch mode** — **Run ▸ Watch Speed** slows every run to a set pace, so a cascade
   can be followed node by node as it fires instead of finishing in a blink. Off by
   default and never saved with the graph.
+- **Groups** — wrap part of a canvas in a labelled, coloured frame, so a large graph
+  can be read at a glance. Dragging a frame carries everything inside it, and frames
+  nest. Membership is the rectangle: nothing to maintain, and nothing that can go
+  stale against the canvas.
 - **Image export** — writes a PNG of each distinct graph on the canvas, so a graph
   can be shared or documented as a picture rather than a screenshot.
 - **Encrypted secret store** (AES-256-GCM) so tokens and passwords never touch save

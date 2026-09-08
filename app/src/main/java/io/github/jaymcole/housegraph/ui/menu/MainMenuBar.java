@@ -130,18 +130,20 @@ public class MainMenuBar extends MenuBar {
         MenuItem copy = item("Copy", shortcut(KeyCode.C), canvas::copySelection);
         MenuItem paste = item("Paste", shortcut(KeyCode.V), canvas::pasteClipboard);
         MenuItem delete = item("Delete", new KeyCodeCombination(KeyCode.DELETE), canvas::deleteSelected);
+        MenuItem group = item("Group Selection", shortcut(KeyCode.G), canvas::groupSelection);
         MenuItem selectAll = item("Select All", shortcut(KeyCode.A), canvas::selectAll);
         MenuItem find = item("Find in Graph…", shortcut(KeyCode.F), canvas::openFind);
 
         Menu menu = new Menu("Edit");
         menu.getItems().addAll(undo, redo, new SeparatorMenuItem(),
-                copy, paste, delete, new SeparatorMenuItem(), selectAll, find);
+                copy, paste, delete, group, new SeparatorMenuItem(), selectAll, find);
         menu.setOnShowing(event -> {
             undo.setDisable(!canvas.canUndo());
             redo.setDisable(!canvas.canRedo());
             copy.setDisable(!canvas.hasSelection());
             paste.setDisable(!canvas.canPaste());
             delete.setDisable(!canvas.hasSelection());
+            group.setDisable(!canvas.hasSelection());
         });
         return menu;
     }
