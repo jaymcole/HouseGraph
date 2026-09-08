@@ -57,6 +57,7 @@ avoids the rebuild — a preference, not a guarantee.
 | [save-format.md](save-format.md) | the graph JSON format and its compatibility rules |
 | [ui-layer.md](ui-layer.md) | canvas, views, undo, the FX-thread rule |
 | [node-search.md](node-search.md) | what is indexed, the scoring model, query syntax, `NodeKind` |
+| [find-in-graph.md](find-in-graph.md) | Ctrl/Cmd+F over the nodes on the canvas: what matches, and what is never read |
 | [plugin-runtime.md](plugin-runtime.md) | module split, class loading, catalog, discovery |
 | [remote-runtime.md](remote-runtime.md) | git sync, process supervision, exit codes, the headless runner |
 | [storage.md](storage.md) | on-disk layout, secrets, preferences |

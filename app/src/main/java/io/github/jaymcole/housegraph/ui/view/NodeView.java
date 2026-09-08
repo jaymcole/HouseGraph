@@ -74,9 +74,11 @@ public class NodeView extends BorderPane {
     private static final Color SELECTED_BORDER_COLOR = Color.web("#e5c07b");
     private static final Color PULSE_BORDER_COLOR = Color.web("#61dafb");
     private static final Color MISCONFIGURED_BORDER_COLOR = Color.web("#e06c75");
+    private static final Color SEARCH_MATCH_BORDER_COLOR = Color.web("#ffd93d");
     private static final double SELECTED_BORDER_WIDTH = 2;
     private static final double PULSE_BORDER_WIDTH = 3;
     private static final double MISCONFIGURED_BORDER_WIDTH = 2;
+    private static final double SEARCH_MATCH_BORDER_WIDTH = 3;
     private static final Color PROCESSING_STRIPE_COLOR = Color.web("#e5a561");
     private static final Duration PULSE_DURATION = Duration.millis(400);
     private static final double PROCESSING_STRIPE_WIDTH = 4;
@@ -86,6 +88,7 @@ public class NodeView extends BorderPane {
 
     private final Rectangle validationBorder;
     private final Rectangle highlightBorder;
+    private final Rectangle searchMatchBorder;
     private final Rectangle processingStripes;
     private final Timeline processingAnimation;
 
@@ -99,6 +102,7 @@ public class NodeView extends BorderPane {
     private Point2D lastDragContentPoint;
     private boolean selected = false;
     private boolean processing = false;
+    private boolean searchMatch = false;
     private PauseTransition pulseRevert;
 
     public NodeView(BaseNode node, Group content, DragController dragController) {
@@ -306,6 +310,22 @@ public class NodeView extends BorderPane {
         highlightBorder.setVisible(false);
         highlightBorder.setManaged(false);
         getChildren().add(highlightBorder);
+
+        // Find-in-graph hit. Added after the selection overlay, so it paints over it: a node that
+        // is both selected and a search hit reads as a hit, which is the state the user is
+        // scanning for. Wider than the selection border as well, so the two are told apart at a
+        // glance and at any zoom rather than by shade alone.
+        searchMatchBorder = new Rectangle();
+        searchMatchBorder.setFill(null);
+        searchMatchBorder.setStroke(SEARCH_MATCH_BORDER_COLOR);
+        searchMatchBorder.setStrokeWidth(SEARCH_MATCH_BORDER_WIDTH);
+        searchMatchBorder.setStrokeType(StrokeType.INSIDE);
+        searchMatchBorder.widthProperty().bind(widthProperty());
+        searchMatchBorder.heightProperty().bind(heightProperty());
+        searchMatchBorder.setMouseTransparent(true);
+        searchMatchBorder.setVisible(false);
+        searchMatchBorder.setManaged(false);
+        getChildren().add(searchMatchBorder);
 
         // "Marching ants" overlay for the processing state: a dashed rectangle drawn
         // over the whole node, with its dash offset animated so the stripes appear to
@@ -526,6 +546,24 @@ public class NodeView extends BorderPane {
         pulseRevert = new PauseTransition(PULSE_DURATION);
         pulseRevert.setOnFinished(event -> applyHighlight());
         pulseRevert.play();
+    }
+
+    /**
+     * Rings this node in yellow, or stops doing so, marking it as a hit for the canvas's
+     * find-in-graph box. Purely a view state — {@code GraphCanvas} owns which nodes match (see
+     * {@link io.github.jaymcole.housegraph.search.GraphSearch GraphSearch}) and clears every one
+     * of them when the find bar closes.
+     *
+     * @param searchMatch whether this node matches the current find query
+     */
+    public void setSearchMatch(boolean searchMatch) {
+        this.searchMatch = searchMatch;
+        searchMatchBorder.setVisible(searchMatch);
+    }
+
+    /** Whether this node is currently marked as a find-in-graph hit. */
+    public boolean isSearchMatch() {
+        return searchMatch;
     }
 
     /** Shows (or hides) the animated candy-cane-striped overlay while this node's process() is actually running. */

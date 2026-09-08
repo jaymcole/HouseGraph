@@ -63,6 +63,17 @@ While a graph runs, nodes flash cyan as they fire and show orange marching ants
 while working. A node with a red border is misconfigured — hover it for a tooltip
 naming the inputs that need a value.
 
+### Finding a node
+
+`Ctrl/Cmd+F` opens a find box in the canvas's top-right corner. Every node matching
+what you type is ringed in yellow, and the box counts them — so a match scrolled off
+the edge of the window still tells you it is there. Escape closes it.
+
+It searches a node's name, its port names, and **the text you typed into it**, which
+is usually what tells two nodes of the same kind apart. Values you cannot see are not
+searched: a secret is never matched, and neither is a value the graph computed while
+running.
+
 ### Canvas controls
 
 | Action | Gesture |
@@ -71,6 +82,7 @@ naming the inputs that need a value.
 | Zoom | scroll (anchored at the cursor) |
 | Select | left-drag empty space for a rubber band |
 | Select everything | `Ctrl/Cmd+A` |
+| Find nodes | `Ctrl/Cmd+F`, then type — every match is ringed in yellow |
 | Delete selection | Delete or Backspace |
 | Copy / paste | `Ctrl/Cmd+C` / `Ctrl/Cmd+V` (paste lands at the cursor) |
 | Undo / redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` |
@@ -87,7 +99,7 @@ Commands live in the menu bar; the strip under it repeats the handful used most.
 | Menu | Holds |
 | --- | --- |
 | **File** | New, Open, Open Recent, Save, Save As, Export Images, Exit |
-| **Edit** | Undo, Redo, Copy, Paste, Delete, Select All |
+| **Edit** | Undo, Redo, Copy, Paste, Delete, Select All, Find in Graph |
 | **View** | Zoom In / Out, Actual Size, Zoom to Fit |
 | **Run** | Watch Speed |
 | **Tools** | Secrets, Node Libraries, Logs, Open Data Folder |

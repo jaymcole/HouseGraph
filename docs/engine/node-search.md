@@ -8,6 +8,10 @@ other question — *I want to do this; what have I got?* — which a nested menu
 because finding something in it requires already knowing which folder it is in. That
 gap widens with every installed library.
 
+There is a third question — *where in the graph I already have is that node?* — and it is
+answered somewhere else entirely, by a filter rather than a ranking. See
+[find-in-graph.md](find-in-graph.md).
+
 Results are **ranked, not filtered**. A query that matches nothing exactly still returns
 the closest things, because someone who half-remembers a node's name is the case worth
 serving. A query that matches nothing at all returns nothing: a search box that always
@@ -31,6 +35,9 @@ shows something teaches users to ignore it.
 index build — running plugin static initializers early, and making one expensive or
 throwing constructor everyone's problem. Everything above is readable by reflection over
 an uninitialised `Class`, which is the discipline `NodeRegistry` already keeps.
+
+(Find-in-graph does match ports, because its nodes are already built and their
+`configureInputs()` has already run — see [find-in-graph.md](find-in-graph.md).)
 
 ## How matching works
 
@@ -189,6 +196,8 @@ The deferred work, and what it touches:
 ---
 
 **When you change this, update…** this file whenever the indexed fields, the scoring
-model, the query syntax or the index lifecycle change, and
+model, the query syntax or the index lifecycle change,
+[find-in-graph.md](find-in-graph.md) if the split between this search and the canvas's
+find changes, and
 [0010-node-search-is-ranked-not-filtered.md](../decisions/0010-node-search-is-ranked-not-filtered.md)
 if the reasoning behind them changes.
