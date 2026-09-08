@@ -32,7 +32,7 @@ Out-of-tree node libraries sit beside `app`, depending only on `housegraph-api`.
 | Module | Contains | Published |
 | --- | --- | --- |
 | `housegraph-api` | `graph/`, `sdk/`, `annotations/`, `logging/`, `resource/`, `storage/`, `store/` | Yes — node libraries compile against it |
-| `app` | `ui/`, `App`/`Launcher`, `graph/nodes/`, `saveformat/`, `loader/`, `modules/`, `headless/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
+| `app` | `ui/`, `App`/`GraphWindow`/`Launcher`, `graph/nodes/`, `saveformat/`, `loader/`, `modules/`, `headless/`, `plugin/`, `search/`, `cli/`, `remote/` | No |
 
 `graph/` is in the api module while `graph/nodes/` is in `app`. Distinct packages,
 not a split package.
@@ -110,6 +110,7 @@ not a split package.
 | `ModuleInstance` | One module as a live `NodeGraph`, invoked a run at a time by the node referencing it. |
 | `HeadlessRunner` | Runs one graph with no window, until the process is signalled. |
 | `GraphCanvas` | The JavaFX canvas hosting node and edge views. |
+| `GraphWindow` | One editor window: a stage, the graph open in it, and that graph's canvas. |
 | `ResourceRegistry` | App-wide, name-keyed lookup and event pub/sub. |
 | `SecretsStore` / `AppDirectories` | Encrypted secrets / OS-appropriate file locations. |
 | `LogManager` / `Logger` | Process-wide log hub, fanning out to level-filtered sinks. |
@@ -130,11 +131,13 @@ more, on `--headless`, into `HeadlessRunner`. See
 
 1. **Launch.** `App.start` bootstraps logging, loads the node-library catalog and
    prunes superseded versions, builds a `PluginLoader` and installs it as the
-   thread's context class loader, then builds a `NodeGraph` and a `NodeRegistry`
-   scanning the built-in library plus every installed one. It builds the menu bar
-   and toolbar — `App` is the `MenuActions` behind the menus — and reopens the last
-   file from `AppPreferences`, or the one named by `--graph`.
-   No startup path makes a network call.
+   thread's context class loader, then builds a `NodeRegistry` scanning the built-in
+   library plus every installed one, and a `ModuleLibrary` over it. It opens the first
+   `GraphWindow` — which builds that window's `NodeGraph`, canvas, menu bar and
+   toolbar, and is the `MenuActions` behind its menus — and reopens the last file from
+   `AppPreferences`, or the one named by `--graph`, into it.
+   No startup path makes a network call. Further windows are opened the same way from
+   **File ▸ New Window** or **Open in New Window…**; see [windows.md](windows.md).
 2. **Edit.** Nodes are added from the Add-Node menu, edges dragged, values typed —
    all tracked for undo. See [ui-layer.md](ui-layer.md).
 3. **Run.** A trigger node calls `execute()`, which resolves its data inputs and
@@ -145,9 +148,10 @@ more, on `--headless`, into `HeadlessRunner`. See
    `GraphSnapshot`; `GraphLoader` turns that into live nodes and edges. Computed and
    secret values are never written. A node whose library isn't installed loads as
    a `MissingNode`. See [save-format.md](save-format.md).
-5. **Shutdown.** `App.stop` calls `NodeGraph.dispose()`, closes the node-library
-   class loader, then flushes and closes the log file. A shutdown hook routes a
-   signalled JVM through the same path, because JavaFX calls `stop()` on a
+5. **Shutdown.** Closing a window disposes that window's graph; closing the last one
+   quits. `App.stop` calls `NodeGraph.dispose()` on every graph still open, closes the
+   node-library class loader, then flushes and closes the log file. A shutdown hook
+   routes a signalled JVM through the same path, because JavaFX calls `stop()` on a
    platform exit but not on a signal. See [node-lifecycle.md](node-lifecycle.md).
 
 ---

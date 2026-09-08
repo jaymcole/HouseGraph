@@ -129,7 +129,7 @@ Commands live in the menu bar; the strip under it repeats the handful used most.
 
 | Menu | Holds |
 | --- | --- |
-| **File** | New, Open, Open Recent, Save, Save As, Export Images, Exit |
+| **File** | New Graph, New Window, Open, Open in New Window, Open Recent, Save, Save As, Export Images, Close Window, Exit |
 | **Edit** | Undo, Redo, Copy, Paste, Delete, Group Selection, Select All, Find in Graph |
 | **View** | Zoom In / Out, Actual Size, Zoom to Fit |
 | **Run** | Watch Speed |
@@ -180,6 +180,32 @@ outputs are recalculated on load, and a node stores only a *reference* to a secr
 If a graph uses a node library you do not have installed, **it still opens**. Those
 nodes are preserved exactly as they were, shown as placeholders, and offered for
 install. Nothing is lost, including if you save again.
+
+## Working in several windows
+
+**File ▸ Open in New Window…** (`Ctrl/Cmd+Shift+O`) opens a graph beside the one you
+are editing instead of replacing it, so you can read one graph while building another
+or watch two automations run at once. **File ▸ New Window** (`Ctrl/Cmd+Shift+N`) opens
+an empty one. **File ▸ Open…** and **Open Recent** still open in the window you are
+in.
+
+Each window is its own document: its own file, its own undo history, its own
+clipboard, its own [Watch Speed](#watching-a-graph-run). **Save** writes the file of
+the window you are in, and the title bar tells you which that is. Copy and paste stay
+inside one window — there is no copying nodes from one window into another.
+
+Asking to open a file that is already open somewhere brings that window forward
+rather than opening a second copy — two windows editing one file would overwrite each
+other on save.
+
+**File ▸ Close Window** (`Ctrl/Cmd+W`) closes one window, shutting down whatever its
+graph had running — timers, connections, cameras — and leaves the others alone.
+Closing the last window quits, as does **File ▸ Exit**.
+
+Named resources are the one thing windows share: a
+[long-lived resource](../nodes/long-lived-resources.md) registered by a node in one
+window can be listened to from another, because those are found by name across the
+whole app rather than wired on a canvas.
 
 ## Exporting images
 
