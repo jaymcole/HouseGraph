@@ -38,17 +38,23 @@ import java.util.List;
  * grips</b> resize the frame. That is the same division {@link NodeView} makes, where the title bar
  * drags and the body does not.
  *
- * <p>The title bar is inset by one grip width so the top-left grip stays reachable beside it, and is
- * capped so it never grows over the top-right one.
- *
  * <h2>Resizing does not move anything</h2>
  * A drag on the title bar moves the frame and everything it commands. A drag on a grip changes the
  * rectangle only — which is the whole point, since the rectangle is what decides membership: growing
  * a frame over a node is how that node joins it, and shrinking off one is how it leaves.
  *
+ * <h2>The title bar paints in a layer above every node</h2>
+ * The body renders behind the graph so its translucent fill never washes out what is inside it —
+ * but a title sitting at the frame's own paint depth would then vanish under any node placed near
+ * that corner. So the title bar is not a child of this {@code Region}: {@link #getTitleBar()} hands
+ * it to {@code GraphCanvas}, which keeps it in a separate group stacked above every {@code NodeView}.
+ * {@link #setGroup} repositions and resizes it there directly, in the same content coordinates this
+ * frame itself uses, since it can no longer rely on this {@code Region}'s own {@code layoutChildren}
+ * to place a child that is not actually its child.
+ *
  * <h2>What this class does not decide</h2>
  * It owns its own rectangle and nothing else. Which nodes ride along with a move, what a gesture
- * costs on the undo stack, and where this frame sits in the paint order are all
+ * costs on the undo stack, and where this frame (and its title bar) sits in the paint order are all
  * {@code GraphCanvas}'s, reached through {@link GroupController} — the same shape as
  * {@link NodeView.DragController}. See {@code docs/engine/ui-layer.md}.
  */
@@ -177,11 +183,19 @@ public class GroupView extends Region {
         }
 
         getChildren().add(background);
-        getChildren().add(titleBar);
         getChildren().addAll(grips);
         getChildren().add(selectionBorder);
 
         setGroup(group);
+    }
+
+    /**
+     * The title bar, for the canvas to place in its title-overlay layer instead of as a child of
+     * this frame — see the class Javadoc. Its position and size are kept in step by {@link #setGroup}
+     * regardless of which {@code Parent} it actually sits under.
+     */
+    public Region getTitleBar() {
+        return titleBar;
     }
 
     private void buildTitleBar() {
@@ -324,7 +338,7 @@ public class GroupView extends Region {
         titleLabel.setManaged(false);
         titleField.setVisible(true);
         titleField.setManaged(true);
-        requestLayout();
+        layoutTitleBar();
         titleField.requestFocus();
         titleField.selectAll();
     }
@@ -352,7 +366,7 @@ public class GroupView extends Region {
         if (wasFocused) {
             controller.focusCanvas();
         }
-        requestLayout();
+        layoutTitleBar();
     }
 
     /** Rebuilt on each open so the checked colour reflects the frame's current one. */
@@ -412,7 +426,20 @@ public class GroupView extends Region {
         }
         titleLabel.setText(group.title().isEmpty() ? "Group" : group.title());
         titleLabel.setOpacity(group.title().isEmpty() ? 0.6 : 1);
+        layoutTitleBar();
         requestLayout();
+    }
+
+    /**
+     * Places the title bar in content coordinates directly, since it sits in the canvas's
+     * title-overlay layer rather than as a child of this {@code Region} — see the class Javadoc.
+     * Inset by a grip width so the title sits beside the top-left grip rather than over it, and
+     * clamped so it can never grow across the top-right one.
+     */
+    private void layoutTitleBar() {
+        double available = Math.max(0, group.width() - 2 * GRIP_SIZE);
+        double barWidth = Math.min(titleBar.prefWidth(-1), available);
+        titleBar.resizeRelocate(group.x() + GRIP_SIZE, group.y(), barWidth, titleBar.prefHeight(barWidth));
     }
 
     private static String toRgba(Color color, double alpha) {
@@ -460,12 +487,6 @@ public class GroupView extends Region {
         selectionBorder.setWidth(width);
         selectionBorder.setHeight(height);
         selectionBorder.relocate(0, 0);
-
-        // Inset by a grip on each side: the title sits beside the top-left grip rather than over it,
-        // and can never grow across the top-right one.
-        double available = Math.max(0, width - 2 * GRIP_SIZE);
-        double barWidth = Math.min(titleBar.prefWidth(-1), available);
-        titleBar.resizeRelocate(GRIP_SIZE, 0, barWidth, titleBar.prefHeight(barWidth));
 
         for (int i = 0; i < grips.size(); i++) {
             Corner corner = Corner.values()[i];
