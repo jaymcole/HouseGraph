@@ -4,6 +4,9 @@
 undo/redo, and the auxiliary windows. It is the only package that owns FX-thread
 concerns and the top of the dependency stack.
 
+The editor window this layer fills — what a window owns, what several of them share,
+and what closing one tears down — is [windows.md](windows.md).
+
 ## Package layout
 
 ```
@@ -256,7 +259,7 @@ their own. Two surfaces provide it, and neither decides anything:
 
 - **Add Module…**, the context-menu row under the Add-Node menu. `GraphCanvas`
   contributes the row and the placement; the answer comes from an injected
-  `ModuleReferenceAction`, which `App` implements. The canvas closes over the drop
+  `ModuleReferenceAction`, which `GraphWindow` implements. The canvas closes over the drop
   point when the row is clicked rather than reading it when the node comes back,
   because the answer may arrive after a worker has been to the filesystem.
 - **File ▸ Publish as Module…**, a `MenuActions` command, for the same reason every
@@ -359,7 +362,7 @@ current one left of the title with a tooltip. To add or restyle an icon, edit
 
 `export/` writes a PNG of each **connected component** of the graph — the distinct
 automations one save file can hold. `GraphComponents` does the splitting and
-`GraphImageExport` does the drawing; `App`'s **Export Images…** button is the only
+`GraphImageExport` does the drawing; the **Export Images…** command is the only
 caller.
 
 `GraphComponents.connectedComponents` treats data and flow edges alike, and ignores
@@ -415,21 +418,29 @@ letting the export run out of memory.
 
 ## Menu bar
 
-The window's chrome is `menu/MainMenuBar` over a short `ToolBar`, both in `App`'s
-`BorderPane` top. The menus are File, Edit, View, Run, Tools and Help.
+A window's chrome is `menu/MainMenuBar` over a short `ToolBar`, both in
+`GraphWindow`'s `BorderPane` top. The menus are File, Edit, View, Run, Tools and Help,
+and each window builds its own.
 
 Commands come from two places, and that split is why the menu bar is its own class
-rather than more of `App`:
+rather than more of `GraphWindow`:
 
 - **Canvas commands** — undo, redo, copy, paste, delete, select-all, find, the four
   zoom commands, Group Selection — are called straight on the `GraphCanvas` the menu
   bar is constructed with. This is what the `public` methods listed under
   `GraphCanvas` above are for.
-- **Application commands** — anything needing the stage, the preferences store, the
-  plugin catalog or the module library — go through `menu/MenuActions`, which `App`
-  implements. **File ▸ Publish as Module…** is one of these. The
-  menu bar therefore depends on a named set of commands rather than on `App`, which
-  would be a cycle since `App` constructs it.
+- **Window commands** — anything needing the stage, the preferences store, the
+  plugin catalog or the module library — go through `menu/MenuActions`, which
+  `GraphWindow` implements. **File ▸ Publish as Module…** is one of these. The menu
+  bar therefore depends on a named set of commands rather than on the window, which
+  would be a cycle since the window constructs it.
+
+The File menu is also where windows are managed: **New Graph** and **Open…** act on
+this window, **New Window** (`Ctrl/Cmd+Shift+N`) and **Open in New Window…**
+(`Ctrl/Cmd+Shift+O`) open another, **Close Window** (`Ctrl/Cmd+W`) closes this one and
+**Exit** quits the lot. Shift is the modifier because that is what the platforms
+already use for "same command, new window". **Open Recent** opens in the current
+window.
 
 **Accelerators duplicate the canvas's own key handling deliberately.** The canvas
 handles and *consumes* Delete and the `Ctrl/Cmd` editing shortcuts, and JavaFX
@@ -496,7 +507,9 @@ canvas ad hoc, so they participate in undo.
 ## Auxiliary windows
 
 Both are standalone, non-modal, unowned top-level stages with toggle-to-front
-singleton `show()` methods — not modal dialogs like `SecretsEditor`.
+singleton `show()` methods — not modal dialogs like `SecretsEditor`. One of each
+serves the whole app: opening **Logs** from a second editor window raises the window
+already showing, and both act on state `App` owns rather than on any one canvas.
 
 **`log/LogWindow`** renders the shared `LogBufferSink`. On open it replays
 `snapshot()`, the full retained history including everything captured while it was
@@ -525,6 +538,8 @@ to refresh the table when a download starts or finishes.
 interactions, add a view type or a `Command`, change the context menu, change the
 menus or the toolbar, change a node's visual states, change what a group frame
 commands or how frames stack, change either auxiliary window, change what image export
-draws, or change when a node's `NodePresentation` is installed or cleared. Save-format changes belong in
-[save-format.md](save-format.md); extension-point changes also touch
+draws, or change when a node's `NodePresentation` is installed or cleared. How editor
+windows are opened, closed and torn down belongs in [windows.md](windows.md);
+save-format changes in [save-format.md](save-format.md); extension-point changes also
+touch
 [`../nodes/`](../nodes/).

@@ -24,7 +24,13 @@ import java.util.List;
  * Two sources, and the split is the reason this class can exist at all. Everything that acts on the
  * open graph — undo, copy, zoom, select-all — is a method on the {@link GraphCanvas} it is given.
  * Everything that needs the window, the preferences store or the plugin catalog is a method on
- * {@link MenuActions}, which the application implements. Nothing here reaches into {@code App}.
+ * {@link MenuActions}, which the editor window implements. Nothing here reaches into {@code App}.
+ *
+ * <h2>One menu bar per window</h2>
+ * Each editor window builds its own, over its own canvas and its own {@code MenuActions}, so File ▸
+ * Save and Edit ▸ Undo act on the window whose menu was opened. The File menu is where the windows
+ * themselves are managed: New Window and Open in New Window… open another, Close Window closes this
+ * one, and Exit quits the lot.
  *
  * <h2>Accelerators and the canvas's own key handling</h2>
  * The canvas handles Delete, Ctrl/Cmd+C/V/Z/Shift+Z/A itself and <b>consumes</b> those events, and
@@ -66,12 +72,18 @@ public class MainMenuBar extends MenuBar {
 
     private Menu fileMenu() {
         MenuItem newGraph = item("New Graph", shortcut(KeyCode.N), actions::newGraph);
+        MenuItem newWindow = item("New Window", shortcut(KeyCode.N, KeyCombination.SHIFT_DOWN),
+                actions::newWindow);
         MenuItem open = item("Open…", shortcut(KeyCode.O), actions::openGraph);
+        // Shift is the modifier the platforms already use for "same command, new window", which is
+        // why both new-window items take it rather than a letter of their own.
+        MenuItem openInNewWindow = item("Open in New Window…",
+                shortcut(KeyCode.O, KeyCombination.SHIFT_DOWN), actions::openGraphInNewWindow);
 
         // Rebuilt every time the submenu opens, so it reflects whatever has been saved or loaded
-        // since — including by another instance of the app. Populated once here as well, because a
-        // Menu with no items silently refuses to open its popup, and "no items" is exactly the
-        // state a fresh profile starts in.
+        // since — including in another window, or by another instance of the app. Populated once
+        // here as well, because a Menu with no items silently refuses to open its popup, and
+        // "no items" is exactly the state a fresh profile starts in.
         Menu recent = new Menu("Open Recent");
         populateRecent(recent);
         recent.setOnShowing(event -> populateRecent(recent));
@@ -80,12 +92,13 @@ public class MainMenuBar extends MenuBar {
         MenuItem saveAs = item("Save As…", shortcut(KeyCode.S, KeyCombination.SHIFT_DOWN), actions::saveGraphAs);
         MenuItem publish = item("Publish as Module…", null, actions::publishAsModule);
         MenuItem export = item("Export Images…", shortcut(KeyCode.E), actions::exportImages);
+        MenuItem closeWindow = item("Close Window", shortcut(KeyCode.W), actions::closeWindow);
         MenuItem exit = item("Exit", shortcut(KeyCode.Q), actions::exit);
 
         Menu menu = new Menu("File");
-        menu.getItems().addAll(newGraph, open, recent, new SeparatorMenuItem(),
+        menu.getItems().addAll(newGraph, newWindow, open, openInNewWindow, recent, new SeparatorMenuItem(),
                 save, saveAs, publish, new SeparatorMenuItem(),
-                export, new SeparatorMenuItem(), exit);
+                export, new SeparatorMenuItem(), closeWindow, exit);
         // Save reads "Save" once there is a file to write and "Save…" before then, because until
         // one has been chosen it prompts — the ellipsis is the only warning that it will.
         menu.setOnShowing(event -> save.setText(actions.hasCurrentFile() ? "Save" : "Save…"));
@@ -230,11 +243,14 @@ public class MainMenuBar extends MenuBar {
                   Delete / Backspace     Delete the selection
 
                 File
-                  Ctrl/Cmd+N             New graph
-                  Ctrl/Cmd+O             Open
+                  Ctrl/Cmd+N             New graph, in this window
+                  Ctrl/Cmd+Shift+N       New window
+                  Ctrl/Cmd+O             Open, in this window
+                  Ctrl/Cmd+Shift+O       Open in a new window
                   Ctrl/Cmd+S             Save
                   Ctrl/Cmd+Shift+S       Save as
                   Ctrl/Cmd+E             Export images
+                  Ctrl/Cmd+W             Close window
 
                 View
                   Ctrl/Cmd+= / +-        Zoom in / out

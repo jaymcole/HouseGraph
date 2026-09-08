@@ -38,6 +38,10 @@ design idea:
   can be read at a glance. Dragging a frame carries everything inside it, and frames
   nest. Membership is the rectangle: nothing to maintain, and nothing that can go
   stale against the canvas.
+- **Several graphs at once** — **File ▸ Open in New Window…** opens a graph beside
+  the one being edited rather than replacing it. Each window is its own document with
+  its own file, undo history and running graph; closing one shuts down only what that
+  graph had running.
 - **Image export** — writes a PNG of each distinct graph on the canvas, so a graph
   can be shared or documented as a picture rather than a screenshot.
 - **Encrypted secret store** (AES-256-GCM) so tokens and passwords never touch save

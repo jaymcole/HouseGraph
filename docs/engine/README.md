@@ -56,6 +56,7 @@ avoids the rebuild — a preference, not a guarantee.
 | [node-lifecycle.md](node-lifecycle.md) | lifecycle hooks, two-phase teardown, shutdown budgets |
 | [save-format.md](save-format.md) | the graph JSON format and its compatibility rules |
 | [ui-layer.md](ui-layer.md) | canvas, views, undo, the FX-thread rule |
+| [windows.md](windows.md) | editor windows, what they share, what closing one tears down |
 | [node-search.md](node-search.md) | what is indexed, the scoring model, query syntax, `NodeKind` |
 | [find-in-graph.md](find-in-graph.md) | Ctrl/Cmd+F over the nodes on the canvas: what matches, and what is never read |
 | [plugin-runtime.md](plugin-runtime.md) | module split, class loading, catalog, discovery |

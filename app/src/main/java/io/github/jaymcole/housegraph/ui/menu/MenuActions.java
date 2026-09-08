@@ -15,14 +15,31 @@ import java.util.List;
  * constructs the menu bar.
  *
  * <p>Everything here runs on the FX Application Thread, and may open a modal dialog.
+ *
+ * <h2>One implementation per window</h2>
+ * These are the commands of <em>this</em> menu bar's window: {@link #newGraph()} empties this
+ * canvas, {@link #saveGraph()} writes this window's file, {@link #closeWindow()} closes this window.
+ * The three that are inherently app-wide say so — {@link #newWindow()} and
+ * {@link #openGraphInNewWindow()} open another window, and {@link #exit()} quits everything.
  */
 public interface MenuActions {
 
-    /** Discards the current graph and starts an empty one. Owns its own confirmation. */
+    /** Discards the graph in this window and starts an empty one here. Owns its own confirmation. */
     void newGraph();
 
-    /** Prompts for a file and opens it. */
+    /** Opens another editor window, on an empty canvas. */
+    void newWindow();
+
+    /** Prompts for a file and opens it in this window, replacing what is on the canvas. */
     void openGraph();
+
+    /**
+     * Prompts for a file and opens it in a window of its own, leaving this one alone.
+     *
+     * <p>A file already open in some window raises that window rather than opening a second view of
+     * it: each window saves its whole canvas, so two on one file would race to overwrite each other.
+     */
+    void openGraphInNewWindow();
 
     /** The files most recently saved or opened, newest first; may include files that no longer exist. */
     List<File> recentGraphs();
@@ -42,6 +59,9 @@ public interface MenuActions {
     /** Whether a file has been chosen, i.e. whether {@link #saveGraph()} would write without prompting. */
     boolean hasCurrentFile();
 
+    /** Closes this window, disposing its graph. Closing the last one quits, same as {@link #exit()}. */
+    void closeWindow();
+
     /**
      * Writes the canvas into the modules directory and gives it a stable id, so other graphs can
      * reference it as a single node. Prompts for the destination, and reports what it did.
@@ -55,7 +75,7 @@ public interface MenuActions {
     /** Prompts for a directory and writes one PNG per distinct graph on the canvas into it. */
     void exportImages();
 
-    /** Closes the app the same way closing its window does. */
+    /** Quits the app, every window included. */
     void exit();
 
     /** Opens the secrets editor. */

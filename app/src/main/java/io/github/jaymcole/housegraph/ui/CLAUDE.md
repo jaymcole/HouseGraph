@@ -7,6 +7,10 @@ haven't.
 This is the only package that owns JavaFX-thread concerns. It sits at the top of
 the dependency stack: it depends on `graph/` and below, never the reverse.
 
+The window this package fills is `GraphWindow`, outside it — one per open graph, each
+with its own `GraphCanvas` and `MainMenuBar` over shared services owned by `App`. See
+[`docs/engine/windows.md`](../../../../../../../../../docs/engine/windows.md).
+
 ## Layout
 
 `GraphCanvas` is the hub and stays at the package root, alongside
@@ -20,7 +24,7 @@ the dependency stack: it depends on `graph/` and below, never the reverse.
 | `command/` | undo/redo — `Command`, `UndoManager`, every `*Command` |
 | `io/` | the canvas-facing save/load wrappers (`GraphFileIO`) |
 | `log/` | the log viewer (`LogWindow`) and `LogLevelPreferences` |
-| `menu/` | the application menu bar (`MainMenuBar`) and the `MenuActions` the host app implements |
+| `menu/` | the application menu bar (`MainMenuBar`) and the `MenuActions` each editor window implements |
 | `plugin/` | the node-library manager (`PluginWindow`) |
 | `module/` | the module picker (`ModulePickerDialog`) |
 | `export/` | rendering the canvas to PNGs, one per connected component |
@@ -47,8 +51,8 @@ package.
 - **Modules decide nothing here.** `modules/` is headless and tested: what may be
   published (`ModulePublisher`), what the picker offers (`ModuleChoices`), and how a
   loaded module reference is resolved (`ModuleBinding`). `ui/module/` renders, and
-  `App` runs both filesystem actions on a worker. `GraphCanvas.loadSnapshot` calls
-  `ModuleBinding` after `place` and before `resumeRunningNodes`, and never from
+  `GraphWindow` runs both filesystem actions on a worker. `GraphCanvas.loadSnapshot`
+  calls `ModuleBinding` after `place` and before `resumeRunningNodes`, and never from
   `place` itself — a rebuilt shape swaps out the `NodeView` a paste `Command` holds.
   See [`docs/engine/ui-layer.md`](../../../../../../../../../docs/engine/ui-layer.md).
 - **Reversible canvas mutations are `Command`s.** Anything undoable goes through
