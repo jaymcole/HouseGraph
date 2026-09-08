@@ -1217,6 +1217,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     public void addGroup(GroupView groupView) {
         content.getChildren().add(groupView);
         groupViews.add(groupView);
+        groupView.setZoom(zoom);
         restackGroups();
     }
 
@@ -2403,6 +2404,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
 
     private void updateTransform() {
         content.getTransforms().setAll(new Affine(zoom, 0, translateX, 0, zoom, translateY));
+        for (GroupView group : groupViews) {
+            group.setZoom(zoom);
+        }
     }
 
     /** One step in, anchored to the middle of the viewport rather than to the pointer. */
