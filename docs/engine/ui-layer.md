@@ -195,6 +195,13 @@ read at a glance. It is a frame, not a node: it has no ports, never runs, and a 
 loaded without its frames behaves identically. `saveformat/NodeGroup` is the whole of
 one — a title, a rectangle and a colour — and `view/GroupView` draws it.
 
+**The title bar counteracts zoom-out.** Below 1:1, `GroupView.setZoom` scales the
+title bar up by `1 / zoom`, holding its on-screen size at what it is at 1:1 instead
+of shrinking into an unreadable smear alongside the rest of the graph; at 1:1 and
+above it scales normally with everything else. `GraphCanvas.updateTransform` pushes
+the current zoom to every `GroupView` on each zoom change, and `addGroup` does the
+same for one just added.
+
 **Membership is geometry, and nothing else.** A frame holds no list of what it
 contains. It *commands* a node, or another frame, exactly while that thing's
 rectangle lies wholly inside its own, recomputed at the moment an action needs the

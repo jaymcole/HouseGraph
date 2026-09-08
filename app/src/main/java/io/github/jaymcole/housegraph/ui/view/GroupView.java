@@ -21,6 +21,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.StrokeType;
+import javafx.scene.transform.Scale;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -132,6 +133,8 @@ public class GroupView extends Region {
     private final Label titleLabel = new Label();
     private final TextField titleField = new TextField();
     private final List<StackPane> grips = new ArrayList<>();
+    /** Grows the title bar back to its 1:1 on-screen size as the canvas zooms out past it; see {@link #setZoom}. */
+    private final Scale titleZoomCompensation = new Scale(1, 1, 0, 0);
 
     private NodeGroup group;
     private boolean selected;
@@ -168,6 +171,7 @@ public class GroupView extends Region {
         selectionBorder.setVisible(false);
 
         buildTitleBar();
+        titleBar.getTransforms().add(titleZoomCompensation);
         for (Corner corner : Corner.values()) {
             grips.add(buildGrip(corner));
         }
@@ -432,6 +436,18 @@ public class GroupView extends Region {
 
     public boolean isSelected() {
         return selected;
+    }
+
+    /**
+     * Counteracts the canvas zoom on the title bar alone, so the label stays legible when zoomed
+     * out instead of shrinking into an unreadable smear. Below 1:1 the title bar grows just enough
+     * to hold its on-screen size steady at the 1:1 size; at 1:1 and above it scales normally with
+     * everything else, since the problem this solves only exists when zooming out.
+     */
+    public void setZoom(double zoom) {
+        double factor = zoom > 0 ? Math.max(1, 1 / zoom) : 1;
+        titleZoomCompensation.setX(factor);
+        titleZoomCompensation.setY(factor);
     }
 
     @Override
