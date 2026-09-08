@@ -46,16 +46,20 @@ import io.github.jaymcole.housegraph.graph.TypeConverters;
 import io.github.jaymcole.housegraph.graph.TypeConverters.ConversionSafety;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
+import io.github.jaymcole.housegraph.search.GraphSearch;
 import io.github.jaymcole.housegraph.search.NodeDescriptor;
 import io.github.jaymcole.housegraph.search.NodeSearchIndex;
 import io.github.jaymcole.housegraph.search.SearchResult;
 import javafx.application.Platform;
 import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
+import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
+import javafx.geometry.Pos;
 import javafx.scene.Group;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
+import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
@@ -68,6 +72,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.CubicCurve;
@@ -91,8 +96,10 @@ import java.util.function.Function;
  * Panning: middle-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
  * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges,
  * including individual edge waypoint handles caught by the band — dragging a selected
- * node then carries any selected waypoints along with it, as one undo step; right-click
- * opens a menu led by a ranked node search box, focused immediately; it shows
+ * node then carries any selected waypoints along with it, as one undo step; Ctrl/Cmd+F opens a
+ * find bar in the top-right corner that rings every matching node on the canvas in yellow (see
+ * {@link io.github.jaymcole.housegraph.search.GraphSearch GraphSearch}), and Escape closes it;
+ * right-click opens a menu led by a ranked node search box, focused immediately; it shows
  * no results until you type, with the categorised "Add Node" menu kept below it for
  * browsing and an "Add Module…" row under that — modules are not node types, so they
  * cannot be menu entries; see {@link ModuleReferenceAction}. Delete/Backspace removes
@@ -116,6 +123,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
     private static final KeyCodeCombination SELECT_ALL_COMBO =
             new KeyCodeCombination(KeyCode.A, KeyCombination.SHORTCUT_DOWN);
+    private static final KeyCodeCombination FIND_COMBO = new KeyCodeCombination(KeyCode.F, KeyCombination.SHORTCUT_DOWN);
+
+    /** Gap between the find bar and the canvas's top and right edges, in screen pixels. */
+    private static final double FIND_BAR_MARGIN = 12;
 
     /** Extra offset per repeated paste at the same spot, so stacked pastes stay distinguishable. */
     private static final double PASTE_CASCADE_STEP = 20;
@@ -167,6 +178,14 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
 
     private final ContextMenu contextMenu;
     private final TextField nodeSearchField;
+
+    /** The find-in-graph bar: floats over the top-right corner, hidden until Ctrl/Cmd+F. */
+    private final HBox findBar;
+    private final TextField graphSearchField = new TextField();
+    private final Label graphSearchCount = new Label();
+    /** What the find bar is currently highlighting; blank whenever it is closed or empty. */
+    private GraphSearch.Query searchQuery = GraphSearch.compile("");
+
     private final MenuItem addModuleItem;
     private final NodeRegistry nodeRegistry;
     /** Resolves the modules a loaded graph references; {@link ModuleDirectory#EMPTY} when none was given. */
@@ -239,6 +258,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         nodeSearchField.textProperty().addListener((obs, oldText, newText) -> updateSearchResults(newText));
         nodeSearchField.addEventHandler(KeyEvent.KEY_PRESSED, this::handleSearchFieldKeyPressed);
         contextMenu = buildContextMenu();
+        // A child of this Pane rather than of `content`, so it floats over the canvas at a fixed
+        // corner instead of panning and zooming with the graph. layoutChildren places it.
+        findBar = buildFindBar();
+        getChildren().add(findBar);
         // ContextMenu's built-in autoHide is focus-based and doesn't reliably fire for
         // clicks elsewhere in the same window, and NodeView/PortView consume their own
         // mouse-press events before they'd ever bubble up to this canvas's own handler.
@@ -278,7 +301,13 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         setOnMouseReleased(this::handleCanvasReleased);
         setOnContextMenuRequested(this::handleContextMenuRequested);
         setOnKeyPressed(event -> {
-            if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
+            if (FIND_COMBO.match(event)) {
+                openFind();
+                event.consume();
+            } else if (event.getCode() == KeyCode.ESCAPE && findBar.isVisible()) {
+                closeFind();
+                event.consume();
+            } else if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
                 deleteSelected();
                 event.consume();
             } else if (COPY_COMBO.match(event)) {
@@ -353,6 +382,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
             flowPorts.add(flowPort);
             wireFlowPort(flowPort);
         }
+
+        // A node that arrives while a find is open — pasted, undone back in, or its view rebuilt —
+        // is judged against the live query, so the highlighting never describes a stale canvas.
+        // Unconditionally, not only while a find is running: undoing a delete restores the very
+        // same NodeView, and one deleted while highlighted is still carrying that mark, which
+        // closeFind could not clear because the view had already left nodeViews. A blank query
+        // matches nothing, so this is what clears it.
+        nodeView.setSearchMatch(searchQuery.matches(nodeView.getNode()));
+        if (!searchQuery.isBlank()) {
+            updateFindCount();
+        }
     }
 
     public void removeNode(NodeView nodeView) {
@@ -370,6 +410,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         ports.removeAll(nodeView.getOutputPorts());
         flowPorts.removeAll(nodeView.getFlowInPorts());
         flowPorts.removeAll(nodeView.getFlowOutPorts());
+        if (!searchQuery.isBlank() && nodeView.isSearchMatch()) {
+            updateFindCount();
+        }
     }
 
     /**
@@ -1509,6 +1552,116 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         }
     }
 
+    // --- Find in graph ---------------------------------------------------------------
+
+    /**
+     * The find bar: a text field and a match count, floating over the canvas's top-right corner.
+     *
+     * <p>It highlights rather than navigates. Every node whose text contains the query is ringed in
+     * yellow and the count says how many there are — which is what makes an off-screen hit
+     * discoverable — but nothing pans, selects or reorders, so a find never disturbs the layout or
+     * the selection the user is in the middle of.
+     */
+    private HBox buildFindBar() {
+        graphSearchField.setPromptText("Find in graph…");
+        graphSearchField.setPrefColumnCount(16);
+        // Styled dark to match the node chrome. A default TextField is white, and the find bar
+        // floats directly over the canvas rather than inside a dialog or a menu popup, so an
+        // unstyled one reads as a piece of another application dropped onto the graph.
+        graphSearchField.setStyle("-fx-control-inner-background: #3c3f41; -fx-text-fill: #eeeeee; "
+                + "-fx-prompt-text-fill: #999999; -fx-highlight-fill: #4a4d4f;");
+        graphSearchField.textProperty().addListener((obs, oldText, newText) -> applyFindQuery(newText));
+        // Escape closes from inside the field; the canvas's own handler covers the case where focus
+        // has since moved back to it.
+        graphSearchField.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.ESCAPE) {
+                closeFind();
+                event.consume();
+            }
+        });
+
+        graphSearchCount.setStyle("-fx-text-fill: #bbbbbb;");
+
+        HBox bar = new HBox(8, graphSearchField, graphSearchCount);
+        bar.setAlignment(Pos.CENTER_LEFT);
+        bar.setPadding(new Insets(6, 8, 6, 8));
+        bar.setStyle("-fx-background-color: #2b2d2f; -fx-border-color: #555555; -fx-border-width: 1;");
+        bar.setVisible(false);
+        return bar;
+    }
+
+    /**
+     * Region's layout pass sizes managed children but never moves them, so this is the only place
+     * the find bar's position is set — and it has to be recomputed here rather than bound, because
+     * it depends on the bar's own width, which changes as the match count text does.
+     */
+    @Override
+    protected void layoutChildren() {
+        super.layoutChildren();
+        // Clamped, so a canvas narrower than the bar overflows off the right edge (where the
+        // clip hides it) rather than sliding off the left, taking the text field with it.
+        findBar.relocate(Math.max(FIND_BAR_MARGIN, getWidth() - findBar.getWidth() - FIND_BAR_MARGIN),
+                FIND_BAR_MARGIN);
+    }
+
+    /**
+     * Opens the find bar and focuses it, re-running whatever query it still holds.
+     *
+     * <p>Public because the menu bar's <b>Edit ▸ Find</b> drives the same command — see
+     * {@code ui/menu/MainMenuBar}. Reopening keeps the previous query and selects it, so the
+     * shortcut both repeats a search and starts a new one without a detour to clear the field.
+     */
+    public void openFind() {
+        findBar.setVisible(true);
+        applyFindQuery(graphSearchField.getText());
+        graphSearchField.requestFocus();
+        graphSearchField.selectAll();
+    }
+
+    /** Hides the find bar and drops every highlight, handing focus back to the canvas. */
+    public void closeFind() {
+        findBar.setVisible(false);
+        // The query text is kept for the next Ctrl/Cmd+F; only the highlighting goes.
+        searchQuery = GraphSearch.compile("");
+        for (NodeView nodeView : nodeViews) {
+            nodeView.setSearchMatch(false);
+        }
+        requestFocus();
+    }
+
+    /** Re-tests every node on the canvas against {@code query} and repaints the highlights. */
+    private void applyFindQuery(String query) {
+        searchQuery = GraphSearch.compile(query);
+        for (NodeView nodeView : nodeViews) {
+            nodeView.setSearchMatch(searchQuery.matches(nodeView.getNode()));
+        }
+        updateFindCount();
+    }
+
+    /**
+     * Refreshes the match count from the marks already on the views, rather than re-running the
+     * query. Adding or removing a node while the bar is open only has to test the one node that
+     * changed, which is what keeps opening a 500-node graph with a find in progress from being
+     * quadratic.
+     */
+    private void updateFindCount() {
+        if (searchQuery.isBlank()) {
+            graphSearchCount.setText("");
+            return;
+        }
+        int matches = 0;
+        for (NodeView nodeView : nodeViews) {
+            if (nodeView.isSearchMatch()) {
+                matches++;
+            }
+        }
+        graphSearchCount.setText(switch (matches) {
+            case 0 -> "no matches";
+            case 1 -> "1 match";
+            default -> matches + " matches";
+        });
+    }
+
     // --- Right-click context menu ----------------------------------------------------
 
     private void handleContextMenuRequested(ContextMenuEvent event) {
@@ -1944,7 +2097,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
      *       to just what remains, which is what gives the renderer its crop rectangle for free.</li>
      *   <li><b>The selection is cleared</b>, because {@code NodeView}'s selection border is a child
      *       of the node and would otherwise render into the image: whatever happened to be selected
-     *       when the user hit Export would come out ringed in amber.</li>
+     *       when the user hit Export would come out ringed in amber. <b>Find-in-graph highlights go
+     *       with it</b>, for the same reason and in the same way — an open find bar is not part of
+     *       the graph, so it must not be part of the picture.</li>
      *   <li><b>Pan/zoom is reset to 1:1</b>, so the render doesn't depend on where the user had
      *       scrolled to, and so the content group's local coordinates and its parent's coincide —
      *       which is what lets the renderer derive its viewport from {@code getLayoutBounds()}.</li>
@@ -1963,10 +2118,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
         List<AbstractEdgeView> hiddenEdges = new ArrayList<>();
         List<NodeView> wasSelected = new ArrayList<>(selectedNodes);
         List<ConnectionView> wasSelectedConnections = new ArrayList<>(selectedConnections);
+        List<NodeView> wasFindMatch = new ArrayList<>();
         CameraState wasCamera = getCameraState();
 
         try {
             clearSelection();
+            for (NodeView view : nodeViews) {
+                if (view.isSearchMatch()) {
+                    view.setSearchMatch(false);
+                    wasFindMatch.add(view);
+                }
+            }
             setCameraState(IDENTITY_CAMERA);
 
             for (NodeView view : nodeViews) {
@@ -2004,6 +2166,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GraphE
                 view.setVisible(true);
             }
             setCameraState(wasCamera);
+            for (NodeView view : wasFindMatch) {
+                view.setSearchMatch(true);
+            }
             for (NodeView view : wasSelected) {
                 selectNode(view);
             }

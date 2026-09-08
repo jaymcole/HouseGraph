@@ -123,6 +123,7 @@ Honour it. Beyond that:
 | Anything user-facing | `README.md` and [`docs/guides/`](docs/guides/) |
 | Add a node type | Nothing to register, but tag it (`@Node.Kind`, `@Display.Description`, `@Node.Keywords`). A new **category folder** goes in [`docs/nodes/README.md`](docs/nodes/README.md) |
 | Node metadata, the searchable fields, or ranking | `NodeMetadata`/`NodeSearchIndex` Javadoc + [node-search.md](docs/engine/node-search.md) |
+| What find-in-graph matches, or what it must never read | `GraphSearch` Javadoc + [find-in-graph.md](docs/engine/find-in-graph.md) |
 | Make a new value type editable | `sdk.ValueEditors` static block + [type-system.md](docs/engine/type-system.md) |
 | Add a package | Add a `package-info.java` |
 

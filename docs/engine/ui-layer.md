@@ -101,6 +101,8 @@ Interactions, with the class Javadoc as the authoritative list:
   nothing to aim at, so the paste falls back to a fixed offset from the copied
   position; either way, repeated pastes without moving the pointer step further each
   time so they don't stack.
+- `Ctrl/Cmd+F` opens the find bar over the top-right corner and rings every matching
+  node in yellow; Escape closes it. See "Find bar" below.
 - Dragging between port circles makes a data edge; dragging between the triangular
   anchors at a node's top corners makes a flow edge.
 
@@ -156,6 +158,27 @@ top-ranked result and closes the menu (a no-op on a still-blank query), Escape j
 closes it. The categorised Add-Node menu stays underneath as the way to browse by
 folder, and `reloadNodeTypes()` calls `NodeSearchIndex.invalidate()` alongside
 rebuilding it.
+
+### Find bar
+
+`Ctrl/Cmd+F` shows a `TextField` and a match count in the canvas's top-right corner,
+and every node whose text contains the query is ringed in yellow. The rule for what
+matches is `search/GraphSearch`, which is headless and holds the interesting
+decisions — including that a secret and a computed value are never searchable. See
+[find-in-graph.md](find-in-graph.md); only the three FX-side facts are here.
+
+The bar is a child of this `Pane` rather than of the content `Group`, so it floats at a
+fixed corner instead of panning and zooming with the graph. `layoutChildren` is the only
+place its position is set: `Region`'s layout pass sizes managed children without moving
+them, and the position depends on the bar's own width, which changes with the count text.
+
+`addNodeView`/`removeNodeView` re-judge just the node that changed while the bar is open,
+rather than re-running the query over the canvas — otherwise opening a large graph with a
+find in progress would be quadratic. The count is then recomputed from the marks already
+on the views.
+
+Closing drops every highlight but keeps the query text, so the shortcut both repeats a
+search and starts a new one (it reopens with the text selected).
 
 ## Modules
 
@@ -226,6 +249,9 @@ the same rule to the model when it loads a pair saved twice.
 with an `INSIDE` stroke so they never shift or resize it:
 
 - **Selected** — amber border.
+- **Find hit** — a yellow border while the find bar's query matches this node. Painted
+  over the selection border and wider than it, so a node that is both reads as a hit:
+  that is the state the user is scanning for. `GraphCanvas` owns which nodes match.
 - **Pulse** — a brief cyan flash when the node is triggered.
 - **Processing** — animated orange marching ants while `process()` runs.
 - **Misconfigured** — a persistent red border, a thin red border around each
@@ -287,9 +313,9 @@ to occupy separate regions — a user may lay one out straight through the middl
 another — so a crop to a bounding box would pull foreign nodes into the picture.
 Hiding also shrinks `Group.getLayoutBounds()` to what remains, which is where the
 renderer gets its crop rectangle. Clearing the selection keeps `NodeView`'s amber
-border out of the image, and the 1:1 reset makes the content group's local
-coordinates coincide with its parent's, which is what lets the viewport be derived
-from `getLayoutBounds()`.
+border out of the image — and the find-in-graph highlights go with it, for the same
+reason — and the 1:1 reset makes the content group's local coordinates coincide with
+its parent's, which is what lets the viewport be derived from `getLayoutBounds()`.
 
 ### Why the render is tiled
 
@@ -322,8 +348,8 @@ The window's chrome is `menu/MainMenuBar` over a short `ToolBar`, both in `App`'
 Commands come from two places, and that split is why the menu bar is its own class
 rather than more of `App`:
 
-- **Canvas commands** — undo, redo, copy, paste, delete, select-all, the four zoom
-  commands — are called straight on the `GraphCanvas` the menu bar is constructed
+- **Canvas commands** — undo, redo, copy, paste, delete, select-all, find, the four
+  zoom commands — are called straight on the `GraphCanvas` the menu bar is constructed
   with. This is what the `public` methods listed under `GraphCanvas` above are for.
 - **Application commands** — anything needing the stage, the preferences store, the
   plugin catalog or the module library — go through `menu/MenuActions`, which `App`
@@ -417,7 +443,7 @@ to refresh the table when a download starts or finishes.
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the context menu, change the
-menus or the toolbar, change either auxiliary window, change what image export
+menus or the toolbar, change a node's visual states, change either auxiliary window, change what image export
 draws, or change when a node's `NodePresentation` is installed or cleared. Save-format changes belong in
 [save-format.md](save-format.md); extension-point changes also touch
 [`../nodes/`](../nodes/).

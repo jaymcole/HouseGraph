@@ -131,10 +131,11 @@ public class MainMenuBar extends MenuBar {
         MenuItem paste = item("Paste", shortcut(KeyCode.V), canvas::pasteClipboard);
         MenuItem delete = item("Delete", new KeyCodeCombination(KeyCode.DELETE), canvas::deleteSelected);
         MenuItem selectAll = item("Select All", shortcut(KeyCode.A), canvas::selectAll);
+        MenuItem find = item("Find in Graph…", shortcut(KeyCode.F), canvas::openFind);
 
         Menu menu = new Menu("Edit");
         menu.getItems().addAll(undo, redo, new SeparatorMenuItem(),
-                copy, paste, delete, new SeparatorMenuItem(), selectAll);
+                copy, paste, delete, new SeparatorMenuItem(), selectAll, find);
         menu.setOnShowing(event -> {
             undo.setDisable(!canvas.canUndo());
             redo.setDisable(!canvas.canRedo());
@@ -223,6 +224,7 @@ public class MainMenuBar extends MenuBar {
                   Ctrl/Cmd+Shift+Z       Redo
                   Ctrl/Cmd+C / +V        Copy / paste at the pointer
                   Ctrl/Cmd+A             Select all
+                  Ctrl/Cmd+F             Find in graph (Escape closes it)
                   Delete / Backspace     Delete the selection
 
                 File
