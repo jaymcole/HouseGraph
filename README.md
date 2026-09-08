@@ -131,13 +131,15 @@ bumps the minor version.
 Pushing a `v*` tag — whether from `auto-tag.yml` or manually — triggers
 `.github/workflows/release.yml`, which:
 
-1. Checks out, sets up JDK 21.
-2. Runs `./gradlew build -Pversion=<tag without the v>` — builds and tests both
-   modules at that version.
-3. Runs `./gradlew :app:shadowJar -Pversion=<tag without the v>` and attaches the
-   resulting jar to a GitHub Release, with auto-generated release notes. It's built
-   on `ubuntu-latest`, so — per the platform caveat above — it bundles Linux JavaFX
-   natives and runs as-is only on Linux.
+1. Checks out, sets up JDK 21, on `ubuntu-latest`, `macos-latest` and
+   `windows-latest` in parallel.
+2. On each, runs `./gradlew build -Pversion=<tag without the v>` — builds and tests
+   both modules at that version, producing a shadow jar that bundles that runner's
+   JavaFX natives per the platform caveat above (the macOS jar is built on Apple
+   Silicon, so it won't run natively on an Intel Mac).
+3. Attaches all three jars — `app-<version>-linux.jar`, `app-<version>-macos.jar`,
+   `app-<version>-windows.jar` — to a single GitHub Release, with auto-generated
+   release notes.
 
 `housegraph-api` isn't released through this workflow: JitPack publishes it
 directly from the same tag (see [`jitpack.yml`](jitpack.yml) and

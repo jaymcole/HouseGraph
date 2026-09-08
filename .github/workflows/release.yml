@@ -1,8 +1,9 @@
 name: Release
 
-# Pushing a tag builds and tests both modules, then attaches the standalone app jar to a GitHub
-# Release. housegraph-api itself is published separately, by JitPack building the same tag (see
-# jitpack.yml) — this workflow doesn't need to do anything for that.
+# Pushing a tag builds and tests both modules on Linux, macOS and Windows, then attaches all three
+# standalone app jars to a GitHub Release. housegraph-api itself is published separately, by
+# JitPack building the same tag (see jitpack.yml) — this workflow doesn't need to do anything for
+# that.
 # Also accepts workflow_dispatch, with the tag as an input: a workflow's own GITHUB_TOKEN is
 # blocked from triggering other workflows' `push: tags` events (GitHub's anti-recursion guard), so
 # auto-tag.yml — which pushes tags with that same token — cannot rely on this trigger firing and
@@ -20,8 +21,23 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # org.openjfx.javafxplugin picks JavaFX's native libraries based on the machine doing
+          # the build, so each OS in this matrix bundles its own natives automatically — nothing
+          # to configure per leg beyond which runner it runs on. macos-latest is Apple Silicon, so
+          # the macOS jar bundles aarch64 natives and won't run natively on an Intel Mac (same
+          # caveat documented for local builds in docs/guides/getting-started.md).
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: macos
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,25 +50,50 @@ jobs:
           cache: gradle
 
       - run: chmod +x ./gradlew
+        shell: bash
 
       - name: Build and test both modules
         id: build
+        shell: bash
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         # `build` already produces the standalone app jar: the shadow plugin wires `shadowJar`
         # into `assemble`. It lands next to the plain `jar` task's output (app-<version>-thin.jar)
         # without colliding, since app/build.gradle gives the plain jar its own classifier.
         run: |
+          set -euo pipefail
           ./gradlew build "-Pversion=${TAG#v}"
-          echo "asset=app/build/libs/app-${TAG#v}.jar" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Attach the app jar to the release
+      - name: Give this leg's jar a platform suffix
+        shell: bash
+        # shadowJar always writes app-<version>.jar regardless of platform; every matrix leg
+        # produces one at that same path, so each needs a distinct name before all three land
+        # together in the same release.
+        run: |
+          set -euo pipefail
+          mv "app/build/libs/app-${{ steps.build.outputs.version }}.jar" \
+             "app/build/libs/app-${{ steps.build.outputs.version }}-${{ matrix.platform }}.jar"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jar-${{ matrix.platform }}
+          path: app/build/libs/app-${{ steps.build.outputs.version }}-${{ matrix.platform }}.jar
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: jar-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attach the platform jars to the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          # Built on ubuntu-latest, so it bundles Linux JavaFX natives (see README's "Standalone
-          # jar" section) — usable as-is on a Linux machine, but not on macOS or Windows. Named
-          # explicitly rather than globbed, so app-<version>-thin.jar (the plain jar with no
-          # bundled dependencies, not runnable standalone) never ends up attached alongside it.
-          files: ${{ steps.build.outputs.asset }}
+          files: dist/*.jar
           generate_release_notes: true
