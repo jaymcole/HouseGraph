@@ -240,6 +240,17 @@ is the same division `NodeView` makes, where the title bar drags and the body do
 not. The title bar is inset by one grip width so the top-left grip stays reachable
 beside it, and capped so it never grows over the top-right one.
 
+**A frame hands keyboard focus back when it is done with it** (`GroupController.
+focusCanvas()`). The inline title editor is hidden *while it still holds focus* —
+Enter commits and closes it in one step — and JavaFX does not move focus off a node
+just because it became invisible. Without this the hidden field stays the scene's
+focus owner and goes on swallowing every shortcut, so renaming a frame would quietly
+cost the user Ctrl/Cmd+Z, Delete, copy and paste. It runs on every exit from the
+editor, Escape and a no-op commit included, because only some of them reach
+`onGroupFrameEdited`. A grip press does the same, for the reason a `NodeView` drag
+focuses the canvas: a gesture that consumes its own press leaves focus wherever it
+was.
+
 Frames are created from the canvas context menu's last row and from **Edit ▸ Group
 Selection** (`Ctrl/Cmd+G`). With a selection the new frame is fitted around it, with
 extra headroom at the top for the title bar; with nothing selected it is a default-

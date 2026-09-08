@@ -1036,6 +1036,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     }
 
     /**
+     * Takes keyboard focus back from a frame's inline title editor, so the canvas's own shortcuts
+     * keep working after a rename or a resize. See {@link GroupView.GroupController#focusCanvas()}
+     * for why the view cannot simply leave focus where it was.
+     */
+    @Override
+    public void focusCanvas() {
+        requestFocus();
+    }
+
+    /**
      * Records a resize, rename or recolour as one undo step. Restacking is unconditional rather than
      * only on a size change: it is a sort of a handful of views, and making it conditional would put
      * the paint order one missed case away from being wrong.

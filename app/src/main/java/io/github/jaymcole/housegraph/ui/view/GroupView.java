@@ -73,6 +73,17 @@ public class GroupView extends Region {
 
         /** That change is complete and applied: record it, and restack if the frame's size changed. */
         void onGroupFrameEdited(GroupView group);
+
+        /**
+         * Hands keyboard focus back to the canvas.
+         *
+         * <p>Needed because this view's inline title editor is hidden <em>while it still holds
+         * focus</em> — Enter commits and closes it in one step. JavaFX does not move focus off a node
+         * just because it became invisible, so without this the hidden field stays the scene's focus
+         * owner and goes on swallowing every shortcut: Ctrl/Cmd+Z, Delete, copy, paste. Renaming a
+         * frame would quietly cost the user their keyboard.
+         */
+        void focusCanvas();
     }
 
     /** Which corner a resize grip sits in, and therefore which edges its drag moves. */
@@ -223,6 +234,9 @@ public class GroupView extends Region {
         grip.setOnMouseEntered(event -> grip.setOpacity(1));
         grip.setOnMouseExited(event -> grip.setOpacity(GRIP_RESTING_OPACITY));
         grip.setOnMousePressed(event -> {
+            // The same reason NodeView's drag focuses the canvas: a gesture that consumes its own
+            // press leaves focus wherever it was, and the next Ctrl/Cmd+Z would go there instead.
+            controller.focusCanvas();
             resizeOrigin = group;
             controller.onGroupFrameEditStarted(this);
             event.consume();
@@ -323,10 +337,17 @@ public class GroupView extends Region {
     }
 
     private void endRename() {
+        // Before hiding it: an invisible node that still owns focus keeps eating key events. This
+        // runs on every exit from the editor — commit, no-op commit, and Escape — because all three
+        // leave the field focused and only some of them reach onGroupFrameEdited.
+        boolean wasFocused = titleField.isFocused();
         titleField.setVisible(false);
         titleField.setManaged(false);
         titleLabel.setVisible(true);
         titleLabel.setManaged(true);
+        if (wasFocused) {
+            controller.focusCanvas();
+        }
         requestLayout();
     }
 
@@ -350,6 +371,9 @@ public class GroupView extends Region {
         }
 
         menu.getItems().addAll(rename, colors);
+        // Focus the canvas before the popup opens, so closing it returns the keyboard to the canvas
+        // rather than to whatever happened to hold focus when the menu was summoned.
+        controller.focusCanvas();
         menu.show(this, event.getScreenX(), event.getScreenY());
         event.consume();
     }
