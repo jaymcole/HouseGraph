@@ -35,8 +35,14 @@ import java.util.List;
  * make the canvas inside it unusable — no rubber band, no click-through to what is behind. So the
  * fill and the border take no input at all. The two pieces of chrome do: the <b>title bar</b> at the
  * top-left is the drag handle (and the label, and the right-click target), and the four <b>corner
- * grips</b> resize the frame. That is the same division {@link NodeView} makes, where the title bar
- * drags and the body does not.
+ * grips</b> resize the frame: one at each corner, plus one at the midpoint of each side. That is the
+ * same division {@link NodeView} makes, where the title bar drags and the body does not.
+ *
+ * <h2>Side grips resize on one axis only</h2>
+ * A corner grip drags both adjacent edges. A side grip drags only the edge it sits on: the grips on
+ * the left and right sides move horizontally and change width alone, and the grips on the top and
+ * bottom sides move vertically and change height alone — a side never touches the axis it doesn't
+ * own.
  *
  * <h2>Resizing does not move anything</h2>
  * A drag on the title bar moves the frame and everything it commands. A drag on a grip changes the
@@ -93,21 +99,67 @@ public class GroupView extends Region {
         void focusCanvas();
     }
 
-    /** Which corner a resize grip sits in, and therefore which edges its drag moves. */
-    private enum Corner {
-        NORTH_WEST(true, true, Cursor.NW_RESIZE),
-        NORTH_EAST(false, true, Cursor.NE_RESIZE),
-        SOUTH_WEST(true, false, Cursor.SW_RESIZE),
-        SOUTH_EAST(false, false, Cursor.SE_RESIZE);
+    /** Where a grip sits along one axis: pinned to an edge, or centred between the two. */
+    private enum Anchor {
+        START, MIDDLE, END
+    }
 
-        final boolean movesLeftEdge;
-        final boolean movesTopEdge;
+    /**
+     * Where a resize grip sits on the frame, and therefore which edges its drag moves. A corner
+     * combines a non-{@code MIDDLE} anchor on both axes and moves both edges; a side grip is
+     * {@code MIDDLE} on one axis — the axis it does not resize — and pinned on the other.
+     */
+    private enum Handle {
+        NORTH_WEST(Anchor.START, Anchor.START, Cursor.NW_RESIZE),
+        NORTH(Anchor.MIDDLE, Anchor.START, Cursor.N_RESIZE),
+        NORTH_EAST(Anchor.END, Anchor.START, Cursor.NE_RESIZE),
+        WEST(Anchor.START, Anchor.MIDDLE, Cursor.W_RESIZE),
+        EAST(Anchor.END, Anchor.MIDDLE, Cursor.E_RESIZE),
+        SOUTH_WEST(Anchor.START, Anchor.END, Cursor.SW_RESIZE),
+        SOUTH(Anchor.MIDDLE, Anchor.END, Cursor.S_RESIZE),
+        SOUTH_EAST(Anchor.END, Anchor.END, Cursor.SE_RESIZE);
+
+        final Anchor horizontal;
+        final Anchor vertical;
         final Cursor cursor;
 
-        Corner(boolean movesLeftEdge, boolean movesTopEdge, Cursor cursor) {
-            this.movesLeftEdge = movesLeftEdge;
-            this.movesTopEdge = movesTopEdge;
+        Handle(Anchor horizontal, Anchor vertical, Cursor cursor) {
+            this.horizontal = horizontal;
+            this.vertical = vertical;
             this.cursor = cursor;
+        }
+
+        boolean resizesHorizontal() {
+            return horizontal != Anchor.MIDDLE;
+        }
+
+        boolean resizesVertical() {
+            return vertical != Anchor.MIDDLE;
+        }
+
+        boolean movesLeftEdge() {
+            return horizontal == Anchor.START;
+        }
+
+        boolean movesTopEdge() {
+            return vertical == Anchor.START;
+        }
+
+        /** Where this grip sits along one axis, given the frame's size on that axis and the grip's own size. */
+        private static double position(Anchor anchor, double frameSize, double gripSize) {
+            return switch (anchor) {
+                case START -> 0;
+                case END -> frameSize - gripSize;
+                case MIDDLE -> (frameSize - gripSize) / 2;
+            };
+        }
+
+        double x(double width) {
+            return position(horizontal, width, GRIP_SIZE);
+        }
+
+        double y(double height) {
+            return position(vertical, height, GRIP_SIZE);
         }
     }
 
@@ -178,8 +230,8 @@ public class GroupView extends Region {
 
         buildTitleBar();
         titleBar.getTransforms().add(titleZoomCompensation);
-        for (Corner corner : Corner.values()) {
-            grips.add(buildGrip(corner));
+        for (Handle handle : Handle.values()) {
+            grips.add(buildGrip(handle));
         }
 
         getChildren().add(background);
@@ -240,14 +292,14 @@ public class GroupView extends Region {
         });
     }
 
-    private StackPane buildGrip(Corner corner) {
-        Rectangle handle = new Rectangle(GRIP_SIZE, GRIP_SIZE);
-        handle.setArcWidth(4);
-        handle.setArcHeight(4);
+    private StackPane buildGrip(Handle handle) {
+        Rectangle rect = new Rectangle(GRIP_SIZE, GRIP_SIZE);
+        rect.setArcWidth(4);
+        rect.setArcHeight(4);
 
-        StackPane grip = new StackPane(handle);
+        StackPane grip = new StackPane(rect);
         grip.setManaged(false);
-        grip.setCursor(corner.cursor);
+        grip.setCursor(handle.cursor);
         grip.setOpacity(GRIP_RESTING_OPACITY);
         grip.setOnMouseEntered(event -> grip.setOpacity(1));
         grip.setOnMouseExited(event -> grip.setOpacity(GRIP_RESTING_OPACITY));
@@ -260,7 +312,7 @@ public class GroupView extends Region {
             event.consume();
         });
         grip.setOnMouseDragged(event -> {
-            resizeTo(corner, content.sceneToLocal(event.getSceneX(), event.getSceneY()));
+            resizeTo(handle, content.sceneToLocal(event.getSceneX(), event.getSceneY()));
             event.consume();
         });
         grip.setOnMouseReleased(event -> {
@@ -268,17 +320,19 @@ public class GroupView extends Region {
             controller.onGroupFrameEdited(this);
             event.consume();
         });
-        grip.getProperties().put("handle", handle);
+        grip.getProperties().put("handle", rect);
         return grip;
     }
 
     /**
-     * Applies a grip drag. Both moved edges are measured from the rectangle the gesture started on
-     * rather than from the previous frame, so a drag that pushes an edge past its opposite one and
-     * back again comes out where the pointer is instead of accumulating whatever the minimum-size
-     * clamp swallowed on the way.
+     * Applies a grip drag. Moved edges are measured from the rectangle the gesture started on rather
+     * than from the previous frame, so a drag that pushes an edge past its opposite one and back
+     * again comes out where the pointer is instead of accumulating whatever the minimum-size clamp
+     * swallowed on the way. A side handle leaves the axis it doesn't own untouched — a horizontal
+     * side never changes {@code top}/{@code height}, a vertical one never changes {@code left}/
+     * {@code width}.
      */
-    private void resizeTo(Corner corner, Point2D pointerContentPoint) {
+    private void resizeTo(Handle handle, Point2D pointerContentPoint) {
         NodeGroup origin = resizeOrigin;
         if (origin == null) {
             return;
@@ -288,19 +342,23 @@ public class GroupView extends Region {
         double width = origin.width();
         double height = origin.height();
 
-        if (corner.movesLeftEdge) {
-            // Clamped against the fixed right edge, so dragging the left edge rightward stops at the
-            // minimum width instead of turning the rectangle inside out.
-            left = Math.min(pointerContentPoint.getX(), origin.maxX() - NodeGroup.MIN_WIDTH);
-            width = origin.maxX() - left;
-        } else {
-            width = Math.max(NodeGroup.MIN_WIDTH, pointerContentPoint.getX() - origin.x());
+        if (handle.resizesHorizontal()) {
+            if (handle.movesLeftEdge()) {
+                // Clamped against the fixed right edge, so dragging the left edge rightward stops at
+                // the minimum width instead of turning the rectangle inside out.
+                left = Math.min(pointerContentPoint.getX(), origin.maxX() - NodeGroup.MIN_WIDTH);
+                width = origin.maxX() - left;
+            } else {
+                width = Math.max(NodeGroup.MIN_WIDTH, pointerContentPoint.getX() - origin.x());
+            }
         }
-        if (corner.movesTopEdge) {
-            top = Math.min(pointerContentPoint.getY(), origin.maxY() - NodeGroup.MIN_HEIGHT);
-            height = origin.maxY() - top;
-        } else {
-            height = Math.max(NodeGroup.MIN_HEIGHT, pointerContentPoint.getY() - origin.y());
+        if (handle.resizesVertical()) {
+            if (handle.movesTopEdge()) {
+                top = Math.min(pointerContentPoint.getY(), origin.maxY() - NodeGroup.MIN_HEIGHT);
+                height = origin.maxY() - top;
+            } else {
+                height = Math.max(NodeGroup.MIN_HEIGHT, pointerContentPoint.getY() - origin.y());
+            }
         }
         setGroup(group.withBounds(left, top, width, height));
     }
@@ -489,9 +547,8 @@ public class GroupView extends Region {
         selectionBorder.relocate(0, 0);
 
         for (int i = 0; i < grips.size(); i++) {
-            Corner corner = Corner.values()[i];
-            grips.get(i).resizeRelocate(corner.movesLeftEdge ? 0 : width - GRIP_SIZE,
-                    corner.movesTopEdge ? 0 : height - GRIP_SIZE, GRIP_SIZE, GRIP_SIZE);
+            Handle handle = Handle.values()[i];
+            grips.get(i).resizeRelocate(handle.x(width), handle.y(height), GRIP_SIZE, GRIP_SIZE);
         }
     }
 }

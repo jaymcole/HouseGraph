@@ -111,8 +111,10 @@ Interactions, with the class Javadoc as the authoritative list:
   node in yellow; Escape closes it. See "Find bar" below.
 - Dragging between port circles makes a data edge; dragging between the triangular
   anchors at a node's top corners makes a flow edge.
-- A group frame's title bar drags it and everything inside it; its corner grips
-  resize it. See "Groups" below.
+- A group frame's title bar drags it and everything inside it; its eight resize
+  grips resize it — a corner grip drags both adjacent edges, a side grip drags
+  only its own edge (horizontal sides resize width, vertical sides resize
+  height). See "Groups" below.
 
 While a data edge is dragged, every other port's anchor is coloured by how faithful
 that connection would be. `GraphCanvas.connectionSafety` calls
@@ -244,7 +246,7 @@ frame's title still wins over a larger frame's title where two happen to overlap
 | Action | Reaches |
 | --- | --- |
 | Drag the title bar | the frame, every frame it commands, every node any of those commands, and every routing waypoint inside one — recorded as one `CompositeCommand` |
-| Drag a corner grip | the frame's rectangle only. That *is* the point: growing a frame over a node is how the node joins it |
+| Drag a resize grip | the frame's rectangle only — a corner grip on both axes, a side grip on the one axis it owns. That *is* the point: growing a frame over a node is how the node joins it |
 | Copy | the frame plus everything it commands, whether or not those nodes were selected — copying a labelled region has to copy the region |
 | Delete | **the frame only.** A frame is a large target laid over real work, and cascading a delete through it would put an automation one mis-aimed keystroke from gone |
 | Rubber band | the frame, but only when the band encloses it **whole** — a node is caught on a mere intersection, but a frame is a background region, and catching it from any band drawn inside it would mean the next drag moved everything else in it too |
@@ -252,8 +254,8 @@ frame's title still wins over a larger frame's title where two happen to overlap
 Dragging nodes never moves a frame: containment runs one way, from the frame to what
 is inside it.
 
-**The frame's body takes no mouse input at all** — only the title bar and the four
-corner grips do. A large background region that swallowed clicks would make the
+**The frame's body takes no mouse input at all** — only the title bar and the eight
+resize grips do. A large background region that swallowed clicks would make the
 canvas inside it unusable: no rubber band, no click-through to what is behind. That
 is the same division `NodeView` makes, where the title bar drags and the body does
 not. The title bar is inset by one grip width so the top-left grip stays reachable
@@ -318,7 +320,7 @@ does **not** run inside `place`, which paste and redo also use: a rebuild replac
 | View | Renders |
 | --- | --- |
 | `NodeView` | a `BaseNode`: title bar with drag handle and corner flow anchors, left input column, right output column |
-| `GroupView` | a `NodeGroup`: a translucent labelled rectangle behind the graph. Mouse-transparent body, a draggable/editable title bar at the top-left, four corner resize grips |
+| `GroupView` | a `NodeGroup`: a translucent labelled rectangle behind the graph. Mouse-transparent body, a draggable/editable title bar at the top-left, four corner and four side resize grips |
 | `PortView` (`EdgeAnchor`) | one `NodeVariable`; drag its circle to make a data edge; inline editable field when the variable is manually editable and its type is in `ValueEditors` |
 | `FlowPortView` (`EdgeAnchor`) | one `FlowPort` anchor |
 | `EdgeView` / `FlowEdgeView` | the connecting curves, blue for data and green for flow |
