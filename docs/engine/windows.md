@@ -53,6 +53,29 @@ it there rather than on a close request:
 - A graph is disposed exactly once whether the window was closed by hand or hidden by
   `Platform.exit()`.
 
+## Unsaved changes
+
+`GraphCanvas.hasUnsavedChanges()` is backed by the same `UndoManager` that drives
+Undo/Redo (`ui/command`): the undo stack's depth is a position in the graph's linear
+edit history, and the canvas is dirty whenever that position has moved since
+`markSaved()` was last called. `markSaved()` runs wherever a window takes on a new
+current file — after a save, after a load, after publishing as a module — and
+`UndoManager.clear()` (New, and the reload half of opening a file) resets the saved
+position to zero along with the history itself, so a fresh or just-opened graph is
+never dirty. Everything undoable is, by construction, everything a save would need to
+capture — a value edited through an inline node control rather than a canvas gesture
+is the one kind of change this cannot see, same as it is invisible to Undo.
+
+`GraphWindow.confirmClose()` is what asks: nothing when the canvas is clean, otherwise
+Save / Don't Save / Cancel, and Save re-checks `hasUnsavedChanges()` afterward so a
+cancelled Save As or a failed write still blocks the close rather than discarding
+silently. This is also where `stage.setOnCloseRequest` differs from `setOnHidden`
+above: a system close button fires a close-request event that `confirmClose()` can
+veto by consuming it, but `Stage.close()` does not fire that event at all — so `close()`
+calls `confirmClose()` itself before ever touching the stage, and so does `App.exit()`,
+once per still-open window, before its one `Platform.exit()` call that would otherwise
+hide every window with no chance to ask.
+
 Disposal runs on the FX thread, because `NodeGraph.dispose`'s first pass —
 `onRemoved()` per node — is thread-affine: that is what lets a node stop a `Timeline`
 or reset a control. Its second pass waits on `releaseResources()`, up to

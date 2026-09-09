@@ -262,10 +262,24 @@ public class App extends Application {
         }
     }
 
-    /** Quits the app: every window closes and {@link #stop()} runs, disposing what is still open. */
+    /**
+     * Quits the app: every window closes and {@link #stop()} runs, disposing what is still open.
+     *
+     * <p>{@code Platform.exit()} hides every stage directly, bypassing each window's own
+     * close-request handling (see {@link GraphWindow}), so an unsaved graph is asked about here
+     * instead — once per open window, in the same order they were opened, stopping at the first
+     * Cancel. A window whose own close already went through {@link GraphWindow#confirmClose()} (the
+     * last-window-closed path into this method) has nothing left to ask, since it's no longer in
+     * {@link #windows} by the time this runs.
+     */
     void exit() {
         if (exiting) {
             return;
+        }
+        for (GraphWindow window : new ArrayList<>(windows)) {
+            if (!window.confirmClose()) {
+                return;
+            }
         }
         exiting = true;
         Platform.exit();

@@ -540,6 +540,13 @@ capture.
 **Model new reversible canvas mutations as a `Command`** rather than mutating the
 canvas ad hoc, so they participate in undo.
 
+`UndoManager` also tracks whether the graph has unsaved changes, off the same stack:
+`markSaved()` records the undo stack's current depth, and `isDirty()` compares it
+against the stack's depth now. `clear()` (New, and loading a file) resets both to
+zero. `GraphCanvas.hasUnsavedChanges()`/`markSaved()` expose this to `GraphWindow`,
+which asks before closing a dirty window — see
+[windows.md](windows.md#unsaved-changes).
+
 ## Auxiliary windows
 
 Both are standalone, non-modal, unowned top-level stages with toggle-to-front

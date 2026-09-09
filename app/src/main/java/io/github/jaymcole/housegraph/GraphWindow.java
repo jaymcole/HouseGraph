@@ -128,6 +128,15 @@ final class GraphWindow implements MenuActions {
 
         updateTitle();
         stage.setScene(new Scene(root, 1100, 750));
+        // The system close button (and only that — Stage.close() does not fire this) goes through
+        // confirmClose() so an unsaved graph isn't lost to an accidental click; every other path to
+        // closing this window (Close Window, File ▸ Exit) calls confirmClose() itself before ever
+        // touching the stage, see close() below.
+        stage.setOnCloseRequest(event -> {
+            if (!confirmClose()) {
+                event.consume();
+            }
+        });
         // Hidden rather than closed, because Platform.exit() hides every stage as well: routing both
         // through one handler means a graph is disposed exactly once whichever way its window goes.
         stage.setOnHidden(event -> app.windowClosed(this));
@@ -168,9 +177,19 @@ final class GraphWindow implements MenuActions {
         stage.requestFocus();
     }
 
-    /** Hides this window, which disposes its graph through the stage's hidden handler. */
+    /**
+     * Closes this window if it's safe to — offering to save first when the graph has unsaved
+     * changes — which disposes its graph through the stage's hidden handler.
+     *
+     * <p>Calls {@link #confirmClose()} itself rather than going through {@code stage.close()}'s
+     * close-request event: {@code Stage.close()} does not fire that event, only a system close
+     * button does, so anything that closes the window programmatically (Close Window, the last
+     * window falling through to {@link App#exit()}) has to ask here instead.
+     */
     void close() {
-        stage.close();
+        if (confirmClose()) {
+            stage.close();
+        }
     }
 
     /** The graph open in this window; {@link App} disposes it when the window closes or the app stops. */
@@ -357,6 +376,41 @@ final class GraphWindow implements MenuActions {
         alert.setTitle("HouseGraph");
         alert.setHeaderText(header);
         return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /**
+     * Guards closing this window: when the graph has no unsaved changes there's nothing to ask, so
+     * this returns true immediately. Otherwise offers Save, Don't Save or Cancel — the same choice
+     * every document app offers before discarding work. Package-private because {@link App#exit()}
+     * asks the same question of every open window before quitting.
+     *
+     * @return true to go ahead and close; false to abort
+     */
+    boolean confirmClose() {
+        if (!canvas.hasUnsavedChanges()) {
+            return true;
+        }
+        ButtonType save = new ButtonType("Save", ButtonBar.ButtonData.YES);
+        ButtonType dontSave = new ButtonType("Don't Save", ButtonBar.ButtonData.NO);
+        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "This graph has unsaved changes.");
+        alert.initOwner(stage);
+        alert.setTitle("HouseGraph");
+        alert.setHeaderText("Save changes before closing?");
+        alert.getButtonTypes().setAll(save, dontSave, cancel);
+
+        ButtonType choice = alert.showAndWait().orElse(cancel);
+        if (choice == cancel) {
+            return false;
+        }
+        if (choice == save) {
+            saveGraph();
+            // Save-As can be cancelled, and a write can fail — either leaves the graph still dirty,
+            // which means closing has to be aborted rather than discarding it anyway.
+            return !canvas.hasUnsavedChanges();
+        }
+        return true;
     }
 
     /** Prompts for a destination file, then saves the graph there. */
@@ -600,6 +654,7 @@ final class GraphWindow implements MenuActions {
      */
     private void rememberFile(File file) {
         currentFile = file;
+        canvas.markSaved();
         updateTitle();
         app.rememberOpenedFile(file);
     }
