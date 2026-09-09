@@ -2366,6 +2366,21 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
         return undoManager.canRedo();
     }
 
+    /**
+     * Whether this canvas has edits since the last save (or load, or New) — what a window checks
+     * before discarding the graph, so closing it or starting over can ask first. Backed by the same
+     * {@link UndoManager} that drives Undo/Redo: everything undoable is, by construction, everything
+     * that would need saving. See {@link UndoManager#isDirty()}.
+     */
+    public boolean hasUnsavedChanges() {
+        return undoManager.isDirty();
+    }
+
+    /** Marks the canvas clean at its current history position — call after a successful save. */
+    public void markSaved() {
+        undoManager.markSaved();
+    }
+
     /** Whether anything — node, connection, group frame — is selected. */
     public boolean hasSelection() {
         return !selectedNodes.isEmpty() || !selectedConnections.isEmpty() || !selectedGroups.isEmpty();
