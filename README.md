@@ -48,7 +48,9 @@ design idea:
   files.
 - **Logging** with levels and multiple independently-filterable outputs — console,
   a rotating log file, and an in-app **Logs** window that can be closed and
-  reopened without losing history.
+  reopened without losing history. Warnings and errors can also be **forwarded to a
+  Discord channel**, at a level of their own, so a machine nobody is watching can
+  still say something.
 - **Runs unattended.** The same jar is a CLI that keeps graphs running on a
   dedicated machine, pulling them from a git repository.
 

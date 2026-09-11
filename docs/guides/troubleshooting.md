@@ -4,7 +4,9 @@
 
 **In the app:** **Tools ▸ Logs…**. It keeps capturing whether or not the
 window is open, so opening it after something went wrong still shows you the
-history. Each output has its own level dropdown, and rows can be copied.
+history. Each output has its own level dropdown, and rows can be copied. **External…**
+forwards records to a Discord channel, for a machine nobody is watching — see
+[server-operations.md](server-operations.md#sending-warnings-to-discord).
 
 **On a server:**
 
@@ -68,6 +70,8 @@ housegraph doctor
 | A pushed change never arrives | Wrong branch, or the daemon isn't running | `launchctl list \| grep housegraph`, and check `repositories[].branch` |
 | Edits inside `remotes/` disappeared | It's a mirror, reset on every sync | Edit in your repository and push |
 | A library was updated but graphs still use the old one | Libraries only change in a fresh process | Graphs restart on a repository change; if you installed by hand, restart the daemon |
+| Discord log messages never arrive | The destination is off, or the webhook is wrong or deleted | Re-open **Tools ▸ Logs… ▸ External…** and use **Send test message**; delivery failures are reported on the console |
+| Discord shows a gap and "N log record(s) dropped" | The webhook could not keep up, so records were discarded rather than queued | Expected under a burst — nothing is lost from the log file. Raise the destination's level to send less |
 
 ## Still stuck
 

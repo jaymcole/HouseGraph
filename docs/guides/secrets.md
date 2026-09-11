@@ -15,6 +15,11 @@ A gitignored `.env` file at the repository root seeds the dropdown in the Secret
 Loader node, which is convenient for keys you already keep there. See
 `.env.example`.
 
+One key is written by HouseGraph itself: `log.discord.webhook`, the webhook URL set
+in **Tools ▸ Logs… ▸ External…**. It is a credential like any other, so it lives
+here. Deleting it switches that log destination off. See
+[server-operations.md](server-operations.md#sending-warnings-to-discord).
+
 ## Using one in a graph
 
 Add a **Secret Loader** node, pick a key from its dropdown, and wire its output

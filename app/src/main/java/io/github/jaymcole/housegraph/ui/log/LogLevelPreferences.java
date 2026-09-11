@@ -5,6 +5,8 @@ import io.github.jaymcole.housegraph.logging.LogManager;
 import io.github.jaymcole.housegraph.logging.LogSink;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
 
+import java.util.Optional;
+
 /**
  * Persists each log output's chosen {@link LogLevel} across launches, reusing the app's
  * existing {@link AppPreferences} store. A sink's level is keyed by its
@@ -50,7 +52,40 @@ public final class LogLevelPreferences {
      * @param sink        the sink whose level was just changed
      */
     public static void persist(AppPreferences preferences, LogSink sink) {
-        preferences.put(PREFIX + sink.name(), sink.getLevel().name());
+        persist(preferences, sink.name(), sink.getLevel());
+    }
+
+    /**
+     * Records a level against an output's name, for a destination whose level is chosen
+     * <em>before</em> a sink exists to carry it — an external destination configured while it
+     * is switched off has no registered sink to read the level from.
+     *
+     * @param preferences the shared preferences store to write to
+     * @param sinkName    the sink's {@link LogSink#name() name}
+     * @param level       the level to remember
+     */
+    public static void persist(AppPreferences preferences, String sinkName, LogLevel level) {
+        preferences.put(PREFIX + sinkName, level.name());
         preferences.save();
+    }
+
+    /**
+     * The level remembered for an output that is <em>not</em> registered yet, read under the
+     * same key {@link #persist} writes. {@link #restore} can only reach sinks the manager
+     * already holds, so an output that has to be built from its saved settings — an external
+     * destination — asks for its level here and passes it to its own constructor.
+     *
+     * @param preferences the shared preferences store to read from
+     * @param sinkName    the sink's {@link LogSink#name() name}
+     * @return the saved level, or empty if none is saved or the saved value is unparseable
+     */
+    public static Optional<LogLevel> savedLevel(AppPreferences preferences, String sinkName) {
+        return preferences.get(PREFIX + sinkName).flatMap(value -> {
+            try {
+                return Optional.of(LogLevel.valueOf(value));
+            } catch (IllegalArgumentException e) {
+                return Optional.empty();
+            }
+        });
     }
 }
