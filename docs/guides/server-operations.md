@@ -61,6 +61,41 @@ tail -f ~/Library/Application\ Support/HouseGraph/logs/housegraph.log
 The file rotates at 5 MiB, keeping 5 generations, so it never grows without bound.
 Graph output and daemon output both land here.
 
+## Sending warnings to Discord
+
+Tailing a file only helps when you are already at the keyboard. The log window can
+forward records to a Discord channel instead, so a machine running unattended tells
+you when something goes wrong.
+
+1. In Discord, open the channel's **Settings ▸ Integrations ▸ Webhooks**, create a
+   webhook, and **Copy Webhook URL**.
+2. In HouseGraph, open **Tools ▸ Logs…** and click **External…**.
+3. Tick **Send log records to a Discord webhook**, paste the URL, and pick the level
+   to send at — **WARN** is the default and usually the right one. **ERROR** if you
+   only want failures; anything lower will be noisy.
+4. Click **Send test message** and check the channel, then **Save**.
+
+What to expect:
+
+- **Only what clears the level you picked is sent.** It is a separate level from the
+  file's and the window's, so the file can stay at `DEBUG` while the channel gets
+  warnings only.
+- **Records are batched.** A burst arrives as one message a couple of seconds later
+  rather than as fifty, which is also what keeps HouseGraph inside Discord's rate
+  limit.
+- **The graph never waits on Discord.** If the webhook is slow or unreachable, records
+  are dropped rather than queued forever, and the next message that gets through says
+  how many were lost. Nothing is lost from the log file.
+- **The URL is stored as a secret**, encrypted, like a token — see
+  [secrets.md](secrets.md). It appears in the secrets editor as
+  `log.discord.webhook`; deleting it there switches the destination off.
+
+Delivery failures are reported on the console, once when the webhook stops answering
+and once when it comes back, so a dead webhook does not fill the log with itself.
+
+The setting belongs to the machine HouseGraph is running on, so configure it on the
+server, not on your laptop.
+
 ## Updating HouseGraph itself
 
 ```bash
@@ -111,5 +146,5 @@ read-only.
 ---
 
 **When you change this, update…** this file whenever a CLI command is added or
-renamed, the data-directory layout changes, or the restart/backoff behaviour
-changes.
+renamed, the data-directory layout changes, the restart/backoff behaviour changes, or
+a log destination is added or changes what an operator has to configure.

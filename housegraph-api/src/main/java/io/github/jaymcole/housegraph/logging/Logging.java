@@ -22,7 +22,13 @@ import java.nio.file.Path;
  *
  * <p>Default per-output levels: console at {@link LogLevel#INFO} (quiet by default), buffer
  * and file at {@link LogLevel#DEBUG} (retain detail for inspection). Any of these can be
- * changed at runtime from the log window. See {@code docs/engine/logging.md}.
+ * changed at runtime from the log window.
+ *
+ * <p>An <em>external</em> destination — one that sends off this machine, such as
+ * {@link DiscordWebhookSink} — is deliberately <b>not</b> set up here: it exists only if
+ * someone configured it, and its settings live in a store this package must not depend on.
+ * The app registers it on {@link LogManager} itself, before reapplying saved levels, and
+ * closes it at shutdown alongside {@link #shutdown()}. See {@code docs/engine/logging.md}.
  */
 public final class Logging {
 

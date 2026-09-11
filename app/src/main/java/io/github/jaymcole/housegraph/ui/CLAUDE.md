@@ -23,7 +23,7 @@ with its own `GraphCanvas` and `MainMenuBar` over shared services owned by `App`
 | `editor/` | the secrets dialog (`SecretsEditor`) |
 | `command/` | undo/redo — `Command`, `UndoManager`, every `*Command` |
 | `io/` | the canvas-facing save/load wrappers (`GraphFileIO`) |
-| `log/` | the log viewer (`LogWindow`) and `LogLevelPreferences` |
+| `log/` | the log viewer (`LogWindow`), `LogLevelPreferences`, and the external log destinations (`ExternalLogDestinations`, `ExternalLogSettingsDialog`) |
 | `menu/` | the application menu bar (`MainMenuBar`) and the `MenuActions` each editor window implements |
 | `plugin/` | the node-library manager (`PluginWindow`) |
 | `module/` | the module picker (`ModulePickerDialog`) |

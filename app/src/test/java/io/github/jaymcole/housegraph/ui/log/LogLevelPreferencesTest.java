@@ -52,6 +52,32 @@ class LogLevelPreferencesTest {
     }
 
     @Test
+    void savedLevelReadsAnOutputThatIsNotRegisteredYet(@TempDir Path dir) {
+        Path file = dir.resolve("preferences.json");
+        AppPreferences prefs = AppPreferences.loadFrom(file);
+        prefs.put("log.level.Discord", "ERROR");
+        prefs.save();
+
+        // Nothing named "Discord" is registered: an external destination has to be built from
+        // its saved level before it can be added, which is what this reader is for.
+        assertEquals(java.util.Optional.of(LogLevel.ERROR),
+                LogLevelPreferences.savedLevel(AppPreferences.loadFrom(file), "Discord"));
+        assertEquals(java.util.Optional.empty(),
+                LogLevelPreferences.savedLevel(AppPreferences.loadFrom(file), "NeverSaved"));
+    }
+
+    @Test
+    void savedLevelIgnoresAnUnparseableValueJustAsRestoreDoes(@TempDir Path dir) {
+        Path file = dir.resolve("preferences.json");
+        AppPreferences prefs = AppPreferences.loadFrom(file);
+        prefs.put("log.level.Discord", "LOUD");
+        prefs.save();
+
+        assertEquals(java.util.Optional.empty(),
+                LogLevelPreferences.savedLevel(AppPreferences.loadFrom(file), "Discord"));
+    }
+
+    @Test
     void restoreIgnoresAnUnparseableSavedValue(@TempDir Path dir) {
         Path file = dir.resolve("preferences.json");
         AppPreferences prefs = AppPreferences.loadFrom(file);

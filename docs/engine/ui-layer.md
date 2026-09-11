@@ -564,8 +564,18 @@ reopening is lossless. It exposes a display filter, a per-sink level dropdown fo
 every registered output, and auto-scroll and clear. Rows are copyable: cell
 selection is on, and a right-click menu or the platform copy shortcut copies the
 focused cell or the selected rows, a row emitted as tab-separated columns.
-Per-output level choices persist through `LogLevelPreferences`. The logging model
-is in [logging.md](logging.md).
+Per-output level choices persist through `LogLevelPreferences`. The per-output row is
+rebuilt rather than built once, because the set of registered sinks is not fixed.
+
+**External…**, in the same toolbar, opens `ExternalLogSettingsDialog` — modal and
+owned by the log window, because it edits a setting and is done. It configures a log
+destination that sends off this machine: today a Discord webhook, with a switch, the
+URL, and its own level. `ExternalLogDestinations` does the saving and the registering;
+the dialog only collects the three values. Its **Send test message** posts on a worker
+and marshals the answer back with `Platform.runLater`, and deliberately builds a
+throwaway sink so it tests the URL currently in the field rather than the saved one.
+The logging model, and what an external destination guarantees, is in
+[logging.md](logging.md).
 
 **`plugin/PluginWindow`** manages node libraries. Installing is long and
 network-bound and the user should be able to watch the canvas and log window while

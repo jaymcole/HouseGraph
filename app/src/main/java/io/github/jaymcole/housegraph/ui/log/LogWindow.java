@@ -47,7 +47,7 @@ import java.util.stream.Collectors;
  * exists, reopening replays the full retained history via {@link LogBufferSink#snapshot()}
  * and then follows live records through a {@linkplain LogBufferSink#addListener listener}.
  *
- * <p>The window offers three independent controls that mirror the logging model:
+ * <p>The window offers independent controls that mirror the logging model:
  * <ul>
  *   <li>a <b>display filter</b> — hides rows below a chosen level without discarding them
  *       (change it back and they reappear);</li>
@@ -81,6 +81,13 @@ public final class LogWindow {
     private final TableView<LogRecord> table = new TableView<>(visibleRows);
     private final CheckBox autoScroll = new CheckBox("Auto-scroll");
     private final ComboBox<LogLevel> displayFilter = new ComboBox<>();
+
+    /**
+     * The per-output dropdowns. Held as a field because the set of registered sinks is not
+     * fixed: switching an external destination on or off in the External… dialog adds or
+     * removes one, and this row has to be rebuilt to match.
+     */
+    private final HBox outputLevels = new HBox(8);
 
     /** Live listener appending new records; held so it can be detached when the window hides. */
     private final Consumer<LogRecord> liveListener = record -> Platform.runLater(() -> append(record));
@@ -149,18 +156,30 @@ public final class LogWindow {
             rows.clear();
         });
 
+        javafx.scene.control.Button external = new javafx.scene.control.Button("External\u2026");
+        external.setTooltip(new javafx.scene.control.Tooltip(
+                "Forward log records to a Discord webhook, with its own level"));
+        external.setOnAction(e ->
+                ExternalLogSettingsDialog.show(stage, preferences, this::refreshOutputLevelControls));
+
+        refreshOutputLevelControls();
+
         ToolBar bar = new ToolBar();
         bar.getItems().addAll(new Label("Show:"), displayFilter, new javafx.scene.control.Separator());
-        bar.getItems().addAll(buildOutputLevelControls());
+        bar.getItems().add(outputLevels);
+        bar.getItems().addAll(new javafx.scene.control.Separator(), external);
         bar.getItems().addAll(new javafx.scene.control.Separator(), autoScroll, clear);
         return bar;
     }
 
-    /** A per-output level dropdown for every registered sink — this is "per output levels" made visible. */
-    private HBox buildOutputLevelControls() {
-        HBox box = new HBox(8);
-        box.setAlignment(Pos.CENTER_LEFT);
-        box.getChildren().add(new Label("Output levels:"));
+    /**
+     * Rebuilds the per-output level dropdowns from the currently registered sinks — this is
+     * "per output levels" made visible. Rebuilt rather than built once, because an external
+     * destination can be added or removed while the window is open.
+     */
+    private void refreshOutputLevelControls() {
+        outputLevels.setAlignment(Pos.CENTER_LEFT);
+        outputLevels.getChildren().setAll(new Label("Output levels:"));
         for (LogSink sink : LogManager.get().sinks()) {
             ComboBox<LogLevel> combo = new ComboBox<>();
             combo.getItems().setAll(LogLevel.values());
@@ -169,9 +188,8 @@ public final class LogWindow {
                 sink.setLevel(level);
                 LogLevelPreferences.persist(preferences, sink);
             });
-            box.getChildren().addAll(new Label(sink.name()), combo);
+            outputLevels.getChildren().addAll(new Label(sink.name()), combo);
         }
-        return box;
     }
 
     private TableView<LogRecord> buildTable() {

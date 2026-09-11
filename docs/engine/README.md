@@ -63,7 +63,7 @@ avoids the rebuild — a preference, not a guarantee.
 | [remote-runtime.md](remote-runtime.md) | git sync, process supervision, exit codes, the headless runner |
 | [storage.md](storage.md) | on-disk layout, secrets, preferences |
 | [document-store.md](document-store.md) | the shared JSON document store behind data-store nodes |
-| [logging.md](logging.md) | levels, sinks, the SLF4J bridge |
+| [logging.md](logging.md) | levels, sinks, external destinations, the SLF4J bridge |
 | [security-model.md](security-model.md) | trust boundaries and what is not defended |
 | [testing.md](testing.md) | conventions and the headless-testability rule |
 

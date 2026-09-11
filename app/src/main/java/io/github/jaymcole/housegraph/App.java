@@ -12,6 +12,7 @@ import io.github.jaymcole.housegraph.plugin.PluginLoader;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
 import io.github.jaymcole.housegraph.ui.io.RecentGraphs;
+import io.github.jaymcole.housegraph.ui.log.ExternalLogDestinations;
 import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
 import io.github.jaymcole.housegraph.ui.plugin.PluginWindow;
 import javafx.application.Application;
@@ -117,6 +118,9 @@ public class App extends Application {
         // Stand up logging first (console + file + in-memory window buffer) so everything
         // from here on is captured. Idempotent, so a second entry point can call it too.
         Logging.bootstrap(AppDirectories.get().logs());
+        // Stand up any external destination (a Discord webhook) before levels are reapplied, so
+        // the sink it registers is one of the outputs restore() reaches.
+        ExternalLogDestinations.restore(preferences);
         // Reapply any per-output levels the user chose in a previous session.
         LogLevelPreferences.restore(preferences);
 
@@ -412,7 +416,9 @@ public class App extends Application {
             if (pluginLoader != null) {
                 pluginLoader.close();
             }
-            // Flush and close the log file so the last lines reach disk.
+            // Let any external destination deliver what it still has queued, then flush and close
+            // the log file so the last lines reach disk.
+            ExternalLogDestinations.shutdown();
             Logging.shutdown();
         } finally {
             // In a finally block because a node throwing on teardown must not leave the shutdown

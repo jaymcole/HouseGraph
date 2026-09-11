@@ -93,6 +93,16 @@ or keychain-derived key changes only *how the key is obtained*, not the format. 
 API: `open()`, `keys()` (names only, never values), `get`/`put`/`remove`, and an
 explicit `save()`. **Not thread-safe** — open, use and save on one thread.
 
+### Keys the app itself owns
+
+Almost every entry is a user's own, named by them. One is written by the app: the
+Discord log webhook lives under **`log.discord.webhook`**, put there by the log
+window's External… dialog. A webhook URL is a credential — anyone holding it can post
+to the channel — so it belongs here and not in `preferences.json`, which is the same
+rule a node follows. It shows up in `SecretsEditor` like any other entry; deleting it
+there switches the destination off rather than leaving it failing every post. See
+[logging.md](logging.md).
+
 Edited through the `SecretsEditor` modal. Consumed by nodes that store the secret's
 **key** and resolve the value at runtime; a node library does the same through the
 published `sdk.Secrets` facade rather than this class directly.
@@ -109,8 +119,9 @@ see `.env.example`.
 
 A small persistent key/value store, plain JSON under `AppDirectories.config()`, for
 non-sensitive UX state — the last opened file (`LAST_FILE`), the recent-files list
-(`recentFiles`), each log output's level (`log.level.<sink>`), with room for window
-size and whatever else the UI comes to remember.
+(`recentFiles`), each log output's level (`log.level.<sink>`), whether the external
+log destination is switched on (`log.discord.enabled`), with room for window size and
+whatever else the UI comes to remember.
 
 **Reading is forgiving:** a missing or corrupt file yields empty preferences rather
 than failing, so a bad prefs file can never stop the app starting. Writing is
