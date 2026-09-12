@@ -142,11 +142,43 @@ flow into the same pipeline as the app's own.
 - `HouseGraphSlf4jLogger`, through `HouseGraphLoggerFactory`, forwards each call
   into `LogManager`, shortening the SLF4J logger's FQCN to a simple name so bridged
   lines read like the app's own `[Source]` labels.
-- `Slf4jBridge` holds the bridge's own minimum level and the SLF4J→`LogLevel`
-  mapping. It defaults to `WARN`, since libraries are chatty, gating
-  below-threshold messages before they reach `LogManager` and reporting that gate
-  through SLF4J's `isXxxEnabled()` so a library skips the work. Override at startup
-  with `-Dhousegraph.slf4j.level=…` or at runtime with `Slf4jBridge.setLevel`.
+- `Slf4jBridge` holds the bridge's thresholds and the SLF4J→`LogLevel` mapping. It
+  gates below-threshold messages before they reach `LogManager` and reports that
+  gate through SLF4J's `isXxxEnabled()` so a library skips the work.
+
+The bridge gates at two levels, because a library can be quiet overall yet have one
+component that reports a normal condition as a warning.
+
+| Threshold | Applies to | Default | Set it |
+| --- | --- | --- | --- |
+| Default | every bridged logger | `WARN`, since libraries are chatty | `-Dhousegraph.slf4j.level=…`, or `Slf4jBridge.setLevel(level)` |
+| Per-logger | one logger and its descendants | see below | `-Dhousegraph.slf4j.level.<logger>=…`, or `Slf4jBridge.setLevel(name, level)` |
+
+Per-logger keys match hierarchically and stop at a dot boundary: `javax.jmdns`
+covers `javax.jmdns.impl.DNSIncoming` but not `javax.jmdnsx`. Where several keys
+match, the longest wins, so a package-wide gate can be reopened for one class.
+`OFF` silences a logger outright, and `clearLevel` returns it to the default.
+
+Resolving a per-logger threshold walks the overrides, which is too much for a call a
+chatty library makes thousands of times, so each `HouseGraphSlf4jLogger` caches its
+answer against a revision counter `Slf4jBridge` bumps on every level change. A
+change therefore reaches loggers that were handed out before it.
+
+### Built-in per-logger overrides
+
+One ships by default: **`javax.jmdns` at `ERROR`**. jmdns 3.5.9's record-type table
+predates the SVCB/HTTPS types of RFC 9460, so a client asking for an HTTPS record
+(type 65) during an ordinary `<name>.local` lookup — which Apple's resolver does as a
+matter of course — makes it log a `WARN` naming the unknown type and dump the whole
+packet, once per lookup per interface. It parses the rest of the packet correctly and
+still answers the query: the warning reports a gap in the library's table, not a
+problem with the lookup. `housegraph-web`'s `LocalWebServer` binds jmdns precisely to
+answer those lookups, so the node that advertises a server is the one that sees every
+resolution of its name.
+
+Gating at `ERROR` rather than `OFF` keeps genuine jmdns failures visible. A library
+earns a built-in override only when it reports a normal condition as a warning —
+anything merely verbose is what the default `WARN` threshold is already for.
 
 This adapter is the one part of the logging system depending on a third-party API,
 which is why it lives in its own subpackage.
@@ -165,7 +197,8 @@ stays free of a `storage` dependency.
 
 **When you change this, update…** this file and the relevant Javadoc whenever you
 change the level model, add or alter a sink or its default, change the bootstrap
-seam, the buffer's lossless-reopen contract, or the SLF4J bridge. Adding an external
+seam, the buffer's lossless-reopen contract, or the SLF4J bridge — including the set
+of built-in per-logger overrides and the reason each one is gated. Adding an external
 destination also touches [ui-layer.md](ui-layer.md), because it appears in the log
 window, and [storage.md](storage.md) if it stores a credential. A new on-disk log
 location touches [storage.md](storage.md) too.
