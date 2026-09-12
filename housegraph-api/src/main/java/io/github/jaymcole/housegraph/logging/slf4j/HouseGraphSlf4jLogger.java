@@ -13,26 +13,53 @@ import org.slf4j.helpers.MessageFormatter;
  * {@link #handleNormalizedLoggingCall} call, so this adapter only has to format the message
  * and republish it.
  *
- * <p>The bridge's {@linkplain Slf4jBridge#getLevel() own level} gates every call — reflected
- * in the {@code isXxxEnabled()} checks so a library skips work the bridge would drop — after
- * which {@code LogManager}'s per-sink filtering applies as usual. The SLF4J logger name is
- * usually a fully-qualified class name; it is shortened to the simple name so bridged logs
- * read like the app's own {@code [Source]} labels.
+ * <p>The bridge's own threshold gates every call — reflected in the {@code isXxxEnabled()}
+ * checks so a library skips work the bridge would drop — after which {@code LogManager}'s
+ * per-sink filtering applies as usual. That threshold is {@linkplain
+ * Slf4jBridge#levelFor(String) resolved from this logger's name}, so a per-logger override
+ * beats the default level. Resolving walks the overrides, which is too much for a call that
+ * a chatty library makes thousands of times, so the answer is cached against {@link
+ * Slf4jBridge#configGeneration()} and recomputed only when the configuration changes.
+ *
+ * <p>The SLF4J logger name is usually a fully-qualified class name; it is shortened to the
+ * simple name so bridged logs read like the app's own {@code [Source]} labels.
  */
 final class HouseGraphSlf4jLogger extends LegacyAbstractLogger {
 
+    /** A threshold and the configuration revision it was resolved at. */
+    private record Threshold(int generation, LogLevel level) {
+    }
+
     private final String source;
+
+    private volatile Threshold threshold;
 
     HouseGraphSlf4jLogger(String name) {
         this.name = name;
         this.source = simpleName(name);
     }
 
+    /**
+     * This logger's minimum level, re-resolved only when {@link Slf4jBridge}'s configuration
+     * has changed since the cached answer. Reading the generation before resolving is what
+     * makes a concurrent change safe: it caches the older revision number, so the next call
+     * sees the mismatch and recomputes rather than pinning a stale level.
+     */
+    private LogLevel threshold() {
+        int generation = Slf4jBridge.configGeneration();
+        Threshold cached = threshold;
+        if (cached == null || cached.generation() != generation) {
+            cached = new Threshold(generation, Slf4jBridge.levelFor(name));
+            threshold = cached;
+        }
+        return cached.level();
+    }
+
     @Override
     protected void handleNormalizedLoggingCall(Level level, Marker marker, String messagePattern,
                                                Object[] arguments, Throwable throwable) {
         LogLevel mapped = Slf4jBridge.toLogLevel(level);
-        if (!mapped.isAtLeast(Slf4jBridge.getLevel())) {
+        if (!mapped.isAtLeast(threshold())) {
             return;
         }
         String message = (arguments == null || arguments.length == 0)
@@ -48,7 +75,7 @@ final class HouseGraphSlf4jLogger extends LegacyAbstractLogger {
     }
 
     private boolean enabled(LogLevel level) {
-        return level.isAtLeast(Slf4jBridge.getLevel());
+        return level.isAtLeast(threshold());
     }
 
     @Override public boolean isTraceEnabled() { return enabled(LogLevel.TRACE); }
