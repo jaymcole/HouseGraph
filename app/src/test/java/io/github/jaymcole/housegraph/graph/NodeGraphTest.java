@@ -14,7 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -2012,6 +2014,82 @@ class NodeGraphTest {
         void driveBranch() {
             runFlowBranchToCompletion(out, () -> {
             });
+        }
+    }
+
+    @Test
+    void moreNodesCanBlockAtOnceThanTheMachineHasCores() {
+        // Runs execute on virtual threads, and a virtual thread that blocks inside a synchronized
+        // block pins its carrier rather than unmounting. process() used to be called while holding
+        // an intrinsic monitor, so every blocked node held one of the scheduler's per-CPU carriers
+        // and a graph needing one more blocked node than the machine has cores could not make
+        // progress - the missing ones only started once an earlier node timed out, if at all.
+        //
+        // Sized past this machine's core count on purpose, so a regression fails everywhere rather
+        // than only on a small CI runner. The barrier is the assertion: it trips only if every node
+        // really is inside process() at the same moment.
+        int concurrent = Runtime.getRuntime().availableProcessors() + 2;
+        CyclicBarrier allInside = new CyclicBarrier(concurrent);
+
+        NodeGraph graph = new NodeGraph();
+        TriggerNode trigger = new TriggerNode();
+        graph.addNode(trigger);
+        List<MeetingNode> blocked = new ArrayList<>();
+        for (int i = 0; i < concurrent; i++) {
+            MeetingNode node = new MeetingNode(allInside);
+            blocked.add(node);
+            graph.addNode(node);
+            graph.registerFlowEdge(flowEdge(trigger, node));
+        }
+
+        trigger.execute();
+        graph.awaitIdle();
+
+        assertTrue(blocked.stream().allMatch(node -> node.met),
+                concurrent + " nodes had to be inside process() at once on a "
+                        + Runtime.getRuntime().availableProcessors() + "-core machine; "
+                        + blocked.stream().filter(node -> !node.met).count() + " never got there");
+        assertTrue(blocked.stream().allMatch(node -> node.getStatus().isComplete()));
+    }
+
+    /**
+     * A node that does not leave {@code process()} until every one of its siblings is also inside
+     * it. Blocks on a shared barrier rather than a latch the test opens, because what is being
+     * tested is that they overlap at all - a latch would be released whether they did or not.
+     */
+    private static final class MeetingNode extends BaseNode {
+        private final CyclicBarrier meeting;
+        private volatile boolean met;
+
+        MeetingNode(CyclicBarrier meeting) {
+            this.meeting = meeting;
+        }
+
+        @Override
+        public void process(ProcessContext ctx) {
+            try {
+                // Bounded, so a regression fails with a readable assertion instead of hanging the
+                // build: a node that never meets the others returns rather than waiting forever.
+                meeting.await(10, TimeUnit.SECONDS);
+                met = true;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (BrokenBarrierException | TimeoutException e) {
+                // Left unmet, which is what the assertion reads.
+            }
+        }
+
+        @Override
+        public void configureInputs() {
+        }
+
+        @Override
+        public void configureOutputs() {
+        }
+
+        @Override
+        public void configureFlowInputs() {
+            addFlowInput(new FlowPort("", FlowPort.Direction.IN));
         }
     }
 

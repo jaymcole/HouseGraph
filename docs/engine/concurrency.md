@@ -9,7 +9,7 @@ Read this alongside the `NodeGraph` and `ExecutionContext` Javadoc.
 ## Isolation: `ExecutionContext`
 
 One context per run. It holds that run's node statuses, `flowVisited` set,
-activated flow-out ports, per-node flow-in arrivals, per-node resolution monitors,
+activated flow-out ports, per-node flow-in arrivals, per-node resolution locks,
 join-arrival counts, and the **computed-value overlay**.
 
 A `NodeVariable`'s authored value stays on the node, read-only during a run and
@@ -45,19 +45,39 @@ appears once in `ProcessContext.triggeredVia()` — see
 
 ## Locking
 
-**Per-run resolution lock.** `resolveInternal` synchronizes on a monitor from the
-run's context (`ExecutionContext.lockFor(node)`), not on the node object. Within a
-run this deduplicates a shared data dependency — the second branch blocks, then
-sees the completed status — and, being reentrant per thread, turns a data cycle
-into the `IN_PROGRESS` check rather than a deadlock.
+**Per-run resolution lock.** `resolveInternal` takes a lock from the run's context
+(`ExecutionContext.lockFor(node)`), not from the node object. Within a run this
+deduplicates a shared data dependency — the second branch blocks, then sees the
+completed status — and, being reentrant per thread, turns a data cycle into the
+`IN_PROGRESS` check rather than a deadlock.
 
-Because the monitor is per-run, it does **not** serialize two different concurrent
+Because the lock is per-run, it does **not** serialize two different concurrent
 runs that share the node. That is what makes `PARALLEL` genuinely parallel.
+
+### Nothing blocks inside `synchronized`
+
+Two locks are held while a node may block — the resolution lock, which spans the
+node's whole `process()`, and a mid-cascade `QUEUE`/`RESTART` arrival parked on its
+re-entry gate. Both are a `ReentrantLock`, and **neither may become
+`synchronized`**, however much tidier that would read.
+
+On Java 21 a virtual thread that blocks inside an intrinsic monitor **pins its
+carrier** instead of unmounting. The virtual-thread scheduler runs one carrier per
+CPU and does not compensate for a pinned one, so an intrinsic monitor here makes the
+core count a hard cap on how many nodes may block at once. A graph that needs one
+more — a module whose interior blocks, a fan-out of nodes waiting on IO — then makes
+no progress at all until something times out. `ReentrantLock` and
+`Condition.await()` park through `LockSupport`, which unmounts, so a blocked node
+costs a virtual thread rather than a core.
+
+`NodeGraphTest.moreNodesCanBlockAtOnceThanTheMachineHasCores` is the guard: it
+blocks two more nodes at once than the machine has cores, so it fails anywhere the
+pinning comes back rather than only on a small CI runner.
 
 **Structural methods stay `synchronized` on the `NodeGraph`** for their brief
 critical section — adding and removing nodes and edges, reading topology — but
-that lock is never held for a whole run, so a UI-thread edit is not forced to wait
-out a slow in-flight trigger.
+nothing blocks inside one and the lock is never held for a whole run, so a UI-thread
+edit is not forced to wait out a slow in-flight trigger.
 
 ## Per-node throughput controls
 
@@ -98,4 +118,5 @@ own `awaitIdle()` covers an invocation. See
 
 **When you change this, update…** this file and the `NodeGraph` /
 `ExecutionContext` Javadoc whenever you change the threading or locking strategy,
-the fire-and-forget contract, the join semantics, or the throughput controls.
+what may be held while a node blocks, the fire-and-forget contract, the join
+semantics, or the throughput controls.

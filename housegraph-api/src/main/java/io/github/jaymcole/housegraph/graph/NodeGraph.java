@@ -30,6 +30,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -948,16 +950,24 @@ public class NodeGraph {
     }
 
     /**
-     * Resolving a node is scoped to this run's own per-node monitor ({@link ExecutionContext#lockFor}),
+     * Resolving a node is scoped to this run's own per-node lock ({@link ExecutionContext#lockFor}),
      * reentrant per thread. That gives two things at once: two concurrent flow branches of the same
      * run that share a data dependency can't both run that shared node's process() - the second
      * blocks here until the first finishes, then sees its now-complete status and returns without
      * re-running it - and a single thread revisiting a node it's already mid-resolving (a data cycle)
-     * hits the IN_PROGRESS check below rather than deadlocking on itself. The monitor is per-run, so
+     * hits the IN_PROGRESS check below rather than deadlocking on itself. The lock is per-run, so
      * two <em>different</em> concurrent runs sharing this node don't serialize on it.
+     * <p>
+     * It is a {@link ReentrantLock} and not {@code synchronized} because it is held across the
+     * node's whole {@code process()}, which may block: a virtual thread blocking inside an intrinsic
+     * monitor pins its carrier, which would cap the number of simultaneously-blocked nodes at this
+     * machine's core count. See {@link ExecutionContext#lockFor} and
+     * {@code docs/engine/concurrency.md}.
      */
     private void resolveInternal(ExecutionContext context, BaseNode node) {
-        synchronized (context.lockFor(node)) {
+        ReentrantLock lock = context.lockFor(node);
+        lock.lock();
+        try {
             NodeProcessingStatus status = context.statusOf(node);
             if (status == NodeProcessingStatus.IN_PROGRESS) {
                 throw new IllegalStateException("Cycle detected in data graph at node: " + node.getName());
@@ -987,6 +997,8 @@ public class NodeGraph {
                 node.onExecuted();
                 notifyNodeExecuted(node);
             });
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -1467,10 +1479,21 @@ public class NodeGraph {
      * {@code DROP} abandons the arrival, {@code QUEUE} coalesces it behind the holder (at most one
      * waiter; a newer arrival evicts an older one), {@code RESTART} interrupts the holder and then
      * queues like {@code QUEUE}. {@code PARALLEL} never reaches here — those firings skip the gate.
-     * All state is guarded by this object's own monitor. Non-blocking to release; a waiting arrival
-     * parks a cheap virtual thread until it's handed the gate or coalesced away.
+     * All state is guarded by this gate's own {@link ReentrantLock}. Non-blocking to release; a
+     * waiting arrival parks a cheap virtual thread until it's handed the gate or coalesced away.
+     *
+     * <h4>A lock and a condition, not {@code synchronized} and {@code wait()}</h4>
+     * The wait below is exactly the "parks a cheap virtual thread" claim above, and an intrinsic
+     * monitor does not deliver it: on Java 21 a virtual thread that blocks inside {@code
+     * synchronized} pins its carrier instead of unmounting, so every arrival queued here would hold
+     * one of the scheduler's per-CPU carriers for as long as it waited. {@link Condition#await()}
+     * parks through {@code LockSupport}, which unmounts. Same reasoning as
+     * {@link ExecutionContext#lockFor}.
      */
     private static final class ReentryGate {
+        private final ReentrantLock lock = new ReentrantLock();
+        /** Signalled on hand-off and on eviction — every state change a waiter is waiting for. */
+        private final Condition handedOver = lock.newCondition();
         /** A run currently holds the gate (is inside, or about to enter, the node's {@code process()}). */
         private boolean busy;
         /** The holder's firing thread, so a {@code RESTART} arrival can interrupt its {@code process()}. */
@@ -1486,65 +1509,80 @@ public class NodeGraph {
          * coalesced away. For a busy {@code RESTART} the holder's thread is interrupted (cooperative)
          * before this arrival waits.
          */
-        synchronized ReentryGate acquire(ExecutionPolicy policy) {
-            if (!busy) {
-                busy = true;
-                holderThread = Thread.currentThread();
-                return this;
-            }
-            if (policy == ExecutionPolicy.DROP) {
-                return null;
-            }
-            if (policy == ExecutionPolicy.RESTART && holderThread != null) {
-                holderThread.interrupt();
-            }
-            if (waiter != null) {
-                waiter.cancelled = true; // evict the older waiter: coalesce to the latest arrival
-            }
-            Waiter self = new Waiter();
-            waiter = self;
-            notifyAll(); // wake a freshly-evicted waiter so it returns and abandons its branch
-            while (!self.signaled && !self.cancelled) {
-                try {
-                    wait();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    if (waiter == self) {
-                        waiter = null;
-                    }
+        ReentryGate acquire(ExecutionPolicy policy) {
+            lock.lock();
+            try {
+                if (!busy) {
+                    busy = true;
+                    holderThread = Thread.currentThread();
+                    return this;
+                }
+                if (policy == ExecutionPolicy.DROP) {
                     return null;
                 }
+                if (policy == ExecutionPolicy.RESTART && holderThread != null) {
+                    holderThread.interrupt();
+                }
+                if (waiter != null) {
+                    waiter.cancelled = true; // evict the older waiter: coalesce to the latest arrival
+                }
+                Waiter self = new Waiter();
+                waiter = self;
+                handedOver.signalAll(); // wake a freshly-evicted waiter so it returns and abandons its branch
+                while (!self.signaled && !self.cancelled) {
+                    try {
+                        handedOver.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        if (waiter == self) {
+                            waiter = null;
+                        }
+                        return null;
+                    }
+                }
+                if (self.cancelled) {
+                    return null;
+                }
+                // Signaled: the previous holder handed us the still-held gate.
+                holderThread = Thread.currentThread();
+                return this;
+            } finally {
+                lock.unlock();
             }
-            if (self.cancelled) {
-                return null;
-            }
-            // Signaled: the previous holder handed us the still-held gate.
-            holderThread = Thread.currentThread();
-            return this;
         }
 
         /**
          * Releases the gate after the holder's {@code process()} returns. Hands it straight to the
          * coalesced waiter if one is queued (which then runs the node), otherwise marks the node free.
          */
-        synchronized void release() {
-            if (waiter != null) {
-                waiter.signaled = true; // hand off: busy stays true, the waiter becomes the new holder
-                waiter = null;
-                holderThread = null;    // the woken waiter records its own thread
-                notifyAll();
-            } else {
-                busy = false;
-                holderThread = null;
+        void release() {
+            lock.lock();
+            try {
+                if (waiter != null) {
+                    waiter.signaled = true; // hand off: busy stays true, the waiter becomes the new holder
+                    waiter = null;
+                    holderThread = null;    // the woken waiter records its own thread
+                    handedOver.signalAll();
+                } else {
+                    busy = false;
+                    holderThread = null;
+                }
+            } finally {
+                lock.unlock();
             }
         }
 
         /** Frees a run parked here (used when the node is removed); the waiter abandons its branch. */
-        synchronized void cancelWaiter() {
-            if (waiter != null) {
-                waiter.cancelled = true;
-                waiter = null;
-                notifyAll();
+        void cancelWaiter() {
+            lock.lock();
+            try {
+                if (waiter != null) {
+                    waiter.cancelled = true;
+                    waiter = null;
+                    handedOver.signalAll();
+                }
+            } finally {
+                lock.unlock();
             }
         }
 
