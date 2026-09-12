@@ -1,7 +1,5 @@
 package io.github.jaymcole.housegraph.plugin;
 
-import io.github.jaymcole.housegraph.logging.Log;
-import io.github.jaymcole.housegraph.logging.Logger;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -33,8 +31,6 @@ import java.util.Optional;
  * is not.
  */
 public final class GitHubReleases {
-
-    private static final Logger log = Log.get(GitHubReleases.class);
 
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
@@ -199,6 +195,14 @@ public final class GitHubReleases {
      * library's dependencies. Sources and javadoc jars are excluded for the same reason — they are
      * not the library.
      *
+     * <h4>Returning several is not a complaint</h4>
+     * This reports what the release carries and nothing more. What to do about several is the
+     * caller's, because the answer differs: installing a library asks the user which one they meant
+     * ({@code PluginsCommand}, {@code PluginInstaller.install}), while {@code remote.SelfUpdater}
+     * picks by platform with no user in the room — HouseGraph's own releases always attach one jar
+     * per platform, so "several" is the normal case there and warning about it would put a line
+     * saying somebody has to choose into an unattended daemon's log, every release, forever.
+     *
      * @param assets the release's {@code assets} array
      * @return the installable jars, in release order
      */
@@ -227,9 +231,6 @@ public final class GitHubReleases {
         }
         if (!shaded.isEmpty()) {
             return shaded;
-        }
-        if (plain.size() > 1) {
-            log.warn("Release has several jars and none is named *-all.jar; the user will have to choose");
         }
         return plain;
     }
