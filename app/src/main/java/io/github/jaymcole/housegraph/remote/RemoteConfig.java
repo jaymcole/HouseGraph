@@ -93,19 +93,69 @@ public final class RemoteConfig {
         }
     }
 
+    /**
+     * Whether, and how often, this machine updates HouseGraph itself from GitHub releases.
+     *
+     * <p>Off unless the operator turns it on, and for a sharper reason than the plugin gate: applying
+     * an update replaces the jar the daemon is running and exits so a supervisor restarts it. That is
+     * only correct when something <em>is</em> supervising the daemon — a LaunchAgent with
+     * {@code KeepAlive}, a systemd unit with {@code Restart=always}. Enabled on a daemon started by
+     * hand in a terminal, the first update would look like the daemon quietly stopping.
+     *
+     * <p>{@code repository} is a knob for a fork rather than a routine setting, and it is the trust
+     * decision here in the same way the graph repositories are: it names, by hand, in a file on this
+     * machine, whose code this machine will run. {@code GitHubReleases} still bounds every lookup and
+     * download to GitHub.
+     *
+     * @param enabled      whether the daemon applies updates on its own
+     * @param repository   the GitHub repository to take releases from
+     * @param checkSeconds seconds between release checks, never below {@link #MINIMUM_CHECK_SECONDS}
+     */
+    public record SelfUpdate(boolean enabled, String repository, int checkSeconds) {
+
+        /** Where HouseGraph itself is released. */
+        public static final String DEFAULT_REPOSITORY = "https://github.com/jaymcole/HouseGraph";
+
+        /**
+         * An hour between checks. Unlike the git poll this one is an {@code api.github.com} request,
+         * against a budget of 60 an hour for an unauthenticated IP, and a release is not something
+         * that lands minute to minute. A stored {@code ETag} makes the steady-state check free
+         * anyway — a 304 does not count against the budget — so the interval only bounds how long a
+         * machine stays on an old build.
+         */
+        static final int DEFAULT_CHECK_SECONDS = 3600;
+
+        /** The floor on {@link #checkSeconds()}, so a typo cannot spend the hourly budget in minutes. */
+        static final int MINIMUM_CHECK_SECONDS = 300;
+
+        public SelfUpdate {
+            repository = repository == null || repository.isBlank()
+                    ? DEFAULT_REPOSITORY : repository.trim();
+            checkSeconds = Math.max(MINIMUM_CHECK_SECONDS, checkSeconds);
+        }
+
+        /** The default: off, upstream, hourly. */
+        public static SelfUpdate disabled() {
+            return new SelfUpdate(false, DEFAULT_REPOSITORY, DEFAULT_CHECK_SECONDS);
+        }
+    }
+
     private final List<Repository> repositories;
     private final int pollSeconds;
     private final boolean allowPluginInstall;
     private final List<String> trustedPluginRepositories;
+    private final SelfUpdate selfUpdate;
 
     RemoteConfig(List<Repository> repositories,
                  int pollSeconds,
                  boolean allowPluginInstall,
-                 List<String> trustedPluginRepositories) {
+                 List<String> trustedPluginRepositories,
+                 SelfUpdate selfUpdate) {
         this.repositories = List.copyOf(repositories);
         this.pollSeconds = Math.max(MINIMUM_POLL_SECONDS, pollSeconds);
         this.allowPluginInstall = allowPluginInstall;
         this.trustedPluginRepositories = List.copyOf(trustedPluginRepositories);
+        this.selfUpdate = selfUpdate == null ? SelfUpdate.disabled() : selfUpdate;
     }
 
     /**
@@ -134,13 +184,13 @@ public final class RemoteConfig {
      */
     static RemoteConfig loadFrom(Path file) {
         if (!Files.isRegularFile(file)) {
-            return new RemoteConfig(List.of(), DEFAULT_POLL_SECONDS, false, List.of());
+            return new RemoteConfig(List.of(), DEFAULT_POLL_SECONDS, false, List.of(), SelfUpdate.disabled());
         }
         try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             return fromJson(new JSONObject(new JSONTokener(reader)));
         } catch (IOException | RuntimeException e) {
             log.error("Could not read {} — running with no repositories configured", file, e);
-            return new RemoteConfig(List.of(), DEFAULT_POLL_SECONDS, false, List.of());
+            return new RemoteConfig(List.of(), DEFAULT_POLL_SECONDS, false, List.of(), SelfUpdate.disabled());
         }
     }
 
@@ -180,7 +230,24 @@ public final class RemoteConfig {
         return new RemoteConfig(repositories,
                 root.optInt("pollSeconds", DEFAULT_POLL_SECONDS),
                 root.optBoolean("allowPluginInstall", false),
-                trusted);
+                trusted,
+                selfUpdateFrom(root.optJSONObject("selfUpdate")));
+    }
+
+    /**
+     * Reads the optional {@code selfUpdate} block. A missing block, or one that only sets
+     * {@code enabled}, is the documented shape — everything else has a default worth having.
+     *
+     * @param block the {@code selfUpdate} object, or null when the file has none
+     * @return the parsed settings, off when there was no block
+     */
+    static SelfUpdate selfUpdateFrom(JSONObject block) {
+        if (block == null) {
+            return SelfUpdate.disabled();
+        }
+        return new SelfUpdate(block.optBoolean("enabled", false),
+                block.optString("repository", SelfUpdate.DEFAULT_REPOSITORY),
+                block.optInt("checkSeconds", SelfUpdate.DEFAULT_CHECK_SECONDS));
     }
 
     public List<Repository> repositories() {
@@ -199,6 +266,11 @@ public final class RemoteConfig {
 
     public List<String> trustedPluginRepositories() {
         return trustedPluginRepositories;
+    }
+
+    /** Whether and how often this machine updates HouseGraph itself. Off unless configured. */
+    public SelfUpdate selfUpdate() {
+        return selfUpdate;
     }
 
     /**

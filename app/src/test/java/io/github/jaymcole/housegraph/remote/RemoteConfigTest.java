@@ -128,4 +128,37 @@ class RemoteConfigTest {
         assertEquals("jaymcole-my-graphs",
                 new RemoteConfig.Repository("https://github.com/JayMcole/My-Graphs.git", "main", null).key());
     }
+
+    @Test
+    void selfUpdateIsOffUnlessTheFileSaysOtherwise() {
+        // Applying one replaces the running jar and exits to be restarted, which is only correct
+        // under a supervisor. Defaulting it on would turn a hand-started daemon into one that
+        // appears to stop by itself.
+        RemoteConfig config = RemoteConfig.fromJson(new JSONObject("{}"));
+
+        assertFalse(config.selfUpdate().enabled());
+        assertEquals(RemoteConfig.SelfUpdate.DEFAULT_REPOSITORY, config.selfUpdate().repository());
+    }
+
+    @Test
+    void selfUpdateReadsItsBlockAndDefaultsTheRest() {
+        RemoteConfig config = RemoteConfig.fromJson(new JSONObject("""
+                { "selfUpdate": { "enabled": true } }
+                """));
+
+        assertTrue(config.selfUpdate().enabled());
+        assertEquals(RemoteConfig.SelfUpdate.DEFAULT_REPOSITORY, config.selfUpdate().repository());
+        assertEquals(RemoteConfig.SelfUpdate.DEFAULT_CHECK_SECONDS, config.selfUpdate().checkSeconds());
+    }
+
+    @Test
+    void theUpdateCheckHasAFloorBecauseItSpendsTheApiBudget() {
+        // Unlike the git poll, this one is an api.github.com request against 60 an hour. A typo here
+        // would exhaust that in minutes and take the plugin installer down with it.
+        RemoteConfig config = RemoteConfig.fromJson(new JSONObject("""
+                { "selfUpdate": { "enabled": true, "checkSeconds": 5 } }
+                """));
+
+        assertEquals(RemoteConfig.SelfUpdate.MINIMUM_CHECK_SECONDS, config.selfUpdate().checkSeconds());
+    }
 }

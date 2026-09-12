@@ -37,7 +37,9 @@
     <true/>
 
     <!-- Restart the daemon itself if it ever exits. The daemon restarts individual graphs;
-         this is the layer above, for the daemon process. -->
+         this is the layer above, for the daemon process. It is also what makes selfUpdate
+         work: installing a new HouseGraph release ends with the daemon exiting 10, and this
+         is what starts it again on the jar it just installed. -->
     <key>KeepAlive</key>
     <true/>
 

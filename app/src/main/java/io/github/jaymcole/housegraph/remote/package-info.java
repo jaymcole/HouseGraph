@@ -21,8 +21,12 @@
  *   <li>{@link io.github.jaymcole.housegraph.remote.Supervisor} and
  *       {@link io.github.jaymcole.housegraph.remote.GraphProcess} — keep it running.</li>
  *   <li>{@link io.github.jaymcole.housegraph.remote.ExitCodes} — how a child asks for a restart.</li>
+ *   <li>{@link io.github.jaymcole.housegraph.remote.SelfUpdater} and
+ *       {@link io.github.jaymcole.housegraph.remote.UpdatePlatform} — keep HouseGraph itself
+ *       current, by replacing the jar and asking for that same restart one layer up.</li>
  * </ul>
  *
- * <p>Full design: {@code docs/engine/remote-runtime.md}.
+ * <p>Full design: {@code docs/engine/remote-runtime.md}, and
+ * {@code docs/engine/self-update.md} for the self-update half.
  */
 package io.github.jaymcole.housegraph.remote;

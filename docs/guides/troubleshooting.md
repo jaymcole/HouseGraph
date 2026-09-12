@@ -70,6 +70,12 @@ housegraph doctor
 | A pushed change never arrives | Wrong branch, or the daemon isn't running | `launchctl list \| grep housegraph`, and check `repositories[].branch` |
 | Edits inside `remotes/` disappeared | It's a mirror, reset on every sync | Edit in your repository and push |
 | A library was updated but graphs still use the old one | Libraries only change in a fresh process | Graphs restart on a repository change; if you installed by hand, restart the daemon |
+| `update` says "no published jar matches this machine" | An Intel Mac, an ARM Linux box — releases are built for Apple Silicon macOS and x86-64 Linux/Windows | Build from source ([Part 3](server-setup.md#3-build-it-on-the-server)). Leave `selfUpdate` off |
+| `update` says Windows will not let a running jar be replaced | True of every running jar on Windows | Stop the daemon, replace the jar, start it again |
+| `doctor` says self-update is on but cannot run here | Same two causes, found before an update is ever attempted | The line names which one |
+| `selfUpdate` is on and nothing ever updates | The release has no jar for this platform, or this build has no version in its manifest (an IDE run) | `housegraph update --check` says which, in one line |
+| Self-update installed a release and the version did not change | The supervisor starts a jar from somewhere other than the one being replaced | Point the LaunchAgent at the jar `doctor` reports under "Running jar" |
+| A new HouseGraph release broke something | Nothing you did | Stop the agent, `mv housegraph.jar.previous housegraph.jar`, start it again — and turn `selfUpdate` off first, or it comes straight back |
 | Discord log messages never arrive | The destination is off, or the webhook is wrong or deleted | Re-open **Tools ▸ Logs… ▸ External…** and use **Send test message**; delivery failures are reported on the console |
 | Discord shows a gap and "N log record(s) dropped" | The webhook could not keep up, so records were discarded rather than queued | Expected under a burst — nothing is lost from the log file. Raise the destination's level to send less |
 

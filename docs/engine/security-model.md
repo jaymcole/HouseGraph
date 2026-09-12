@@ -27,6 +27,7 @@ saying so.
 | Save-file path containment | `RemoteDeployment` | A manifest's `graphs[].file` is resolved and verified to stay inside the clone; `../` and absolute paths are refused rather than clamped |
 | Directory-key sanitising | `AppDirectories` | A hostile repository URL or manifest cannot write outside its own folder |
 | Secret access through a seam | `sdk.Secrets` | Does nothing today that `SecretsStore.open()` does not; exists so a per-library grant can be added host-side later |
+| Self-update off unless configured | `RemoteConfig.SelfUpdate`, default `enabled: false` | A machine replaces its own HouseGraph jar only when the operator has said so in `remote.json`, and only from the repository named there |
 
 There is deliberately no "remember this repository" in the app — the dismissible
 warning is a global one-time acknowledgement of what installing means at all, not
@@ -86,6 +87,17 @@ rather than a boundary. `RemoteConfig.load` warns when installs are on with an e
 list, and `doctor` reports "allowed from any GitHub repository your graphs name",
 so the wider meaning is never silent. `GitHubReleases.ALLOWED_HOSTS` still bounds
 every fetch.
+
+The same reasoning covers the daemon updating **itself**. `selfUpdate.repository`
+defaults to HouseGraph upstream and is a URL in the same hand-written file: turning
+`selfUpdate.enabled` on is a decision to run whatever that repository releases, taken
+once, by a human, before anything is fetched. It is off by default, the download is
+bounded to GitHub by `GitHubReleases.ALLOWED_HOSTS` like every other, and the jar is
+run once (`--version`) before it replaces anything — a check that the asset is what the
+release advertised, not a signature check. **Release jars are not verified against a
+signature or a published hash.** Do not describe them as verified; what is checked is
+the origin, the platform, and that the build identifies itself as the one announced.
+[self-update.md](self-update.md) has the rest.
 
 Two things the daemon never does:
 

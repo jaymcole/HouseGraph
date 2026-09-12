@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.cli;
 
+import io.github.jaymcole.housegraph.AppVersion;
 import io.github.jaymcole.housegraph.cli.commands.CheckCommand;
 import io.github.jaymcole.housegraph.cli.commands.DaemonCommand;
 import io.github.jaymcole.housegraph.cli.commands.DiffCommand;
@@ -8,6 +9,7 @@ import io.github.jaymcole.housegraph.cli.commands.NodesCommand;
 import io.github.jaymcole.housegraph.cli.commands.PluginsCommand;
 import io.github.jaymcole.housegraph.cli.commands.SchemaCommand;
 import io.github.jaymcole.housegraph.cli.commands.SyncCommand;
+import io.github.jaymcole.housegraph.cli.commands.UpdateCommand;
 import io.github.jaymcole.housegraph.cli.commands.ValidateCommand;
 
 import java.io.PrintStream;
@@ -75,6 +77,7 @@ public final class CommandLine {
         register(new SchemaCommand(out));
         register(new ValidateCommand(out));
         register(new DiffCommand(out));
+        register(new UpdateCommand(out));
     }
 
     private void register(Command command) {
@@ -166,12 +169,11 @@ public final class CommandLine {
     /**
      * The build's version, from the jar manifest.
      *
-     * @return the implementation version, or {@code "(development build)"} when running from
-     *         exploded classes, where no manifest exists to read one from
+     * @return the implementation version, or a stand-in when running from exploded classes, where
+     *         no manifest exists to read one from
      */
     static String version() {
-        String version = CommandLine.class.getPackage().getImplementationVersion();
-        return version == null ? "(development build)" : version;
+        return AppVersion.describe();
     }
 
     /** Prints the usage listing, or one command's detail when {@code forCommand} names one. */

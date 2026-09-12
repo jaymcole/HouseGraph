@@ -5,11 +5,13 @@ import io.github.jaymcole.housegraph.cli.Command;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.logging.Logging;
+import io.github.jaymcole.housegraph.remote.ExitCodes;
 import io.github.jaymcole.housegraph.remote.GraphProcess;
 import io.github.jaymcole.housegraph.remote.GraphRepository;
 import io.github.jaymcole.housegraph.remote.RemoteConfig;
 import io.github.jaymcole.housegraph.remote.RemoteDeployment;
 import io.github.jaymcole.housegraph.remote.RemoteState;
+import io.github.jaymcole.housegraph.remote.SelfUpdater;
 import io.github.jaymcole.housegraph.remote.Supervisor;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 
@@ -31,10 +33,18 @@ import java.util.concurrent.TimeUnit;
  * poll keeps to the configured interval — a crashed graph comes back in seconds rather than waiting
  * out a minute-long sleep.
  *
+ * <h2>Updating itself</h2>
+ * When {@code selfUpdate.enabled} is set, the same loop also asks GitHub for HouseGraph's latest
+ * release on its own, much longer, interval. Applying one replaces the jar and returns
+ * {@link ExitCodes#RESTART_REQUESTED}, because a JVM cannot become a different build of itself — the
+ * supervisor that keeps the daemon alive is what starts it again, onto the new jar. See
+ * {@link SelfUpdater}.
+ *
  * <h2>Stopping</h2>
  * A shutdown hook stops every child before the daemon exits, so a {@code launchctl unload} or a
  * reboot tears graphs down the same way closing the window does. Without it the children would be
- * orphaned and keep running with nothing supervising them.
+ * orphaned and keep running with nothing supervising them. It is also what makes the update restart
+ * clean: the graphs come down through their normal teardown, then come back up under the new jar.
  */
 public final class DaemonCommand implements Command {
 
@@ -62,7 +72,8 @@ public final class DaemonCommand implements Command {
     @Override
     public String usage() {
         return "  daemon [--once]\n\n"
-                + "--once syncs, starts everything, and returns — for checking the setup works.\n"
+                + "--once syncs, starts everything, and returns — for checking the setup works. It\n"
+                + "never applies a HouseGraph update, since that would mean exiting to restart.\n"
                 + "Reads config/remote.json. Runs until stopped; install it as a LaunchAgent to\n"
                 + "start at login. See docs/guides/server-setup.md.";
     }
@@ -87,7 +98,8 @@ public final class DaemonCommand implements Command {
             return 2;
         }
 
-        RemoteDeployment deployment = new RemoteDeployment(config, RemoteState.load());
+        RemoteState state = RemoteState.load();
+        RemoteDeployment deployment = new RemoteDeployment(config, state);
         List<GraphRepository> repositories = deployment.repositories();
         Supervisor supervisor = new Supervisor(launcher);
         CountDownLatch stop = new CountDownLatch(1);
@@ -100,10 +112,15 @@ public final class DaemonCommand implements Command {
         }, "housegraph-daemon-shutdown"));
 
         log.info("Watching {} repository/ies every {}s", repositories.size(), config.pollSeconds());
+        SelfUpdater updater = startUpdater(config, state, args.isEnabled("once"));
         // Forced on the first pass: the state file may remember a commit whose mirror has since been
         // deleted, and "unchanged" would then start nothing at all.
         boolean force = true;
         long nextPollAt = 0;
+        // Checked as soon as the loop starts: a machine that has been off for a month should not
+        // wait out a whole interval before catching up, and a stored ETag makes the check free when
+        // there is nothing new.
+        long nextUpdateCheckAt = 0;
 
         while (stop.getCount() > 0) {
             if (System.currentTimeMillis() >= nextPollAt) {
@@ -114,6 +131,16 @@ public final class DaemonCommand implements Command {
                     supervisor.tick();
                     out.println("Started " + supervisor.graphs().size() + " graph(s).");
                     return 0;
+                }
+            }
+            if (updater != null && System.currentTimeMillis() >= nextUpdateCheckAt) {
+                nextUpdateCheckAt =
+                        System.currentTimeMillis() + config.selfUpdate().checkSeconds() * 1000L;
+                if (checkForUpdate(updater)) {
+                    // The shutdown hook stops the graphs on the way out, and the supervisor that
+                    // keeps this process alive starts it again on the jar just installed.
+                    log.info("Exiting so the supervisor restarts the daemon on the new build");
+                    return ExitCodes.RESTART_REQUESTED;
                 }
             }
             supervisor.tick();
@@ -127,6 +154,58 @@ public final class DaemonCommand implements Command {
             }
         }
         return 0;
+    }
+
+    /**
+     * The updater to run in the loop, or null when this daemon does not update itself.
+     *
+     * <p>Says once, at startup, why it is not going to — an operator who turned the setting on wants
+     * to find out that this machine has no jar it can install from the log they are already reading,
+     * not from an update that silently never arrives.
+     *
+     * @param config the loaded configuration
+     * @param state  the state file holding the ETag and last applied version
+     * @param once   whether this is a {@code --once} run, which never applies an update
+     * @return the updater, or null
+     */
+    private static SelfUpdater startUpdater(RemoteConfig config, RemoteState state, boolean once) {
+        if (!config.selfUpdate().enabled() || once) {
+            return null;
+        }
+        SelfUpdater updater = new SelfUpdater(config.selfUpdate(), state);
+        Optional<String> blocked = updater.canApply();
+        if (blocked.isPresent()) {
+            log.warn("Self-update is on but cannot run here: {}", blocked.get());
+            return null;
+        }
+        log.info("Checking {} for a new HouseGraph release every {}s",
+                config.selfUpdate().repository(), config.selfUpdate().checkSeconds());
+        return updater;
+    }
+
+    /**
+     * One release check, and the install if there is one.
+     *
+     * <p>Only an actual update is worth an {@code info} line on a machine that logs to a file
+     * forever; "still up to date", once an hour, is not. A failed lookup stays at {@code warn}
+     * because it is hourly, not per-tick, and because a machine that has quietly stopped being able
+     * to update itself is worth noticing.
+     *
+     * @param updater the configured updater
+     * @return true when a new jar was installed and the daemon should restart onto it
+     */
+    private static boolean checkForUpdate(SelfUpdater updater) {
+        SelfUpdater.Decision decision = updater.check();
+        switch (decision.action()) {
+            case UPDATE -> {
+                log.info("{}", decision.message());
+                return updater.apply(decision);
+            }
+            case FAILED -> log.warn("Update check failed: {}", decision.message());
+            case UP_TO_DATE -> log.debug("{}", decision.message());
+            default -> log.warn("Not updating: {}", decision.message());
+        }
+        return false;
     }
 
     /**

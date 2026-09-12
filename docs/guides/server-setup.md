@@ -225,6 +225,7 @@ Create `remote.json`:
 | `repositories[].tokenSecret` | HTTPS only: the name of the secrets-store key holding the token. |
 | `allowPluginInstall` | Whether the server may install node libraries by itself. Off by default. |
 | `trustedPluginRepositories` | Optional. Empty means any GitHub repository your graphs name; list repositories to narrow it. |
+| `selfUpdate` | Optional. Whether this machine updates **HouseGraph itself**. Off by default — see [Part 10](#10-optional-let-it-update-itself). |
 
 ---
 
@@ -427,6 +428,58 @@ A sleeping Mac runs no graphs. And in **System Settings**:
 
 ---
 
+## 10. Optional: let it update itself
+
+Everything above keeps your *graphs* current. The jar stays on whatever version you
+built in [Part 3](#3-build-it-on-the-server) until you repeat that by hand. To have
+the machine follow HouseGraph's releases instead, add this to `remote.json`:
+
+```jsonc
+{
+  "selfUpdate": { "enabled": true }
+}
+```
+
+On its own the server then checks for a new release once an hour, installs the jar
+built for this platform, and **exits so the LaunchAgent starts it again** on the new
+build. Your graphs stop for the few seconds that takes and come back under the new
+jar; nothing else changes.
+
+```bash
+housegraph update --check
+```
+
+tells you what it would do, right now, installing nothing. Leave `selfUpdate` off and
+that same command — without `--check` — is the one-line version of the manual upgrade
+in [server-operations.md](server-operations.md#updating-housegraph-itself).
+
+Before turning it on, three things worth knowing:
+
+- **Something has to restart the daemon.** The LaunchAgent from
+  [Part 8](#8-keep-it-running-across-reboots) does, because it is set `KeepAlive`. A
+  daemon you started by hand in a terminal does not, and an update would just look like
+  it stopping.
+- **Your machine has to be one the release builds for.** Releases carry a jar for
+  Apple Silicon macOS, x86-64 Linux and x86-64 Windows. On an Intel Mac or an ARM Linux
+  box nothing is installed — a jar with the wrong native libraries would not start —
+  and `housegraph doctor` says so. Windows is refused too: it will not let a running
+  jar be replaced.
+- **The previous jar is kept**, beside the new one as `housegraph.jar.previous`. If a
+  release misbehaves, stop the agent, move that file back over `housegraph.jar`, and
+  start it again.
+
+```jsonc
+{
+  "selfUpdate": { "enabled": true, "checkSeconds": 3600 }
+}
+```
+
+`checkSeconds` is how often to ask; an hour is the default and 300 the floor. This one
+is a GitHub API call rather than a git poll, so it is rationed differently from
+`pollSeconds` — see [`../engine/self-update.md`](../engine/self-update.md).
+
+---
+
 ## Next
 
 - [server-operations.md](server-operations.md) — deploying changes, updating
@@ -437,6 +490,7 @@ A sleeping Mac runs no graphs. And in **System Settings**:
 
 **When you change this, update…** this file whenever the shape of `remote.json` or
 `housegraph.json` changes, a CLI command or flag is added or renamed, `doctor`'s
-checks change, the prerequisites change, or the daemon stops needing a GUI session. Keep it a **runbook** — reasoning belongs in
+checks change, the prerequisites change, the self-update rules change, or the daemon
+stops needing a GUI session. Keep it a **runbook** — reasoning belongs in
 [`../engine/remote-runtime.md`](../engine/remote-runtime.md), and the two should not
 drift into restating each other.
