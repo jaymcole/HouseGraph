@@ -61,6 +61,7 @@ avoids the rebuild — a preference, not a guarantee.
 | [find-in-graph.md](find-in-graph.md) | Ctrl/Cmd+F over the nodes on the canvas: what matches, and what is never read |
 | [plugin-runtime.md](plugin-runtime.md) | module split, class loading, catalog, discovery |
 | [remote-runtime.md](remote-runtime.md) | git sync, process supervision, exit codes, the headless runner |
+| [self-update.md](self-update.md) | how the daemon installs a new HouseGraph release and restarts onto it |
 | [storage.md](storage.md) | on-disk layout, secrets, preferences |
 | [document-store.md](document-store.md) | the shared JSON document store behind data-store nodes |
 | [logging.md](logging.md) | levels, sinks, external destinations, the SLF4J bridge |

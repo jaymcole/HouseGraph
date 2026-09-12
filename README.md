@@ -111,9 +111,14 @@ minutes.
 | `plugins list \| install <url> \| update [id...]` | node libraries from the terminal |
 | `check <graph.json>` | which libraries a graph needs, and whether you have them |
 | `doctor` | check git, the data directory, config and installed libraries |
+| `update [--check]` | update HouseGraph itself from its latest GitHub release |
 | `nodes list [--json]` | installed node types, or the full machine-readable catalog |
 | `nodes check <graph.json>` | whether a graph's nodes still match what's installed |
 | `schema [graph\|catalog]` | the JSON Schema for the save format or the node catalog |
+
+The machine can follow HouseGraph's own releases too: `selfUpdate` in `remote.json`
+has the daemon install the latest release jar for its platform and restart onto it.
+Off by default.
 
 Two things worth knowing before you start:
 

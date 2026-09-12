@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.ui.menu;
 
+import io.github.jaymcole.housegraph.AppVersion;
 import io.github.jaymcole.housegraph.ui.GraphCanvas;
 import io.github.jaymcole.housegraph.ui.io.RecentGraphs;
 import javafx.scene.control.Alert;
@@ -266,22 +267,9 @@ public class MainMenuBar extends MenuBar {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.initOwner(getScene() == null ? null : getScene().getWindow());
         alert.setTitle("About HouseGraph");
-        alert.setHeaderText("HouseGraph " + version());
+        alert.setHeaderText("HouseGraph " + AppVersion.describe());
         alert.setContentText("A node-graph editor for home automation.\n\n" + DOCUMENTATION_URL);
         alert.showAndWait();
-    }
-
-    /**
-     * The build's version from the jar manifest — the same string {@code housegraph --version}
-     * prints, read the same way, but derived here rather than borrowed from {@code cli/} so the UI
-     * does not depend on the command-line package for one string.
-     *
-     * @return the implementation version, or a stand-in when running from exploded classes, where
-     *         there is no manifest to read one from
-     */
-    private static String version() {
-        String version = MainMenuBar.class.getPackage().getImplementationVersion();
-        return version == null ? "(development build)" : version;
     }
 
     /** A menu item with an optional accelerator; {@code accelerator} may be null. */

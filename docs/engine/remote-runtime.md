@@ -13,6 +13,8 @@ launchd (LaunchAgent, KeepAlive)
         │  every pollSeconds: git ls-remote
         │  on change: fetch + reset --hard + clean
         │  install declared libraries (if permitted)
+        │  every selfUpdate.checkSeconds: is there a newer release?
+        │  on a new one: swap the jar, exit 10, be restarted onto it
         └── one child JVM per graph
               java -jar app.jar run <graph>  ← the ordinary JavaFX app
 ```
@@ -146,11 +148,22 @@ socket to keep open, nothing to go stale if the JVM dies mid-sentence.
 | `20` | configuration error | log it and stop, until the repository changes |
 
 `10` is the seam a future automation node uses to ask for a fresh JVM without
-needing to know a supervisor exists. `20` stops a permanent fault becoming a restart
-loop; `restartAll` clears it, because a new commit may be exactly the fix.
+needing to know a supervisor exists. The daemon uses it for itself after installing
+an update, which is the same request one layer up — the table is a contract between a
+supervised process and its supervisor, and the daemon is one of those too. `20` stops
+a permanent fault becoming a restart loop; `restartAll` clears it, because a new commit
+may be exactly the fix.
 
 Shutdown and the nested timeout chain are in
 [node-lifecycle.md](node-lifecycle.md).
+
+## Updating HouseGraph itself
+
+The graphs repository is only half of what goes stale on an unattended machine; the
+other half is the jar. `selfUpdate` in `remote.json` — **off by default** — has the
+daemon install HouseGraph's latest GitHub release itself, and exit `10` so its
+supervisor restarts it onto the new jar. The design, and every check standing between
+a new release and a new jar, is in [self-update.md](self-update.md).
 
 ## Running a graph with no window
 
@@ -227,6 +240,7 @@ Two practical consequences of the windowed child, both called out in the runbook
 | `housegraph sync [--force]` | pull now and report; starts nothing |
 | `housegraph plugins list [--json] \| install <url> \| update [id...]` | node libraries from the terminal |
 | `housegraph check <graph.json>` | dependency report; non-zero when something is missing |
+| `housegraph update [--check]` | update HouseGraph itself from its latest GitHub release |
 | `housegraph doctor` | is this machine ready? |
 
 Global flags: `--home <dir>`, `--help`, `--version`.
@@ -248,7 +262,7 @@ exits. Both find the graph by the same rule — the first bare argument, or an e
 
 **When you change this, update…** this file whenever you change the sync strategy,
 the manifest or config format, supervision or backoff behaviour, the exit-code
-contract, the CLI surface, the headless runner, or what still stands between the
-daemon and headless children. Config-shape changes also touch
+contract, the CLI surface, the headless runner, how the daemon updates itself, or what
+still stands between the daemon and headless children. Config-shape changes also touch
 [`../guides/server-setup.md`](../guides/server-setup.md); trust changes belong in
 [security-model.md](security-model.md).

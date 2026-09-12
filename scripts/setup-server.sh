@@ -250,7 +250,8 @@ if [[ "$WRITE_CONFIG" == 1 ]]; then
     { "url": "$GRAPHS_REPO_URL", "branch": "$GRAPHS_BRANCH" }
   ],
   "allowPluginInstall": false,
-  "trustedPluginRepositories": []
+  "trustedPluginRepositories": [],
+  "selfUpdate": { "enabled": false }
 }
 EOF
     info "Wrote $REMOTE_JSON"
@@ -356,3 +357,5 @@ info "- Energy -> Start up automatically after a power failure -> on"
 echo ""
 bold "Done. Day to day, deploying is just: git commit && git push to $REPO_DIR_NAME."
 info "Logs: tail -f \"$CONFIG_DIR/logs/housegraph.log\""
+info "To have this machine follow HouseGraph releases too, set selfUpdate.enabled"
+info "to true in $REMOTE_JSON — see docs/guides/server-setup.md, Part 10."

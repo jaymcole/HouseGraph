@@ -1,15 +1,19 @@
 package io.github.jaymcole.housegraph.cli.commands;
 
+import io.github.jaymcole.housegraph.AppVersion;
 import io.github.jaymcole.housegraph.cli.Args;
 import io.github.jaymcole.housegraph.cli.Command;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.remote.GitCommand;
 import io.github.jaymcole.housegraph.remote.GraphProcess;
 import io.github.jaymcole.housegraph.remote.RemoteConfig;
+import io.github.jaymcole.housegraph.remote.RemoteState;
+import io.github.jaymcole.housegraph.remote.SelfUpdater;
 import io.github.jaymcole.housegraph.storage.AppDirectories;
 
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.util.Optional;
 
 /**
  * Reports whether this machine is set up to run graphs unattended, and says what to fix when it
@@ -44,6 +48,7 @@ public final class DoctorCommand implements Command {
         boolean healthy = true;
 
         AppDirectories directories = AppDirectories.get();
+        out.println("HouseGraph:      " + AppVersion.describe());
         out.println("Data directory:  " + directories.root());
 
         boolean git = GitCommand.isAvailable();
@@ -75,6 +80,16 @@ public final class DoctorCommand implements Command {
 
         out.println("Plugin installs: " + describeInstallGate(config));
 
+        out.println("Self-update:     " + describeSelfUpdate(config));
+        if (config.selfUpdate().enabled()) {
+            Optional<String> blocked = new SelfUpdater(config.selfUpdate(), RemoteState.load()).canApply();
+            if (blocked.isPresent()) {
+                out.println("                 It is on, but this machine cannot apply one:");
+                out.println("                 " + blocked.get());
+                healthy = false;
+            }
+        }
+
         PluginCatalog catalog = PluginCatalog.load();
         out.println("Node libraries:  " + catalog.all().size() + " installed, "
                 + catalog.enabled().size() + " enabled");
@@ -84,6 +99,20 @@ public final class DoctorCommand implements Command {
         out.println();
         out.println(healthy ? "Ready." : "Not ready — see the notes above.");
         return healthy ? 0 : 1;
+    }
+
+    /**
+     * Whether this machine keeps HouseGraph itself up to date, and from where.
+     *
+     * <p>Named even when it is off, because "why is this server still on an old build?" and "why did
+     * this server change under me?" are both questions this line answers before they are asked.
+     */
+    private static String describeSelfUpdate(RemoteConfig config) {
+        RemoteConfig.SelfUpdate selfUpdate = config.selfUpdate();
+        if (!selfUpdate.enabled()) {
+            return "off — `housegraph update` applies one by hand";
+        }
+        return "every " + selfUpdate.checkSeconds() + "s from " + selfUpdate.repository();
     }
 
     /**

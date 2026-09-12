@@ -22,6 +22,7 @@ a fresh process.
 | `housegraph doctor` | Is this machine ready? Checks git, the jar, config and libraries |
 | `housegraph sync [--force]` | Pull now and report; starts nothing |
 | `housegraph daemon [--once]` | Sync loop plus supervision |
+| `housegraph update [--check]` | Update HouseGraph itself to the latest release, or just say what one is |
 | `housegraph check <graph.json>` | Which libraries a graph needs, and whether you have them |
 | `housegraph plugins list [--json]` | Installed node libraries, or the full machine-readable catalog |
 | `housegraph plugins install <url>` | Install one |
@@ -41,7 +42,7 @@ Run `housegraph doctor` for the data directory. Underneath it:
 | Path | Holds |
 | --- | --- |
 | `config/remote.json` | Your configuration |
-| `config/remote-state.json` | The last commit deployed, so a reboot is not treated as a change |
+| `config/remote-state.json` | The last commit deployed, so a reboot is not treated as a change, and what self-update has already installed |
 | `config/plugins.json` | Installed node libraries |
 | `plugins/` | The downloaded library jars |
 | `remotes/<owner>-<repo>/` | The local mirror of each graphs repository |
@@ -98,6 +99,37 @@ server, not on your laptop.
 
 ## Updating HouseGraph itself
 
+### One command
+
+```bash
+housegraph update
+```
+
+Downloads the release jar built for this platform, checks it starts, and puts it
+where the running one is — keeping the old one as `housegraph.jar.previous`. Add
+`--check` to see what it would do without doing it.
+
+The daemon keeps running the build it started on until it is restarted:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.jaymcole.housegraph
+```
+
+**On an Intel Mac, an ARM Linux box, or Windows this will refuse**, and say why.
+Releases carry a jar for Apple Silicon macOS, x86-64 Linux and x86-64 Windows only,
+and a running jar cannot be replaced at all on Windows. Build from source instead.
+
+### Without any command at all
+
+Set `selfUpdate.enabled` in `remote.json` and the daemon does the above on its own,
+once an hour, restarting itself onto the new jar. See
+[Part 10 of the setup guide](server-setup.md#10-optional-let-it-update-itself).
+
+### Building it yourself
+
+Still the right answer when you want a build that is not a release, or when your
+machine is not one the releases cover.
+
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
 ```
@@ -118,9 +150,23 @@ launchctl load ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
 housegraph --version
 ```
 
-Unload first — the jar cannot be replaced cleanly while it is running. Your graphs
-stop for as long as this takes, so it is not something to do casually, but nothing
-is lost: the daemon shuts them down through the normal teardown path.
+Unload first — replacing the jar by hand while the daemon is running leaves it on a
+half-copied file. Your graphs stop for as long as the build takes, so it is not
+something to do casually, but nothing is lost: the daemon shuts them down through the
+normal teardown path.
+
+### Going back
+
+Whichever way it was updated, the build it replaced is next to it:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+mv ~/HouseGraph/housegraph.jar.previous ~/HouseGraph/housegraph.jar
+launchctl load ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+```
+
+Turn `selfUpdate` off in `remote.json` first, or the next check puts the newer
+release straight back.
 
 ## Restarts and backoff
 
@@ -146,5 +192,6 @@ read-only.
 ---
 
 **When you change this, update…** this file whenever a CLI command is added or
-renamed, the data-directory layout changes, the restart/backoff behaviour changes, or
-a log destination is added or changes what an operator has to configure.
+renamed, the data-directory layout changes, the restart/backoff behaviour changes, the
+way HouseGraph is updated on a server changes, or a log destination is added or changes
+what an operator has to configure.
