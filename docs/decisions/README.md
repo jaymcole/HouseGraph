@@ -28,3 +28,4 @@ Do not write one for an ordinary implementation choice.
 | [0012](0012-a-module-runs-as-a-nested-graph.md) | A module runs as a nested graph, not flattened into its consumer |
 | [0013](0013-publishing-a-module-is-explicit.md) | Publishing a module is an explicit command, not a side effect of saving |
 | [0014](0014-the-daemon-updates-itself-by-swapping-its-jar.md) | The daemon updates itself by swapping its jar and exiting |
+| [0015](0015-nothing-blocks-inside-synchronized.md) | Nothing the engine holds while a node blocks is `synchronized` |

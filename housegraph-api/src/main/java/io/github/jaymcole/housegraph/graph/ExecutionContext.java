@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -81,13 +82,22 @@ public final class ExecutionContext {
     private final Map<BaseNode, Set<FlowPort>> flowArrivals = new ConcurrentHashMap<>();
 
     /**
-     * Per-node resolution monitors, scoped to this run. Two branch threads of the same run that
-     * share a data dependency take the same monitor (so the node resolves once); a data cycle
-     * re-enters it on one thread (reentrant) and hits the {@code IN_PROGRESS} check. Crucially the
-     * monitor is <em>per-context</em>, not the node object itself, so two concurrent runs sharing a
-     * node don't serialize on each other's {@code process()} — each has isolated state anyway.
+     * Per-node resolution locks, scoped to this run. Two branch threads of the same run that share a
+     * data dependency take the same lock (so the node resolves once); a data cycle re-enters it on
+     * one thread (reentrant) and hits the {@code IN_PROGRESS} check. Crucially the lock is
+     * <em>per-context</em>, not the node object itself, so two concurrent runs sharing a node don't
+     * serialize on each other's {@code process()} — each has isolated state anyway.
+     *
+     * <p><b>A {@link ReentrantLock}, never {@code synchronized}.</b> This lock is held across a
+     * node's whole {@code process()}, which is allowed to block — and on Java 21 a virtual thread
+     * that blocks inside a {@code synchronized} block <em>pins</em> its carrier rather than
+     * unmounting. Runs execute on a virtual-thread-per-task executor whose scheduler has one carrier
+     * per CPU, so with an intrinsic monitor here the number of nodes that may block at once was
+     * capped at the core count, and a graph that needed one more deadlocked until timeouts fired.
+     * {@code ReentrantLock} parks through {@code LockSupport}, which unmounts, so a blocked node
+     * costs a virtual thread and not a core. See {@code docs/engine/concurrency.md}.
      */
-    private final Map<BaseNode, Object> resolutionLocks = new ConcurrentHashMap<>();
+    private final Map<BaseNode, ReentrantLock> resolutionLocks = new ConcurrentHashMap<>();
 
     /** Arrival counts at flow-join nodes this run, so a join fires only once all its branches have arrived. */
     private final Map<BaseNode, AtomicInteger> joinArrivals = new ConcurrentHashMap<>();
@@ -185,9 +195,9 @@ public final class ExecutionContext {
         return arrived == null ? Set.of() : Set.copyOf(arrived);
     }
 
-    /** This run's resolution monitor for {@code node} (see the field). */
-    Object lockFor(BaseNode node) {
-        return resolutionLocks.computeIfAbsent(node, ignored -> new Object());
+    /** This run's resolution lock for {@code node} (see the field). */
+    ReentrantLock lockFor(BaseNode node) {
+        return resolutionLocks.computeIfAbsent(node, ignored -> new ReentrantLock());
     }
 
     /**
