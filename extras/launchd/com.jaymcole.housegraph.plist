@@ -79,5 +79,24 @@
          or any that are slow to stop. -->
     <key>ExitTimeOut</key>
     <integer>120</integer>
+
+    <!-- launchd starts a job with a near-empty environment: PATH is /usr/bin:/bin:/usr/sbin:/sbin
+         and nothing your shell sets in ~/.zshrc is present. That is fine for HouseGraph itself,
+         which needs only the java binary named above by absolute path, but NOT for nodes that
+         shell out to a PATH-resolved launcher — a web node running `npm run build`, a Node-server
+         node running `node server.js`. Those spawn `sh -c <command>`, which is non-interactive and
+         so reads no profile either, and the command comes back "not found" (exit 127). It works
+         when you start the daemon from a terminal, because the daemon inherits your shell's PATH
+         and hands it to its children; under launchd there is nothing to inherit.
+
+         The value below covers Homebrew on Apple Silicon (/opt/homebrew/bin) and on Intel
+         (/usr/local/bin). Check yours with `which -a node npm` and add its directory if it lives
+         somewhere else. A runtime managed by nvm has no stable path — nvm is a shell function,
+         which launchd will never run — so on a server install node through Homebrew instead. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 </dict>
 </plist>
