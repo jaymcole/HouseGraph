@@ -29,6 +29,12 @@ import java.util.Map;
  * count as healthy, so an occasional crash still recovers promptly while a permanent fault settles
  * into a slow, readable retry.
  *
+ * <h2>A replacement waits for the original to be gone</h2>
+ * {@code GraphProcess.stop} does not return until the old process has actually exited, and when
+ * even a kill cannot be confirmed the graph's restart is held for {@link #UNCONFIRMED_STOP_DELAY}.
+ * Two copies of one graph running at once is worse than a graph that is briefly down: the second
+ * fails to bind whatever the first still holds, and says nothing about why.
+ *
  * <p>Not thread-safe: the daemon drives it from one loop.
  */
 public final class Supervisor {
@@ -51,6 +57,16 @@ public final class Supervisor {
      * strictly longer than the one inside it.
      */
     static final long STOP_TIMEOUT_SECONDS = 40;
+
+    /**
+     * How long to leave a graph stopped when its previous process could not be confirmed gone.
+     *
+     * <p>Starting a replacement then would put two copies of one graph side by side, and the new
+     * one's port-binding nodes would fail against the old one's sockets — a failure whose cause
+     * appears nowhere in the new process's own log. Waiting is the lesser harm: the graph is down
+     * either way, and this way it comes back once rather than crash-looping against itself.
+     */
+    static final Duration UNCONFIRMED_STOP_DELAY = Duration.ofSeconds(30);
 
     /** One graph being kept alive. */
     private static final class Supervised {
@@ -119,10 +135,13 @@ public final class Supervisor {
      */
     public void restartAll() {
         for (Supervised entry : supervised.values()) {
-            stop(entry);
+            // Reset before stopping, not after: stop() sets a retry time of its own when it cannot
+            // confirm the old process is gone, and clearing that afterwards would start the
+            // replacement into the very conflict the delay exists to avoid.
             entry.backoff = INITIAL_BACKOFF;
             entry.retryAtMillis = 0;
             entry.abandoned = false;
+            stop(entry);
         }
     }
 
@@ -207,8 +226,15 @@ public final class Supervisor {
         if (entry == null || entry.process == null) {
             return;
         }
-        GraphProcess.stop(entry.process, STOP_TIMEOUT_SECONDS);
+        Process process = entry.process;
         entry.process = null;
+        if (GraphProcess.stop(process, STOP_TIMEOUT_SECONDS)) {
+            return;
+        }
+        entry.retryAtMillis = clock.getAsLong() + UNCONFIRMED_STOP_DELAY.toMillis();
+        log.error("{} could not be confirmed stopped; holding its restart for {}s rather than "
+                        + "running two copies of it at once", entry.graph.getFileName(),
+                UNCONFIRMED_STOP_DELAY.toSeconds());
     }
 
     /** The graphs currently abandoned after a configuration error, for {@code doctor}-style output. */

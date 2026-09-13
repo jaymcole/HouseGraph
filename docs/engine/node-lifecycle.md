@@ -57,11 +57,28 @@ node teardown             ~11s   e.g. housegraph-web's NodeProcessServer.stop()
   < NodeGraph release      15s   DEFAULT_RELEASE_TIMEOUT, per node, concurrent
     < App.stop()           25s   SHUTDOWN_TIMEOUT_SECONDS = release + 10
       < Supervisor         40s   STOP_TIMEOUT_SECONDS, before it kills the child JVM
+        < launchd         120s   ExitTimeOut, before it kills the daemon itself
 ```
 
 Invert any pair and the outer wait truncates the inner one, killing a child
 part-way through the teardown it was already performing — which orphans exactly the
 child processes the chain exists to clean up.
+
+**The supervisor is not the outermost layer; whatever supervises the daemon is.**
+The daemon stops its graphs one at a time, so its own teardown can run to 40s *per
+graph*, and it is doing that inside a shutdown hook that its supervisor is timing.
+launchd's default `ExitTimeOut` is **20 seconds** — shorter than a single graph's
+budget — so a LaunchAgent without that key set gets SIGKILLed mid-teardown on every
+restart, orphaning the graphs it had not reached. They keep running and keep their
+ports, and the replacement graphs then fail to bind. The shipped
+[`extras/launchd`](../../extras/launchd) plist sets it to 120; raise it for many
+graphs or slow ones. A systemd unit needs `TimeoutStopSec` for the same reason.
+
+Below the chain, one thing no timeout covers: a process a **node** spawned is not
+cleaned up by its JVM dying — it is reparented and keeps running. `GraphProcess.stop`
+snapshots the child's descendants before signalling it and stops them alongside it,
+because a leaked web server holding port 8080 is indistinguishable, from the
+replacement graph's point of view, from a port that is simply in use.
 
 ## Shutdown paths
 
@@ -90,6 +107,7 @@ hook. Authoring guidance is in
 ---
 
 **When you change this, update…** this file and the `BaseNode` / `NodeGraph`
-Javadoc whenever you change the teardown contract, either timeout, or the shutdown
-hook. A change to the timeout chain also touches
+Javadoc whenever you change the teardown contract, any timeout in the chain
+(including the supervisor's own, outermost one), how descendants are cleaned up, or
+the shutdown hook. A change to the timeout chain also touches
 [remote-runtime.md](remote-runtime.md).

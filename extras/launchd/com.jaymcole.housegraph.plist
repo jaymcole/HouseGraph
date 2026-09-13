@@ -7,13 +7,26 @@
     LaunchDaemon runs before login with no window server and would fail on every start.
     See docs/engine/remote-runtime.md.
 
+    Every path below must be absolute. launchd does not expand ~, and a job naming a path it
+    cannot resolve fails to start with nothing useful in the log.
+
     Install:
         cp extras/launchd/com.jaymcole.housegraph.plist ~/Library/LaunchAgents/
-        # edit the two paths below, then:
-        launchctl load ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+        # edit the paths below, then:
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
 
     Stop:
-        launchctl unload ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+        launchctl bootout gui/$(id -u)/com.jaymcole.housegraph
+
+    Restart (after replacing the jar):
+        launchctl kickstart -k gui/$(id -u)/com.jaymcole.housegraph
+
+    Is it running?
+        launchctl print gui/$(id -u)/com.jaymcole.housegraph
+
+    The older `launchctl load`/`unload` spelling still works, but reports nearly every failure as
+    "Load failed: 5: Input/output error" — including a plist that isn't where you think it is.
+    bootstrap says what is actually wrong.
 
     The machine also needs automatic login enabled, and to stay awake:
         sudo pmset -a sleep 0 disablesleep 1
@@ -55,5 +68,16 @@
          be up yet, and a failed first poll would just wait out the whole poll interval. -->
     <key>ThrottleInterval</key>
     <integer>30</integer>
+
+    <!-- How long launchd waits after SIGTERM before it SIGKILLs the daemon. It MUST exceed the
+         daemon's own teardown budget, which is Supervisor.STOP_TIMEOUT_SECONDS (40s) per graph,
+         taken one graph at a time. launchd's default is 20 seconds — shorter than a single
+         graph's budget — so without this key a restart kills the daemon part-way through
+         stopping its children, orphaning the ones it had not reached. Those keep running, keep
+         their ports, and the replacement graphs then fail to bind. This is the outermost layer
+         of the timeout chain in docs/engine/node-lifecycle.md; raise it if you run many graphs
+         or any that are slow to stop. -->
+    <key>ExitTimeOut</key>
+    <integer>120</integer>
 </dict>
 </plist>

@@ -115,6 +115,9 @@ The daemon keeps running the build it started on until it is restarted:
 launchctl kickstart -k gui/$(id -u)/com.jaymcole.housegraph
 ```
 
+`kickstart -k` stops the running instance and starts it again — no unload/load pair,
+and nothing to get half-done.
+
 **On an Intel Mac, an ARM Linux box, or Windows this will refuse**, and say why.
 Releases carry a jar for Apple Silicon macOS, x86-64 Linux and x86-64 Windows only,
 and a running jar cannot be replaced at all on Windows. Build from source instead.
@@ -125,13 +128,42 @@ Set `selfUpdate.enabled` in `remote.json` and the daemon does the above on its o
 once an hour, restarting itself onto the new jar. See
 [Part 10 of the setup guide](server-setup.md#10-optional-let-it-update-itself).
 
-### Building it yourself
+### By hand, from a release
 
-Still the right answer when you want a build that is not a release, or when your
-machine is not one the releases cover.
+What to do when you are on a build too old to have `housegraph update` at all — the
+first upgrade on any server set up before v1.20.1. Stage it, prove it runs, and only
+then put it in place, which is what the daemon's own updater does internally:
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+curl -fL -o /tmp/housegraph.jar \
+  https://github.com/jaymcole/HouseGraph/releases/download/vX.Y.Z/app-X.Y.Z-macos.jar
+```
+
+```bash
+java -jar /tmp/housegraph.jar --version
+```
+
+Only once that prints the version you expect:
+
+```bash
+launchctl bootout gui/$(id -u)/com.jaymcole.housegraph
+mv /tmp/housegraph.jar ~/HouseGraph/housegraph.jar
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+housegraph --version
+```
+
+`curl -f` matters: without it, a wrong URL saves the error page **as your jar**. So does
+staging in `/tmp` — writing straight over the jar a daemon is running truncates it under
+the running process. And `bootout` before `mv`, not after: confirm the service is gone
+(`launchctl print` says "Could not find service") before touching the file.
+
+### Building it yourself
+
+For a build that is not a release, or a machine the releases don't cover — an Intel Mac,
+an ARM Linux box.
+
+```bash
+launchctl bootout gui/$(id -u)/com.jaymcole.housegraph
 ```
 
 ```bash
@@ -143,30 +175,47 @@ cp app/build/libs/app-*.jar ~/HouseGraph/housegraph.jar
 ```
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
-```
-
-```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
 housegraph --version
 ```
 
-Unload first — replacing the jar by hand while the daemon is running leaves it on a
+Stop it first — copying over the jar while the daemon is running leaves it on a
 half-copied file. Your graphs stop for as long as the build takes, so it is not
 something to do casually, but nothing is lost: the daemon shuts them down through the
 normal teardown path.
+
+A locally built jar reports version `0.2.0`, the source tree's fallback. With
+`selfUpdate` on, the daemon reads that as older than the latest release and replaces
+your build with it — so turn self-update off while you are running one.
 
 ### Going back
 
 Whichever way it was updated, the build it replaced is next to it:
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+launchctl bootout gui/$(id -u)/com.jaymcole.housegraph
 mv ~/HouseGraph/housegraph.jar.previous ~/HouseGraph/housegraph.jar
-launchctl load ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
 ```
 
 Turn `selfUpdate` off in `remote.json` first, or the next check puts the newer
 release straight back.
+
+## Controlling the daemon
+
+| Want to | Command |
+| --- | --- |
+| Start it | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jaymcole.housegraph.plist` |
+| Stop it | `launchctl bootout gui/$(id -u)/com.jaymcole.housegraph` |
+| Restart it | `launchctl kickstart -k gui/$(id -u)/com.jaymcole.housegraph` |
+| Is it running? | `launchctl print gui/$(id -u)/com.jaymcole.housegraph` |
+
+`launchctl load`/`unload` still work but report almost every failure as
+`Load failed: 5: Input/output error`, including a plist that is not where you think it
+is. Use the four above.
+
+**A plist edit needs `bootout` then `bootstrap`** — `kickstart` restarts the job as
+launchd currently understands it and will not pick up a changed file.
 
 ## Restarts and backoff
 
