@@ -135,6 +135,17 @@ A graph needing a library that could not be installed still runs. Its nodes load
 `MissingNode` placeholders and the log says what was skipped and why. Refusing to
 start would turn one unavailable library into a dead machine.
 
+**A replacement never starts beside the graph it replaces.** `GraphProcess.stop`
+returns only once the old process is confirmed gone — a forced kill is waited on too,
+because `destroyForcibly()` returns before the kill has landed — and it takes the
+graph's own subprocesses with it, since those are reparented rather than cleaned up
+when their JVM dies. When even a kill cannot be confirmed, the supervisor holds that
+graph's restart for `UNCONFIRMED_STOP_DELAY` instead of starting a second copy. Two
+copies of one graph is the worse failure: the new one cannot bind what the old one
+still holds, and nothing in its own log says why. The outermost layer of that chain is
+the supervisor of the *daemon* — see the timeout chain in
+[node-lifecycle.md](node-lifecycle.md).
+
 ### Exit codes
 
 `remote/ExitCodes` is the contract between a supervised app and its supervisor. An

@@ -13,7 +13,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * One supervised HouseGraph instance: a child JVM running exactly one graph.
@@ -29,6 +31,16 @@ import java.util.concurrent.TimeUnit;
 public final class GraphProcess {
 
     private static final Logger log = Log.get(GraphProcess.class);
+
+    /**
+     * How long a force-killed child gets to actually disappear. A {@code SIGKILL} lands in
+     * milliseconds unless the process is stuck in the kernel, so this is a bound on a pathology
+     * rather than a wait anything normally spends.
+     */
+    static final long FORCE_KILL_TIMEOUT_SECONDS = 10;
+
+    /** How long a graph's surviving subprocess gets to exit on a signal before it is killed. */
+    static final long DESCENDANT_TIMEOUT_SECONDS = 5;
 
     /**
      * Launches a child. Injected so {@link Supervisor} can be tested without spawning JVMs — the
@@ -142,20 +154,41 @@ public final class GraphProcess {
 
     /**
      * Stops a child the way {@code App}'s shutdown hook expects: a signal first, so teardown runs,
-     * and force only if it won't go.
+     * and force only if it won't go — then does not return until the process is actually gone.
      *
      * <p>The wait is what makes the hook worth having. Killing immediately would skip every node's
      * {@code onRemoved()} — connections, child processes and timers all left to the OS — which is
      * exactly the leak the hook exists to prevent.
      *
+     * <h4>Gone means gone, not asked to go</h4>
+     * {@code destroyForcibly()} only <em>requests</em> the kill; it returns before the process has
+     * died. Reporting success there would let {@link Supervisor} start a replacement graph while the
+     * old one still held its ports, and a node that binds one would fail on the new copy for reasons
+     * nothing in its own log explains. So a forced kill is waited on too, and a process that survives
+     * even that is reported as still running rather than quietly assumed dead.
+     *
+     * <h4>And its subprocesses with it</h4>
+     * A graph's own subprocess — a web server, a language runtime a node shells out to — is
+     * <b>not</b> cleaned up when the graph's JVM dies. It is reparented and keeps running, holding
+     * whatever port it bound. So the child's descendants are snapshotted before it is signalled
+     * (afterwards they can no longer be found from its handle) and stopped alongside it.
+     *
      * @param process        the child to stop
-     * @param timeoutSeconds how long to let it shut down cleanly
-     * @return true if it exited on its own, false if it had to be forced
+     * @param timeoutSeconds how long to let it shut down cleanly before it is killed
+     * @return true when the process is confirmed gone, false when it could not be
      */
     public static boolean stop(Process process, long timeoutSeconds) {
         if (!process.isAlive()) {
             return true;
         }
+        List<ProcessHandle> descendants = descendantsOf(process);
+        boolean stopped = terminate(process, timeoutSeconds);
+        reap(descendants);
+        return stopped;
+    }
+
+    /** Signals, waits, kills, waits again. See {@link #stop}. */
+    private static boolean terminate(Process process, long timeoutSeconds) {
         process.destroy();
         try {
             if (process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
@@ -166,6 +199,66 @@ public final class GraphProcess {
         }
         log.warn("A graph process did not stop within {}s; killing it", timeoutSeconds);
         process.destroyForcibly();
+        try {
+            if (process.waitFor(FORCE_KILL_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                return true;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        log.error("A graph process survived being killed; whatever it holds — ports, sockets, files "
+                + "— is still held, so its replacement is not started yet");
         return false;
+    }
+
+    /**
+     * The child's descendants, or none when this {@link Process} cannot produce a handle.
+     *
+     * <p>{@code Process.descendants()} is a default method over {@code toHandle()}, which an
+     * implementation is free not to support — the JDK's own default throws. Treating that as "no
+     * descendants" keeps a caller holding such a process working exactly as it did before.
+     */
+    private static List<ProcessHandle> descendantsOf(Process process) {
+        try {
+            return process.descendants().toList();
+        } catch (UnsupportedOperationException e) {
+            log.debug("This process cannot enumerate descendants; none will be cleaned up", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Stops anything the graph spawned that outlived it, signal first and kill after one shared
+     * grace period — shared rather than per-process so a graph with several subprocesses does not
+     * multiply the wait.
+     */
+    private static void reap(List<ProcessHandle> descendants) {
+        List<ProcessHandle> surviving = descendants.stream().filter(ProcessHandle::isAlive).toList();
+        if (surviving.isEmpty()) {
+            return;
+        }
+        for (ProcessHandle handle : surviving) {
+            log.warn("A graph's subprocess (pid {}) outlived it; stopping it", handle.pid());
+            handle.destroy();
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(DESCENDANT_TIMEOUT_SECONDS);
+        for (ProcessHandle handle : surviving) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                break;
+            }
+            try {
+                handle.onExit().get(remaining, TimeUnit.NANOSECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (ExecutionException | TimeoutException e) {
+                log.debug("Subprocess {} did not exit within the grace period", handle.pid(), e);
+            }
+        }
+        surviving.stream().filter(ProcessHandle::isAlive).forEach(handle -> {
+            log.warn("Subprocess {} ignored the signal; killing it", handle.pid());
+            handle.destroyForcibly();
+        });
     }
 }

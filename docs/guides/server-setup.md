@@ -399,16 +399,29 @@ Set both log paths to something real, e.g.
 `/Users/you/Library/Logs/housegraph-daemon.log`. Then load it:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jaymcole.housegraph.plist
 ```
 
 ```bash
-launchctl list | grep housegraph
+launchctl print gui/$(id -u)/com.jaymcole.housegraph
 ```
 
-On recent macOS the modern spelling is
-`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jaymcole.housegraph.plist`;
-either works. To stop it, `launchctl unload` the same path.
+That should report `state = running` and a pid. To stop it,
+`launchctl bootout gui/$(id -u)/com.jaymcole.housegraph`; to restart it after replacing
+the jar, `launchctl kickstart -k gui/$(id -u)/com.jaymcole.housegraph`.
+
+> **Use `bootstrap`, not the older `launchctl load`.** `load` reports nearly every
+> failure as `Load failed: 5: Input/output error` — including the commonest one, a
+> plist that isn't at the path you gave it. `bootstrap` says what is actually wrong.
+
+**Every path in the plist must be absolute.** launchd does not expand `~`, and a job
+naming a path it cannot resolve fails to start with nothing useful in the log.
+
+The plist also sets `ExitTimeOut` to 120 seconds. Leave it: it is how long launchd
+waits for the daemon to stop its graphs before killing it, and launchd's default of 20
+seconds is shorter than a single graph's shutdown budget — too short, and a restart
+orphans graphs that then hold their ports against their own replacements. See
+[`../engine/node-lifecycle.md`](../engine/node-lifecycle.md).
 
 ---
 
@@ -444,6 +457,20 @@ On its own the server then checks for a new release once an hour, installs the j
 built for this platform, and **exits so the LaunchAgent starts it again** on the new
 build. Your graphs stop for the few seconds that takes and come back under the new
 jar; nothing else changes.
+
+> ### This cannot bootstrap itself
+>
+> A self-updater has to already be running to run. **The build you are on must be
+> v1.20.1 or newer** — the first release that contains this — or the key above is read
+> by nothing and nothing happens. `housegraph doctor` printing no `Self-update:` line
+> at all means you are on an older build. Do that first upgrade by hand ([server
+> operations](server-operations.md#updating-housegraph-itself)); every one after it is
+> automatic.
+
+**It also needs a supervisor, not just a terminal.** Applying an update ends with the
+daemon exiting, which under the LaunchAgent is a restart and in a terminal is just your
+daemon stopping. Finish [Part 8](#8-keep-it-running-across-reboots) before turning this
+on, and leave it off on a machine where you start the daemon by hand.
 
 ```bash
 housegraph update --check

@@ -30,10 +30,17 @@ class SupervisorTest {
     private static final class FakeProcess extends Process {
         private boolean alive = true;
         private int exitCode;
+        /** When set, the process ignores every signal — a child wedged in the kernel. */
+        private boolean unkillable;
 
         void exitWith(int code) {
             this.exitCode = code;
             this.alive = false;
+        }
+
+        /** Makes this process survive destroy(), destroyForcibly() and every wait. */
+        void refuseToDie() {
+            this.unkillable = true;
         }
 
         @Override
@@ -57,13 +64,18 @@ class SupervisorTest {
 
         @Override
         public boolean waitFor(long timeout, TimeUnit unit) {
+            if (unkillable) {
+                return false;
+            }
             alive = false;
             return true;
         }
 
         @Override
         public void destroy() {
-            alive = false;
+            if (!unkillable) {
+                alive = false;
+            }
         }
 
         @Override
@@ -102,6 +114,38 @@ class SupervisorTest {
         FakeProcess latest() {
             return processes.get(processes.size() - 1);
         }
+    }
+
+    @Test
+    void aGraphWhoseProcessWillNotDieIsNotStartedAgainBesideItself() {
+        // The old process still holds its ports. A replacement started now would fail to bind them
+        // and blame itself, so the supervisor waits instead.
+        supervisor.setGraphs(List.of(PORCH));
+        supervisor.tick();
+        assertEquals(1, launcher.launched.size());
+        launcher.latest().refuseToDie();
+
+        supervisor.restartAll();
+        supervisor.tick();
+
+        assertEquals(1, launcher.launched.size(),
+                "a second copy must not be started while the first cannot be confirmed gone");
+    }
+
+    @Test
+    void aGraphWhoseProcessWouldNotDieIsStartedAgainOnceTheHoldExpires() {
+        // Held, not abandoned: whatever wedged it is usually gone by the time the delay is up, and a
+        // graph that never comes back is worse than one that comes back late.
+        supervisor.setGraphs(List.of(PORCH));
+        supervisor.tick();
+        launcher.latest().refuseToDie();
+        supervisor.restartAll();
+        supervisor.tick();
+
+        now.addAndGet(Supervisor.UNCONFIRMED_STOP_DELAY.toMillis() + 1);
+        supervisor.tick();
+
+        assertEquals(2, launcher.launched.size(), "the graph comes back once the hold expires");
     }
 
     private final AtomicLong now = new AtomicLong(1_000_000L);

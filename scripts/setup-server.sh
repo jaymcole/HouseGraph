@@ -321,10 +321,12 @@ else
 
     if launchctl list | grep -q com.jaymcole.housegraph; then
         info "Already loaded; reloading"
-        launchctl unload "$PLIST_DEST" 2>/dev/null || true
+        launchctl bootout "gui/$(id -u)/com.jaymcole.housegraph" 2>/dev/null || true
     fi
-    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST" 2>/dev/null; then
-        launchctl load "$PLIST_DEST"
+    # bootstrap, not load: `load` reports almost every failure as "Load failed: 5: Input/output
+    # error", including a plist that isn't where it was expected, so its output cannot be acted on.
+    if ! launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"; then
+        warn "launchctl bootstrap failed — check the paths in $PLIST_DEST (they must be absolute)"
     fi
 
     sleep 1
