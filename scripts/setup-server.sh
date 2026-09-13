@@ -319,6 +319,24 @@ else
         "$PLIST_SRC" > "$PLIST_DEST"
     info "Wrote $PLIST_DEST"
 
+    # The plist ships a PATH covering Homebrew on both architectures, because launchd gives a job
+    # almost no environment and nodes that shell out (npm run build, node server.js) resolve their
+    # launcher from PATH. A runtime installed anywhere else has to be added by hand, and the symptom
+    # if it isn't — a node failing with "command not found" — never points at the plist.
+    NODE_BIN=$(command -v node 2>/dev/null || true)
+    if [[ -n "$NODE_BIN" ]]; then
+        NODE_DIR=$(dirname "$NODE_BIN")
+        case "$NODE_DIR" in
+            /opt/homebrew/bin|/usr/local/bin|/usr/bin|/bin) ;;
+            *)
+                warn "node is at $NODE_BIN, which is not on the PATH the LaunchAgent will use."
+                warn "Add $NODE_DIR to EnvironmentVariables.PATH in $PLIST_DEST, or install node"
+                warn "through Homebrew — an nvm-managed runtime has no stable path and launchd"
+                warn "cannot run nvm, which is a shell function."
+                ;;
+        esac
+    fi
+
     if launchctl list | grep -q com.jaymcole.housegraph; then
         info "Already loaded; reloading"
         launchctl bootout "gui/$(id -u)/com.jaymcole.housegraph" 2>/dev/null || true
