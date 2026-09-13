@@ -183,6 +183,32 @@ git ls-remote git@github.com:YOUR-NAME/my-graphs.git
 That should print a commit id. If it asks for a password or says "Permission
 denied", fix it here — nothing later will work until this does.
 
+> ### ⚠️ The daemon will not have your ssh-agent
+>
+> That check passes in *your shell*, which has an ssh-agent holding your unlocked
+> keys. A LaunchAgent does not: launchd starts jobs with a minimal environment, so a
+> key the agent was holding is a key the daemon cannot use, and every sync fails with
+> `Permission denied (publickey)` while everything else looks healthy.
+>
+> **Leave the deploy key without a passphrase** — that is why the command above passes
+> no `-N` prompt and why [`setup-server.sh`](../../scripts/setup-server.sh) passes
+> `-N ""`. A passphrase-less key needs no agent and works under any supervisor.
+>
+> If you must use a key the agent unlocks, or ssh picks the wrong identity, name it to
+> the daemon explicitly in the LaunchAgent's plist instead:
+>
+> ```xml
+> <key>EnvironmentVariables</key>
+> <dict>
+>     <key>GIT_SSH_COMMAND</key>
+>     <string>ssh -i /Users/you/.ssh/housegraph_deploy -o IdentitiesOnly=yes</string>
+> </dict>
+> ```
+>
+> `housegraph doctor` checks each configured repository and says which are reachable,
+> and warns when a repository it *could* reach was reached using an agent the daemon
+> will not have.
+
 ### Alternative: HTTPS with a token
 
 Store a personal access token (scope `repo`, read-only is enough) in the secrets

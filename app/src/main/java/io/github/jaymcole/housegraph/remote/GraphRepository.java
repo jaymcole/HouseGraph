@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -36,6 +37,8 @@ public final class GraphRepository {
 
     private final RemoteConfig.Repository config;
     private final Path clone;
+    /** Built on first use and reused; see {@link #buildCredentialEnvironment()}. */
+    private Map<String, String> credentials;
 
     public GraphRepository(RemoteConfig.Repository config) {
         this(config, AppDirectories.get().remoteRepo(config.key()));
@@ -116,14 +119,13 @@ public final class GraphRepository {
         // --depth 1: the daemon only ever runs the tip, and a shallow mirror keeps a repository with
         // a long history from costing minutes on a first start.
         GitCommand.in(clone.getParent())
-                .withEnvironment(credentialEnvironment())
                 .run("clone", "--depth", "1", "--branch", config.branch(),
                         config.url(), clone.getFileName().toString())
                 .orThrow("Cloning " + config.url());
     }
 
     private void update() {
-        GitCommand git = git().withEnvironment(credentialEnvironment());
+        GitCommand git = git();
         git.run("fetch", "--depth", "1", "origin", config.branch()).orThrow("Fetching " + config.url());
         git.run("reset", "--hard", "FETCH_HEAD").orThrow("Updating " + clone);
         // Files deleted upstream survive a reset if they are untracked here — a graph removed from
@@ -132,7 +134,45 @@ public final class GraphRepository {
     }
 
     private GitCommand git() {
-        return GitCommand.in(isCloned() ? clone : null);
+        return GitCommand.in(isCloned() ? clone : null).withEnvironment(gitEnvironment());
+    }
+
+    /**
+     * The environment every git call for this repository runs under: its credentials, and the two
+     * settings that stop git or ssh waiting for an answer nobody is going to give.
+     *
+     * <h4>Nothing may ever prompt</h4>
+     * A daemon has no terminal. Under a supervisor a prompt fails outright, but run from a shell —
+     * which is how {@code doctor} and a hand-started daemon run — git or ssh will happily block
+     * forever on a password or a key passphrase, and the poll loop stops dead with no error to
+     * explain it. {@code GIT_TERMINAL_PROMPT=0} covers git's own prompts and {@code BatchMode=yes}
+     * covers ssh's. Neither disables an ssh <em>agent</em>: a key the agent already holds still
+     * works, which is the case that should work.
+     *
+     * <p>{@code BatchMode} is appended to whatever {@code GIT_SSH_COMMAND} the environment already
+     * carries rather than replacing it, because a server that has to name its deploy key explicitly
+     * sets exactly that variable — overwriting it would break the setup it is meant to support.
+     */
+    private Map<String, String> gitEnvironment() {
+        Map<String, String> environment = new LinkedHashMap<>(credentialEnvironment());
+        environment.put("GIT_TERMINAL_PROMPT", "0");
+        environment.put("GIT_SSH_COMMAND", nonInteractiveSsh(System.getenv("GIT_SSH_COMMAND")));
+        return environment;
+    }
+
+    /**
+     * {@code existing} with batch mode added, or plain {@code ssh -o BatchMode=yes} when there is
+     * none. Pure, and separate from the environment lookup, because the rule worth pinning down is
+     * that an operator's own command survives: a server that must name its deploy key does so
+     * through this variable, and replacing it rather than extending it would break exactly the
+     * setup that needs it most.
+     *
+     * @param existing the inherited {@code GIT_SSH_COMMAND}, or null
+     * @return the command git should use
+     */
+    static String nonInteractiveSsh(String existing) {
+        String base = existing == null || existing.isBlank() ? "ssh" : existing.strip();
+        return base.contains("BatchMode") ? base : base + " -o BatchMode=yes";
     }
 
     /**
@@ -142,8 +182,25 @@ public final class GraphRepository {
      * into the remote URL, because {@code argv} is readable by every process on the machine while a
      * child's environment is not. For an SSH URL this returns nothing at all: the key is the user's,
      * handled by their agent, and HouseGraph never sees a credential.
+     *
+     * <p>Applied to <b>every</b> git call through {@link #git()}, the poll included. It used to be
+     * attached only to clone and fetch, which left an HTTPS repository's {@code ls-remote} — the one
+     * call made on a timer — reaching for a credential it had not been given.
      */
     private Map<String, String> credentialEnvironment() {
+        if (credentials == null) {
+            credentials = buildCredentialEnvironment();
+        }
+        return credentials;
+    }
+
+    /**
+     * Builds that environment once. Cached by {@link #credentialEnvironment()} because it writes a
+     * throwaway askpass script to disk, and git now runs with this environment on every poll — a
+     * fresh script a minute, deleted only when the JVM exits, is a leak on a machine that runs for
+     * months. The token is therefore read once per process; rotating it takes a daemon restart.
+     */
+    private Map<String, String> buildCredentialEnvironment() {
         if (config.tokenSecret() == null) {
             return Map.of();
         }
