@@ -29,8 +29,8 @@ a node author needs.
 ## Where nodes live
 
 **In this repository:** `app/src/main/java/.../graph/nodes/<category>/`. Current
-categories are `constants`, `control`, `converters`, `debug`, `loader`, `math`,
-`module`, `object`, `resource` and `viewers`. This is the built-in library —
+categories are `constants`, `control`, `converters`, `debug`, `engine`, `loader`,
+`math`, `module`, `object`, `resource` and `viewers`. This is the built-in library —
 **dependency-free primitives only**. Anything needing a third-party library belongs
 out of tree.
 

@@ -5,7 +5,7 @@ Start at the repo-root [`CLAUDE.md`](../../../../../../../../../../CLAUDE.md) if
 haven't.
 
 Every concrete built-in node lives here, one folder per **category**: `constants`,
-`control`, `converters`, `debug`, `loader`, `math`, `module`, `object`,
+`control`, `converters`, `debug`, `engine`, `loader`, `math`, `module`, `object`,
 `resource`, `viewers`.
 
 **This is dependency-free primitives only.** Anything needing a third-party library
