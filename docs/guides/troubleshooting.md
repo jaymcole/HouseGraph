@@ -67,7 +67,10 @@ housegraph doctor
 | A graph stopped and won't retry | It exited with a configuration error | Deliberate — a permanent fault isn't retried forever. Fix it and push; a new commit revives it |
 | Nothing runs after a reboot | No auto-login, so no GUI session | [Part 9](server-setup.md#9-make-the-mac-behave-like-a-server) |
 | Fails at launch complaining about native libraries | Jar built on a different platform | Rebuild on this machine ([Part 3](server-setup.md#3-build-it-on-the-server)) |
-| A pushed change never arrives | Wrong branch, or the daemon isn't running | `launchctl list \| grep housegraph`, and check `repositories[].branch` |
+| A pushed change never arrives | Wrong branch, or the daemon isn't running | `housegraph doctor` now says whether each repository is reachable; also check `repositories[].branch` |
+| `Permission denied (publickey)` in the log, but `git ls-remote` works in your shell | Your shell has an ssh-agent; the daemon's supervisor does not | Use a passphrase-less deploy key, or set `GIT_SSH_COMMAND` in the plist's `EnvironmentVariables` to name the key ([Part 4](server-setup.md#4-let-the-server-read-your-graphs-repository)) |
+| No windows appear, and no graphs seem to run | Usually nothing is deployed — not a display problem | `pgrep -fl 'housegraph.jar run'`. Nothing listed means no graphs; `housegraph doctor` will say whether the repository is reachable |
+| `doctor` says a repository is reachable but the daemon still can't sync | Same agent difference — `doctor` runs as you, the daemon does not | `doctor` prints a note when it reached a repository over ssh with an agent present. Follow it |
 | Edits inside `remotes/` disappeared | It's a mirror, reset on every sync | Edit in your repository and push |
 | A library was updated but graphs still use the old one | Libraries only change in a fresh process | Graphs restart on a repository change; if you installed by hand, restart the daemon |
 | `update` says "no published jar matches this machine" | An Intel Mac, an ARM Linux box — releases are built for Apple Silicon macOS and x86-64 Linux/Windows | Build from source ([Part 3](server-setup.md#3-build-it-on-the-server)). Leave `selfUpdate` off |

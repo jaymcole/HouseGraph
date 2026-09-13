@@ -164,4 +164,26 @@ class GraphRepositoryTest {
 
         org.junit.jupiter.api.Assertions.assertThrows(GitCommand.GitException.class, repository::remoteHead);
     }
+
+    @Test
+    void gitIsToldNeverToPromptForAnSshPassphrase() {
+        // A daemon has no terminal. Without this, ssh blocks forever on a passphrase prompt when the
+        // daemon is run from a shell, and the poll loop stops dead with nothing in the log.
+        assertEquals("ssh -o BatchMode=yes", GraphRepository.nonInteractiveSsh(null));
+        assertEquals("ssh -o BatchMode=yes", GraphRepository.nonInteractiveSsh("  "));
+    }
+
+    @Test
+    void anOperatorsOwnSshCommandIsExtendedRatherThanReplaced() {
+        // A server that has to name its deploy key sets GIT_SSH_COMMAND, which is precisely the
+        // setup a supervisor needs because it has no agent. Overwriting it would break that.
+        assertEquals("ssh -i /home/me/.ssh/deploy -o IdentitiesOnly=yes -o BatchMode=yes",
+                GraphRepository.nonInteractiveSsh("ssh -i /home/me/.ssh/deploy -o IdentitiesOnly=yes"));
+    }
+
+    @Test
+    void batchModeIsNotAddedTwice() {
+        assertEquals("ssh -o BatchMode=yes -i key",
+                GraphRepository.nonInteractiveSsh("ssh -o BatchMode=yes -i key"));
+    }
 }
