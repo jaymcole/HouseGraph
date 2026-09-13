@@ -449,6 +449,31 @@ seconds is shorter than a single graph's shutdown budget — too short, and a re
 orphans graphs that then hold their ports against their own replacements. See
 [`../engine/node-lifecycle.md`](../engine/node-lifecycle.md).
 
+### What the LaunchAgent does not inherit
+
+**launchd starts a job with a near-empty environment.** Nothing your shell sets is
+there: not your `PATH`, not your ssh-agent, not anything in `~/.zshrc`. This is the
+single most common reason a server that worked fine when you ran
+`housegraph daemon` by hand stops working the moment you automate it — the daemon
+used to inherit your shell, and now there is no shell.
+
+Two things bite, both of them silently:
+
+| Missing | What breaks | Fix |
+| --- | --- | --- |
+| **`PATH`** | Any node that shells out to a command: a web node running `npm run build`, a Node-server node running `node server.js`. They spawn `sh -c <command>`, which reads no profile either, so the command is "not found" and the node fails with exit status **127** | The plist's `EnvironmentVariables.PATH` — the shipped one covers Homebrew on both architectures. Check with `which -a node npm` |
+| **ssh-agent** | Every git sync, with `Permission denied (publickey)`, while `git ls-remote` still works in your terminal | A passphrase-less deploy key ([Part 4](#4-let-the-server-read-your-graphs-repository)) |
+
+Both are already handled by the shipped plist and by the deploy key this guide has
+you create, so a setup that followed every part works. It is worth knowing anyway,
+because the symptom never points at the cause: what you see is a graph that does
+nothing, not an error about an environment.
+
+If you add a node that calls some other tool, its directory belongs in that `PATH`
+too. `nvm` is the notable one to avoid on a server — it is a shell function, so
+launchd can never run it, and the path it installs to changes with every upgrade.
+Install node through Homebrew instead.
+
 ---
 
 ## 9. Make the Mac behave like a server
