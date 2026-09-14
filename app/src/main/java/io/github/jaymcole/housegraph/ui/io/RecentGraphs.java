@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.ui.io;
 import io.github.jaymcole.housegraph.logging.Log;
 import io.github.jaymcole.housegraph.logging.Logger;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
+import io.github.jaymcole.housegraph.ui.settings.AppSettings;
 import org.json.JSONArray;
 
 import java.io.File;
@@ -20,8 +21,13 @@ import java.util.Map;
  * first. {@code AppPreferences} is string-valued, so the array is encoded into a single string
  * rather than getting a file of its own — the list is a handful of paths, not structured state.
  *
- * <p>Entries are deduplicated by absolute path and capped at {@link #MAX_ENTRIES}; re-opening a
- * file already in the list moves it to the front rather than adding a second row.
+ * <p>Entries are deduplicated by absolute path and capped at the configured number — a setting,
+ * defaulting to {@link #DEFAULT_MAX_ENTRIES}; re-opening a file already in the list moves it to the
+ * front rather than adding a second row.
+ *
+ * <p>The cap is read from the store on every call rather than captured, so lowering it in the
+ * preferences window shortens the list at the next read — which is the next time the Open Recent
+ * submenu opens, since that menu rebuilds itself each time it is shown.
  *
  * <h2>Reading is forgiving</h2>
  * A malformed or hand-edited value yields an empty list rather than an error, matching
@@ -41,8 +47,11 @@ public final class RecentGraphs {
     /** Preference key holding the JSON array of recent absolute paths, newest first. */
     public static final String PREFERENCE_KEY = "recentFiles";
 
-    /** How many files are remembered. Beyond this the oldest entry falls off the end. */
-    public static final int MAX_ENTRIES = 10;
+    /**
+     * How many files are remembered when nothing says otherwise. The cap itself is a setting —
+     * see {@link AppSettings#RECENT_FILES_CAP} — so this is the value a fresh profile starts from.
+     */
+    public static final int DEFAULT_MAX_ENTRIES = AppSettings.DEFAULT_RECENT_FILES_CAP;
 
     /**
      * How much of a folder {@link #describe} will show before eliding its start. A menu is as wide
@@ -61,7 +70,8 @@ public final class RecentGraphs {
      * @return the recent files, empty if none are recorded or the stored value is unreadable
      */
     public static List<File> load(AppPreferences preferences) {
-        return preferences.get(PREFERENCE_KEY).map(RecentGraphs::decode).orElseGet(List::of);
+        int cap = capacity(preferences);
+        return preferences.get(PREFERENCE_KEY).map(encoded -> decode(encoded, cap)).orElseGet(List::of);
     }
 
     /**
@@ -79,7 +89,7 @@ public final class RecentGraphs {
         List<File> updated = new ArrayList<>();
         updated.add(file.getAbsoluteFile());
         updated.addAll(load(preferences));
-        List<File> trimmed = trim(updated);
+        List<File> trimmed = trim(updated, capacity(preferences));
 
         JSONArray array = new JSONArray();
         trimmed.forEach(entry -> array.put(entry.getPath()));
@@ -136,7 +146,12 @@ public final class RecentGraphs {
         return path.startsWith(home + File.separator) ? "~" + path.substring(home.length()) : path;
     }
 
-    private static List<File> decode(String encoded) {
+    /** The configured cap, clamped into range by {@link AppSettings}. */
+    private static int capacity(AppPreferences preferences) {
+        return AppSettings.load(preferences).recentFilesCap();
+    }
+
+    private static List<File> decode(String encoded, int cap) {
         List<File> files = new ArrayList<>();
         try {
             JSONArray array = new JSONArray(encoded);
@@ -151,17 +166,18 @@ public final class RecentGraphs {
             log.warn("Ignoring unreadable recent-graph list: {}", e.toString());
             return List.of();
         }
-        // Trimmed on read too, so a hand-edited value can't leave duplicates or an unbounded menu.
-        return trim(files);
+        // Trimmed on read too, so a hand-edited value can't leave duplicates or an unbounded menu —
+        // and so a lowered cap shortens the list without the file needing to be rewritten first.
+        return trim(files, cap);
     }
 
     /** Deduplicates by absolute path, keeping the earliest (newest) occurrence, and caps the size. */
-    private static List<File> trim(List<File> files) {
+    private static List<File> trim(List<File> files, int cap) {
         Map<String, File> byPath = new LinkedHashMap<>();
         for (File file : files) {
             File absolute = file.getAbsoluteFile();
             byPath.putIfAbsent(absolute.getPath(), absolute);
-            if (byPath.size() == MAX_ENTRIES) {
+            if (byPath.size() == cap) {
                 break;
             }
         }

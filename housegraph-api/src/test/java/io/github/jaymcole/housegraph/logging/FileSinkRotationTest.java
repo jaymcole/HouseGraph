@@ -77,10 +77,71 @@ class FileSinkRotationTest {
     }
 
     @Test
+    void loweringTheThresholdBelowTheCurrentSizeRollsImmediately(@TempDir Path dir) throws IOException {
+        Path log = dir.resolve("housegraph.log");
+        FileSink sink = new FileSink(log, LogLevel.TRACE, 1_000_000, 3);
+        try {
+            sink.publish(record("written under the old threshold"));
+            assertFalse(Files.exists(dir.resolve("housegraph.log.1")), "nothing has rolled yet");
+
+            // The preferences window lowering the cap: the file is already past the new threshold,
+            // so it rolls here rather than waiting for a record that may not come for hours.
+            sink.setRotationPolicy(1, 3);
+
+            assertTrue(Files.exists(dir.resolve("housegraph.log.1")), "the oversized file rolled");
+            assertEquals("", Files.readString(log), "the active file starts empty");
+        } finally {
+            sink.close();
+        }
+    }
+
+    @Test
+    void raisingTheThresholdRollsNothing(@TempDir Path dir) throws IOException {
+        Path log = dir.resolve("housegraph.log");
+        FileSink sink = new FileSink(log, LogLevel.TRACE, 1_000_000, 3);
+        try {
+            sink.publish(record("kept"));
+            sink.setRotationPolicy(5_000_000, 5);
+
+            assertFalse(Files.exists(dir.resolve("housegraph.log.1")), "raising a cap cannot roll");
+            assertTrue(Files.readString(log).contains("kept"));
+            assertEquals(5_000_000L, sink.maxBytes());
+            assertEquals(5, sink.maxBackups());
+        } finally {
+            sink.close();
+        }
+    }
+
+    @Test
+    void aChangedPolicyGovernsTheNextRoll(@TempDir Path dir) throws IOException {
+        Path log = dir.resolve("housegraph.log");
+        FileSink sink = new FileSink(log, LogLevel.TRACE, 1_000_000, 3);
+        try {
+            // Tightened to a 1-byte threshold: every subsequent record rolls, which it would not
+            // have done under the policy the sink was constructed with.
+            sink.setRotationPolicy(1, 2);
+            sink.publish(record("first"));
+            sink.publish(record("second"));
+
+            assertTrue(Files.exists(dir.resolve("housegraph.log.1")));
+        } finally {
+            sink.close();
+        }
+    }
+
+    @Test
     void rejectsInvalidRotationSettings(@TempDir Path dir) {
         Path log = dir.resolve("housegraph.log");
         assertThrows(IllegalArgumentException.class, () -> new FileSink(log, LogLevel.TRACE, 0, 1));
         assertThrows(IllegalArgumentException.class, () -> new FileSink(log, LogLevel.TRACE, 10, -1));
+
+        FileSink sink = new FileSink(log, LogLevel.TRACE, 10, 1);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> sink.setRotationPolicy(0, 1));
+            assertThrows(IllegalArgumentException.class, () -> sink.setRotationPolicy(10, -1));
+        } finally {
+            sink.close();
+        }
     }
 
     private static LogRecord record(String message) {

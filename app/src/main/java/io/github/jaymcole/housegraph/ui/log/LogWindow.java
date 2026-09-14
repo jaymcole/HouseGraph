@@ -8,6 +8,7 @@ import io.github.jaymcole.housegraph.logging.LogRecord;
 import io.github.jaymcole.housegraph.logging.LogSink;
 import io.github.jaymcole.housegraph.logging.Logging;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
+import io.github.jaymcole.housegraph.ui.settings.AppSettings;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
@@ -105,6 +106,29 @@ public final class LogWindow {
         instance.open();
     }
 
+    /**
+     * Brings an already-open log window into line with settings that have just changed: the
+     * auto-scroll default, and the buffer's contents after a capacity change.
+     *
+     * <h4>Why the rows are re-read</h4>
+     * Shrinking the buffer evicts records from it directly, which the window's own list never sees
+     * — it is appended to per record, not mirrored. Re-reading the snapshot is what stops the
+     * window showing history the buffer has already dropped.
+     *
+     * <p>A no-op when the window has never been opened; the constructor reads the same settings.
+     *
+     * @param settings the settings just committed
+     */
+    public static void applySettings(AppSettings settings) {
+        if (instance == null) {
+            return;
+        }
+        instance.autoScroll.setSelected(settings.logAutoScroll());
+        instance.rows.setAll(instance.buffer.snapshot());
+        instance.refreshOutputLevelControls();
+        instance.scrollToEndIfFollowing();
+    }
+
     private LogWindow(AppPreferences preferences) {
         this.preferences = preferences;
         stage = new Stage();
@@ -143,7 +167,7 @@ public final class LogWindow {
         displayFilter.valueProperty().addListener((obs, was, level) -> applyDisplayFilter(level));
         applyDisplayFilter(LogLevel.TRACE);
 
-        autoScroll.setSelected(true);
+        autoScroll.setSelected(AppSettings.load(preferences).logAutoScroll());
         autoScroll.selectedProperty().addListener((obs, was, on) -> {
             if (on) {
                 scrollToEndIfFollowing();

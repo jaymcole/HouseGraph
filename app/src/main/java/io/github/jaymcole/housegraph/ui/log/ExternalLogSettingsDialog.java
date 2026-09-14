@@ -35,7 +35,11 @@ import java.util.function.Consumer;
  * level, so a headless machine can post warnings and errors to a channel while the file and
  * the window stay verbose.
  *
- * <p>Modal and owned by the log window, unlike the window itself: this edits a setting and
+ * <p>Opened from the log window's toolbar and from the preferences window's Logging tab; both
+ * pass a callback so whichever one is showing can rebuild its per-output level controls for a
+ * destination that has just appeared or gone.
+ *
+ * <p>Modal and owned by the window that opened it, unlike that window itself: this edits a setting and
  * is done, so there is nothing to watch alongside the canvas. {@link ExternalLogDestinations}
  * does the saving and the registering; this only collects the three values and reports what
  * came back.
@@ -45,7 +49,7 @@ import java.util.function.Consumer;
  * pasted works — so the button posts on a worker and marshals the answer back with
  * {@link Platform#runLater}, leaving the dialog responsive while it waits.
  */
-final class ExternalLogSettingsDialog {
+public final class ExternalLogSettingsDialog {
 
     private static final DateTimeFormatter TEST_TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
@@ -60,7 +64,7 @@ final class ExternalLogSettingsDialog {
      * @param onSaved     run after a successful save, so the log window can rebuild its
      *                    per-output level controls for a destination that just appeared
      */
-    static void show(Window owner, AppPreferences preferences, Runnable onSaved) {
+    public static void show(Window owner, AppPreferences preferences, Runnable onSaved) {
         ExternalLogDestinations.DiscordSettings saved = ExternalLogDestinations.discordSettings(preferences);
 
         CheckBox enabled = new CheckBox("Send log records to a Discord webhook");

@@ -135,7 +135,11 @@ more, on `--headless`, into `HeadlessRunner`. See
    library plus every installed one, and a `ModuleLibrary` over it. It opens the first
    `GraphWindow` — which builds that window's `NodeGraph`, canvas, menu bar and
    toolbar, and is the `MenuActions` behind its menus — and reopens the last file from
-   `AppPreferences`, or the one named by `--graph`, into it.
+   `AppPreferences`, or the one named by `--graph`, into it. Saved settings are applied
+   right after logging is bootstrapped, before anything resolves a directory: that is
+   what points `AppDirectories.saves()` at a chosen graph folder. Reopening the last
+   file is itself a setting and can be switched off; `--graph` is unaffected, since an
+   explicit request outranks a preference about what to do without one.
    No startup path makes a network call. Further windows are opened the same way from
    **File ▸ New Window** or **Open in New Window…**; see [windows.md](windows.md).
 2. **Edit.** Nodes are added from the Add-Node menu, edges dragged, values typed —

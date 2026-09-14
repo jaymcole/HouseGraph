@@ -19,7 +19,9 @@ import io.github.jaymcole.housegraph.ui.log.LogWindow;
 import io.github.jaymcole.housegraph.ui.menu.MainMenuBar;
 import io.github.jaymcole.housegraph.ui.menu.MenuActions;
 import io.github.jaymcole.housegraph.ui.module.ModulePickerDialog;
+import io.github.jaymcole.housegraph.ui.settings.AppSettings;
 import javafx.concurrent.Task;
+import javafx.geometry.Dimension2D;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Cursor;
 import javafx.scene.Scene;
@@ -82,6 +84,11 @@ final class GraphWindow implements MenuActions {
     /** How far each successive window is offset from the last, so a new one never hides its parent. */
     private static final double CASCADE_STEP = 28;
 
+    /** Floor on a restored window size: below this the menu bar and toolbar no longer fit. */
+    private static final double MINIMUM_WINDOW_WIDTH = 640;
+    /** @see #MINIMUM_WINDOW_WIDTH */
+    private static final double MINIMUM_WINDOW_HEIGHT = 480;
+
     private final App app;
     private final Stage stage;
     private final NodeGraph graph;
@@ -96,6 +103,13 @@ final class GraphWindow implements MenuActions {
 
     /** The file most recently saved to or loaded from; what File ▸ Save writes to. Null until chosen. */
     private File currentFile;
+
+    /**
+     * This window's Watch Speed, mirroring what was last handed to the graph. Held here because the
+     * Run menu reads it back as it opens — the preferences window can change it without the menu
+     * having been touched — and {@code NodeGraph} does not expose the delay it was given.
+     */
+    private long stepDelayMillis;
 
     /**
      * Builds the window and its canvas but does not show it — the caller does that, so a window
@@ -127,7 +141,12 @@ final class GraphWindow implements MenuActions {
         root.setCenter(canvas);
 
         updateTitle();
-        stage.setScene(new Scene(root, 1100, 750));
+        AppSettings settings = app.settings();
+        // The saved Watch Speed is applied before the window is shown, so a graph opened into it at
+        // startup runs at the chosen speed from its first flow rather than its second.
+        setStepDelayMillis(settings.defaultStepDelayMillis());
+        Dimension2D windowSize = preferredSize(settings);
+        stage.setScene(new Scene(root, windowSize.getWidth(), windowSize.getHeight()));
         // The system close button (and only that — Stage.close() does not fire this) goes through
         // confirmClose() so an unsaved graph isn't lost to an accidental click; every other path to
         // closing this window (Close Window, File ▸ Exit) calls confirmClose() itself before ever
@@ -139,7 +158,56 @@ final class GraphWindow implements MenuActions {
         });
         // Hidden rather than closed, because Platform.exit() hides every stage as well: routing both
         // through one handler means a graph is disposed exactly once whichever way its window goes.
-        stage.setOnHidden(event -> app.windowClosed(this));
+        stage.setOnHidden(event -> {
+            rememberWindowSize();
+            app.windowClosed(this);
+        });
+    }
+
+    /**
+     * The size to open at: the remembered one when the setting is on and a usable size was saved,
+     * otherwise the built-in default.
+     *
+     * <h4>Why the remembered size is bounded</h4>
+     * It is read from a hand-editable file and was written on whatever display the last session
+     * used. A window larger than the current screen, or smaller than its own chrome, is not
+     * recoverable by dragging — so anything outside a sane range falls back rather than being
+     * honoured.
+     */
+    private Dimension2D preferredSize(AppSettings settings) {
+        double width = AppSettings.DEFAULT_WINDOW_WIDTH;
+        double height = AppSettings.DEFAULT_WINDOW_HEIGHT;
+        if (!settings.restoreWindowSize()) {
+            return new Dimension2D(width, height);
+        }
+        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+        int savedWidth = app.preferences().getInt(AppSettings.WINDOW_WIDTH, 0);
+        int savedHeight = app.preferences().getInt(AppSettings.WINDOW_HEIGHT, 0);
+        if (savedWidth >= MINIMUM_WINDOW_WIDTH && savedWidth <= screen.getWidth()) {
+            width = savedWidth;
+        }
+        if (savedHeight >= MINIMUM_WINDOW_HEIGHT && savedHeight <= screen.getHeight()) {
+            height = savedHeight;
+        }
+        return new Dimension2D(width, height);
+    }
+
+    /**
+     * Offers this window's size as the one a new window should open at. Read as the window closes
+     * rather than on every resize, which would write the preferences file on every drag frame.
+     * Whether it is actually recorded is {@link App#rememberWindowSize}'s decision, the same way
+     * {@link App#rememberOpenedFile} owns whether a file is recorded.
+     *
+     * <p>A size too small to hold the chrome is not offered at all: it would only be refused on the
+     * way back in, and a window left that small is more likely a dying stage than a choice.
+     */
+    private void rememberWindowSize() {
+        double width = stage.getWidth();
+        double height = stage.getHeight();
+        if (width < MINIMUM_WINDOW_WIDTH || height < MINIMUM_WINDOW_HEIGHT) {
+            return;
+        }
+        app.rememberWindowSize(Math.round(width), Math.round(height));
     }
 
     /**
@@ -358,11 +426,37 @@ final class GraphWindow implements MenuActions {
     @Override
     public void setStepDelayMillis(long millis) {
         // Slows every flow-driven run down to something the eye can follow: the canvas already
-        // animates each node and edge as it fires, this just spaces the firings out. Per window as
-        // well as session-only, and off by default — it changes timing, so it is a thing you switch
-        // on to look at one graph, not a setting a graph or a deployment should carry (see
+        // animates each node and edge as it fires, this just spaces the firings out. Still per
+        // window, and still never written into a graph or a deployment — what the preferences window
+        // remembers is the speed a window *starts* at, not something the save file carries (see
         // NodeGraph.setStepDelayMillis).
+        stepDelayMillis = millis;
         graph.setStepDelayMillis(millis);
+    }
+
+    @Override
+    public long stepDelayMillis() {
+        return stepDelayMillis;
+    }
+
+    @Override
+    public void openSettings() {
+        // App's, not this window's: the settings are process-wide, and one window is reused for all
+        // of them the way the log window is.
+        app.openSettings();
+    }
+
+    /**
+     * Brings this window into line with settings that have just changed.
+     *
+     * <h4>Why this overrides a per-window Watch Speed</h4>
+     * Changing the default in the preferences window applies it to every open window, rather than
+     * only to windows opened afterwards. A setting that visibly did nothing until a new window was
+     * opened would be the thing people report as broken, and Run ▸ Watch Speed is still right there
+     * to set this window back to something else.
+     */
+    void applySettings(AppSettings settings) {
+        setStepDelayMillis(settings.defaultStepDelayMillis());
     }
 
     /**
@@ -596,7 +690,9 @@ final class GraphWindow implements MenuActions {
 
         DirectoryChooser chooser = new DirectoryChooser();
         chooser.setTitle("Export Graph Images");
-        File initial = currentFile != null ? currentFile.getParentFile() : AppDirectories.get().saves().toFile();
+        File initial = currentFile != null
+                ? currentFile.getParentFile()
+                : app.settings().graphDialogDirectory(app.preferences()).toFile();
         if (initial != null && initial.isDirectory()) {
             chooser.setInitialDirectory(initial);
         }
@@ -656,6 +752,10 @@ final class GraphWindow implements MenuActions {
         currentFile = file;
         canvas.markSaved();
         updateTitle();
+        // Recorded before the app-level bookkeeping because it is a different question: where the
+        // next dialog opens, rather than which graph the next launch reopens. A supervised instance
+        // declines the latter and this one is a no-op there anyway, having no dialogs to place.
+        app.settings().rememberGraphDialogDirectory(app.preferences(), file);
         app.rememberOpenedFile(file);
     }
 
@@ -791,14 +891,23 @@ final class GraphWindow implements MenuActions {
         missingLibrariesNotice.setManaged(true);
     }
 
-    private static FileChooser createFileChooser(String title) {
+    /**
+     * A graph file chooser opened where the settings say it should be: the folder last used when
+     * that is switched on, otherwise the configured graph folder.
+     *
+     * <h4>Resolved per dialog, not once</h4>
+     * An instance method reading the current settings each time, rather than the static it used to
+     * be, so changing the graph folder in the preferences window moves the <em>next</em> dialog
+     * without any window being reopened.
+     */
+    private FileChooser createFileChooser(String title) {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(title);
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("HouseGraph files", "*.json"));
 
-        File savesDirectory = AppDirectories.get().saves().toFile();
-        if (savesDirectory.isDirectory()) {
-            chooser.setInitialDirectory(savesDirectory);
+        File directory = app.settings().graphDialogDirectory(app.preferences()).toFile();
+        if (directory.isDirectory()) {
+            chooser.setInitialDirectory(directory);
         }
         return chooser;
     }

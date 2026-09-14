@@ -20,7 +20,9 @@ import java.nio.file.StandardOpenOption;
  * {@code .2}, and so on up to {@code maxBackups} kept generations (the oldest is discarded),
  * then a fresh empty file is opened. A single over-long record can push the file a little
  * past {@code maxBytes} before the roll — the cap is a threshold, not a hard limit. With
- * {@code maxBackups == 0} the file is simply truncated on roll (no history kept).
+ * {@code maxBackups == 0} the file is simply truncated on roll (no history kept). The policy is
+ * settable on the open file through {@link #setRotationPolicy}, which is how the preferences
+ * window changes it without the app restarting.
  *
  * <p>The file lives under {@code AppDirectories.logs()} — never a hardcoded path — and is
  * opened once in {@link Logging#bootstrap(Path)}. Writes are guarded by an intrinsic lock so
@@ -36,8 +38,10 @@ public final class FileSink extends AbstractLogSink {
     public static final int DEFAULT_MAX_BACKUPS = 5;
 
     private final Path file;
-    private final long maxBytes;
-    private final int maxBackups;
+    /** Volatile so {@link #maxBytes()} can read it without taking the write lock. */
+    private volatile long maxBytes;
+    /** Volatile so {@link #maxBackups()} can read it without taking the write lock. */
+    private volatile int maxBackups;
 
     private Writer writer;
     private long bytesWritten;
@@ -95,6 +99,61 @@ public final class FileSink extends AbstractLogSink {
      */
     public Path file() {
         return file;
+    }
+
+    /**
+     * The size at which the active file rolls over.
+     *
+     * @return the roll threshold in bytes
+     */
+    public long maxBytes() {
+        return maxBytes;
+    }
+
+    /**
+     * How many rolled-over generations are kept.
+     *
+     * @return the backup count
+     */
+    public int maxBackups() {
+        return maxBackups;
+    }
+
+    /**
+     * Changes the rotation policy on the open file, without reopening it.
+     *
+     * <h4>A lowered threshold rolls straight away</h4>
+     * The new {@code maxBytes} is tested against the file as it already stands, so lowering it
+     * below the current size rotates immediately rather than waiting for the next record. That
+     * is what makes the setting take effect when it is changed rather than whenever the app
+     * next happens to log enough — and it is the only way a user who has just lowered the cap
+     * to reclaim disk gets the space back.
+     *
+     * <p>Raising it, or changing only {@code maxBackups}, touches nothing: the extra generations
+     * are pruned on the next roll.
+     *
+     * @param maxBytes   roll the file over once it grows past this many bytes (must be positive)
+     * @param maxBackups how many rolled-over generations to keep (0 = truncate on roll, keep none)
+     */
+    public synchronized void setRotationPolicy(long maxBytes, int maxBackups) {
+        if (maxBytes <= 0) {
+            throw new IllegalArgumentException("maxBytes must be positive: " + maxBytes);
+        }
+        if (maxBackups < 0) {
+            throw new IllegalArgumentException("maxBackups must not be negative: " + maxBackups);
+        }
+        this.maxBytes = maxBytes;
+        this.maxBackups = maxBackups;
+        if (writeFailed || bytesWritten < maxBytes) {
+            return;
+        }
+        try {
+            rotate();
+        } catch (IOException e) {
+            // Same rule as publish(): a broken disk disables the file, it never propagates.
+            writeFailed = true;
+            System.err.println("Disabling log file " + file + " after rotation failure: " + e);
+        }
     }
 
     @Override

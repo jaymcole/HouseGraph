@@ -33,7 +33,7 @@ design idea:
   saved rather than lost. See [docs/guides/modules.md](docs/guides/modules.md).
 - **Watch mode** — **Run ▸ Watch Speed** slows every run to a set pace, so a cascade
   can be followed node by node as it fires instead of finishing in a blink. Off by
-  default and never saved with the graph.
+  default and never saved with the graph; the pace a window starts at is a setting.
 - **Groups** — wrap part of a canvas in a labelled, coloured frame, so a large graph
   can be read at a glance. Dragging a frame carries everything inside it, and frames
   nest. Membership is the rectangle: nothing to maintain, and nothing that can go
@@ -160,7 +160,7 @@ directly from the same tag (see [`jitpack.yml`](jitpack.yml) and
 
 | Section | For |
 | --- | --- |
-| [docs/guides/](docs/guides/) | Using HouseGraph: setup, node libraries, modules, secrets, servers, troubleshooting |
+| [docs/guides/](docs/guides/) | Using HouseGraph: setup, settings, node libraries, modules, secrets, servers, troubleshooting |
 | [docs/nodes/](docs/nodes/) | Writing nodes and publishing node libraries |
 | [docs/engine/](docs/engine/) | Engine internals: execution, concurrency, save format, plugin runtime |
 | [docs/decisions/](docs/decisions/) | Why things are the way they are |
@@ -171,10 +171,17 @@ that changes must keep the docs in sync.
 
 ## Configuration
 
+**Tools ▸ Settings…** (`Ctrl/Cmd+,`) covers what most people need: where graphs are
+kept, the recent-files list, startup behaviour, watch speed, and log sizing. Changes
+apply immediately — there is no OK button and nothing needs a restart. See
+[docs/guides/settings.md](docs/guides/settings.md).
+
 App data lives in an OS-appropriate directory — `%APPDATA%\HouseGraph` on Windows,
 `~/Library/Application Support/HouseGraph` on macOS,
 `~/.local/share/HouseGraph` on Linux. Override the root with `HOUSEGRAPH_HOME`, the
-`housegraph.home` system property, or `--home` on any CLI command.
+`housegraph.home` system property, or `--home` on any CLI command. That moves
+*everything*, secrets and node libraries included; to move only your graphs, set the
+graph folder in Settings.
 
 A gitignored `.env` (see [`.env.example`](.env.example)) seeds the Secret Loader
 node's dropdown.

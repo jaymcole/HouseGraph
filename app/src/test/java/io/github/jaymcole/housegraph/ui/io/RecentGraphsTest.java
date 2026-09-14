@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.ui.io;
 
 import io.github.jaymcole.housegraph.storage.AppPreferences;
+import io.github.jaymcole.housegraph.ui.settings.AppSettings;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -61,14 +62,30 @@ class RecentGraphsTest {
 
     @Test
     void theOldestEntryFallsOffTheEndAtTheCap(@TempDir Path dir) {
-        for (int i = 0; i <= RecentGraphs.MAX_ENTRIES; i++) {
+        for (int i = 0; i <= RecentGraphs.DEFAULT_MAX_ENTRIES; i++) {
             RecentGraphs.remember(preferencesIn(dir), new File(dir.toFile(), "graph-" + i + ".json"));
         }
 
         List<File> recent = RecentGraphs.load(preferencesIn(dir));
-        assertEquals(RecentGraphs.MAX_ENTRIES, recent.size());
-        assertEquals("graph-" + RecentGraphs.MAX_ENTRIES + ".json", recent.get(0).getName());
+        assertEquals(RecentGraphs.DEFAULT_MAX_ENTRIES, recent.size());
+        assertEquals("graph-" + RecentGraphs.DEFAULT_MAX_ENTRIES + ".json", recent.get(0).getName());
         assertTrue(names(recent).stream().noneMatch("graph-0.json"::equals), "the oldest is gone");
+    }
+
+    @Test
+    void aLoweredCapShortensTheListWithoutItBeingRewritten(@TempDir Path dir) {
+        for (int i = 0; i < RecentGraphs.DEFAULT_MAX_ENTRIES; i++) {
+            RecentGraphs.remember(preferencesIn(dir), new File(dir.toFile(), "graph-" + i + ".json"));
+        }
+
+        AppPreferences preferences = preferencesIn(dir);
+        preferences.putLong(AppSettings.RECENT_FILES_CAP, 3);
+        preferences.save();
+
+        // Read back through a fresh store, so nothing but the saved cap can be doing the trimming.
+        List<File> recent = RecentGraphs.load(preferencesIn(dir));
+        assertEquals(3, recent.size(), "the cap applies on read, not only when the list is written");
+        assertEquals("graph-" + (RecentGraphs.DEFAULT_MAX_ENTRIES - 1) + ".json", recent.get(0).getName());
     }
 
     @Test
