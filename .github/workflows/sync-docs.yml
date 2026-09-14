@@ -21,6 +21,24 @@ jobs:
       matrix:
         target: [housegraph-nodes, housegraph-plugin-template]
     steps:
+      # Without this the job's first visible failure is the PR step reporting a missing
+      # working directory, because an empty token fails the companion checkout below and
+      # every later step then either skips or runs against a target/ that was never created.
+      # That is what hid an unset secret for 34 consecutive runs, so the secret is checked
+      # first and says what to do about it.
+      - name: Check the sync credential exists
+        env:
+          DOCS_SYNC_PAT: ${{ secrets.DOCS_SYNC_PAT }}
+        run: |
+          if [ -z "$DOCS_SYNC_PAT" ]; then
+            echo "::error::DOCS_SYNC_PAT is not set on this repository, so docs/shared/ cannot be" \
+                 "mirrored to the companion repositories. Create a fine-grained PAT scoped to" \
+                 "jaymcole/housegraph-nodes and jaymcole/housegraph-plugin-template with" \
+                 "Contents: read & write and Pull requests: read & write, and store it as the" \
+                 "DOCS_SYNC_PAT Actions secret. See docs/doc-sync.md."
+            exit 1
+          fi
+
       - name: Checkout HouseGraph
         uses: actions/checkout@v4
         with:
@@ -40,7 +58,6 @@ jobs:
           cp -r source/docs/shared/. target/docs/shared/
 
       - name: Open and auto-merge sync PR
-        if: ${{ !cancelled() }}
         working-directory: target
         env:
           GH_TOKEN: ${{ secrets.DOCS_SYNC_PAT }}

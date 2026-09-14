@@ -20,7 +20,7 @@ collected rather than left to be rediscovered.
 ## 1. `compileOnly` the API — never `implementation`
 
 ```groovy
-compileOnly 'com.github.jaymcole:HouseGraph:v1.1.1'
+compileOnly 'com.github.jaymcole:HouseGraph:v2.0.0'
 ```
 
 HouseGraph supplies `housegraph-api` and its transitive `org.json` and `slf4j-api`
@@ -218,7 +218,9 @@ with every other node's. Both must be idempotent, and both must work even if the
 node's UI was never built.
 
 **Throwing out of `process()` is how a node reports failure, and the engine acts on
-it.** Every node has an engine-owned `Error` flow-out and an `Error Message` output
+it.** This is the behaviour of **v2.0.0** and later; against an earlier API a throw was
+logged and the run cascaded downstream anyway, which is why older nodes sometimes
+activate a port defensively before the work that might fail. Every node has an engine-owned `Error` flow-out and an `Error Message` output
 you do not declare. Under the default `FailurePolicy.HALT` a throw fires the `Error`
 port, halts the branch, and **discards any port you activated before throwing** — so
 a node no longer has to call `activate` ahead of the work that might fail to stop a

@@ -46,6 +46,24 @@ Write anything placed there assuming it will be read from a companion repository
 no relative links into this repository's doc tree, and no context that only makes
 sense here.
 
+## When the sync fails
+
+The job's **first** step checks that `DOCS_SYNC_PAT` is set and fails with the fix if it
+is not. That check exists because the failure is otherwise unreadable: an empty or
+expired token fails the companion checkout, the mirror step then skips, and the last
+step reports `No such file or directory` against a `target/` directory nothing ever
+created. Nothing in that names the credential.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `DOCS_SYNC_PAT is not set on this repository` | The secret is missing or empty | Create it, per step 1 above |
+| The companion checkout fails to authenticate | The PAT expired, or lost access to that repository | Rotate it, below |
+| The merge step fails on a companion | `main` there requires review approval | See the branch-protection note above |
+
+A companion whose `docs/shared/` has drifted while the sync was broken is repaired by
+the next successful run: the mirror is a verbatim overwrite, not a merge, so it does not
+matter how far behind the copy is or what was hand-edited into it.
+
 ## Rotating the PAT
 
 `DOCS_SYNC_PAT` is an Actions secret on this repository only; the companions are
