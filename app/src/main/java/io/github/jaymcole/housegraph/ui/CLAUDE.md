@@ -24,7 +24,8 @@ with its own `GraphCanvas` and `MainMenuBar` over shared services owned by `App`
 | `command/` | undo/redo — `Command`, `UndoManager`, every `*Command` |
 | `io/` | the canvas-facing save/load wrappers (`GraphFileIO`) |
 | `log/` | the log viewer (`LogWindow`), `LogLevelPreferences`, and the external log destinations (`ExternalLogDestinations`, `ExternalLogSettingsDialog`) |
-| `menu/` | the application menu bar (`MainMenuBar`) and the `MenuActions` each editor window implements |
+| `menu/` | the application menu bar (`MainMenuBar`), the `MenuActions` each editor window implements, and the shared `WatchSpeed` list |
+| `settings/` | the preferences window (`SettingsWindow`) over the headless `AppSettings` model |
 | `plugin/` | the node-library manager (`PluginWindow`) |
 | `module/` | the module picker (`ModulePickerDialog`) |
 | `export/` | rendering the canvas to PNGs, one per connected component |
@@ -93,6 +94,14 @@ package.
 - **New manually-editable type?** Add one line to the `sdk.ValueEditors` static
   block; nothing in `PortView` changes. Note it in
   [`docs/engine/type-system.md`](../../../../../../../../../docs/engine/type-system.md).
+- **A setting must apply to the running app, not the next launch.** `settings/`
+  holds the model and the dialog; a new setting needs a home in either
+  `AppSettings.applyGlobally()` (process-wide — directories, log outputs) or
+  `App.applySettings` (per window), or it silently does nothing until restart. The
+  window commits on every control change, so there is no OK button to hang "needs a
+  restart" off. `AppSettings` itself stays free of JavaFX, like `io/RecentGraphs`, so
+  the keys, defaults and range checks are unit-testable headlessly. Record the key in
+  [`docs/engine/storage.md`](../../../../../../../../../docs/engine/storage.md).
 - **Keep the component split headless.** `export/GraphComponents` is plain graph
   logic and is unit-tested without a display; only `GraphImageExport` touches
   pixels. A single whole-canvas `snapshot` is not an option — see the image-export
@@ -100,5 +109,5 @@ package.
   [`docs/engine/ui-layer.md`](../../../../../../../../../docs/engine/ui-layer.md).
 
 **When you change canvas interaction, views, commands, editors, the module surface,
-or either auxiliary window, update
+a setting, or any auxiliary window, update
 [`docs/engine/ui-layer.md`](../../../../../../../../../docs/engine/ui-layer.md).**

@@ -191,13 +191,35 @@ which is why it lives in its own subpackage.
 Per-output level choices persist across launches: `LogLevelPreferences` saves each
 sink's level to `AppPreferences` keyed by sink name, and `App` reapplies them right
 after bootstrap. That glue lives in the UI layer, not in `logging/`, so the core
-stays free of a `storage` dependency.
+stays free of a `storage` dependency. The same levels appear in the preferences
+window's Logging tab, driven through `LogLevelPreferences` as well, so the two stay
+in step rather than each holding their own copy.
+
+## Reconfiguring a live output
+
+Both sizing policies are settable on the running sink, so the preferences window can
+change them without the app restarting and without re-registering anything on
+`LogManager` — a handle already handed out by `Logging.buffer()` stays valid.
+
+- `FileSink.setRotationPolicy(maxBytes, maxBackups)`. Lowering the threshold below the
+  file's current size **rolls immediately** rather than waiting for the next record:
+  otherwise a user who lowered the cap to reclaim disk would get nothing back until
+  the app next happened to log enough. Raising it rolls nothing.
+- `LogBufferSink.setCapacity(n)`. Shrinking evicts the oldest records on the spot, for
+  the same reason — the memory the change is meant to free is actually freed. Listeners
+  are not notified; a window rendering the buffer re-reads `snapshot()`, as it does
+  after `clear()`.
+
+`Logging.fileSink()` is how the preferences window reaches the registered file output.
+`Logging.BUFFER_CAPACITY` and `FileSink.DEFAULT_MAX_BYTES`/`DEFAULT_MAX_BACKUPS` remain
+the values a fresh profile starts from and the ones a headless run keeps.
 
 ---
 
 **When you change this, update…** this file and the relevant Javadoc whenever you
 change the level model, add or alter a sink or its default, change the bootstrap
-seam, the buffer's lossless-reopen contract, or the SLF4J bridge — including the set
+seam, **what can be reconfigured on a live sink**, the buffer's lossless-reopen
+contract, or the SLF4J bridge — including the set
 of built-in per-logger overrides and the reason each one is gated. Adding an external
 destination also touches [ui-layer.md](ui-layer.md), because it appears in the log
 window, and [storage.md](storage.md) if it stores a credential. A new on-disk log

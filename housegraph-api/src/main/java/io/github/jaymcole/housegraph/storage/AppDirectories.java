@@ -20,6 +20,9 @@ import java.util.function.UnaryOperator;
  * {@link #modules()}, {@link #config()}, {@link #cache()}, {@link #logs()}. Every accessor creates
  * its directory on demand, so callers can simply resolve a path and read/write it.
  * <p>
+ * {@link #saves()} is the one that can be moved out from under the root, because it holds the
+ * user's documents rather than the app's state; see its own notes and {@link #setSaves}.
+ * <p>
  * Use the shared machine instance via {@link #get()} (e.g. {@code AppDirectories.get().secrets()}).
  * The root can be overridden with the {@code housegraph.home} system property or the
  * {@code HOUSEGRAPH_HOME} environment variable — handy for a portable install, and for
@@ -30,6 +33,13 @@ public final class AppDirectories {
     private static final String APP_NAME = "HouseGraph";
 
     private final Path root;
+
+    /**
+     * An explicit graph folder chosen by the user, or null to use {@link #defaultSaves()}.
+     * Volatile because the preferences window sets it on the FX thread while graphs are being
+     * opened and saved from others.
+     */
+    private volatile Path savesOverride;
 
     /** Package-visible so tests can root an instance at a temp directory without going through {@link #get()}. */
     AppDirectories(Path root) {
@@ -134,12 +144,61 @@ public final class AppDirectories {
     }
 
     /**
-     * Default location for user-saved graph files (the save/open dialog starts here).
+     * Where the user's own graph files live — the folder the save/open dialog starts in.
      *
-     * @return the saves directory, created if needed
+     * <h4>The one directory the user may move</h4>
+     * Every other accessor here is fixed under {@link #root()}, because what they hold is the
+     * app's own state. Graphs are the user's documents, and people keep documents where they
+     * keep documents — in a synced folder, on a share, beside a project. Overriding
+     * {@code HOUSEGRAPH_HOME} to move them would drag the encrypted secret key, the plugin jars
+     * and the logs along with them, so this one takes an override of its own via
+     * {@link #setSaves}. The indirection is what keeps the preference from becoming a path
+     * computed outside this class, which the storage invariant forbids.
+     *
+     * @return the graph folder — the override when one is set, else {@link #defaultSaves()} —
+     *         created if needed
      */
     public Path saves() {
-        return ensure(root.resolve("saves"));
+        Path chosen = savesOverride;
+        return ensure(chosen == null ? defaultSaves() : chosen);
+    }
+
+    /**
+     * The graph folder used when no override is set: {@code saves} under {@link #root()}.
+     * Unlike {@link #saves()} this does <em>not</em> create the directory, so the preferences
+     * window can show it as the default without bringing it into existence.
+     *
+     * @return the built-in graph folder path
+     */
+    public Path defaultSaves() {
+        return root.resolve("saves");
+    }
+
+    /**
+     * Points {@link #saves()} at {@code directory}, or back at {@link #defaultSaves()} when
+     * given null. The directory is created immediately, so a path that cannot be used fails
+     * here — while the user is choosing it and can pick another — rather than at the next save.
+     *
+     * @param directory the graph folder to use, or null to return to the default
+     * @throws UncheckedIOException if {@code directory} cannot be created
+     */
+    public void setSaves(Path directory) {
+        if (directory == null) {
+            savesOverride = null;
+            return;
+        }
+        Path absolute = directory.toAbsolutePath().normalize();
+        ensure(absolute);
+        savesOverride = absolute;
+    }
+
+    /**
+     * The graph folder override currently in force.
+     *
+     * @return the override, or null when {@link #saves()} is using {@link #defaultSaves()}
+     */
+    public Path savesOverride() {
+        return savesOverride;
     }
 
     /**

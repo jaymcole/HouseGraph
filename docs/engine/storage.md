@@ -118,27 +118,91 @@ see `.env.example`.
 ## `AppPreferences`
 
 A small persistent key/value store, plain JSON under `AppDirectories.config()`, for
-non-sensitive UX state — the last opened file (`LAST_FILE`), the recent-files list
-(`recentFiles`), each log output's level (`log.level.<sink>`), whether the external
-log destination is switched on (`log.discord.enabled`), with room for window size and
-whatever else the UI comes to remember.
+non-sensitive UX state: the settings the preferences window edits, plus the state the
+app remembers on its own.
 
 **Reading is forgiving:** a missing or corrupt file yields empty preferences rather
 than failing, so a bad prefs file can never stop the app starting. Writing is
 explicit through `save()`.
 
+Values are strings, so `getBoolean`/`getInt`/`getLong` parse on the way out. Each
+takes the value to use when nothing is saved **and** when what is saved does not
+parse — a hand-edited typo reads as the default rather than as `false` or `0`, which
+is what `Boolean.parseBoolean` and `Integer.parseInt` would give.
+
+### The keys
+
+Settings — edited in Tools ▸ Settings…, modelled by `ui/settings/AppSettings`:
+
+| Key | Holds |
+| --- | --- |
+| `graph.folder` | the chosen graph folder; absent means the built-in default |
+| `graph.rememberLastFolder` | whether a graph dialog reopens where the last one left off |
+| `startup.reopenLastGraph` | whether a bare launch reopens `lastFile` |
+| `window.restoreSize` | whether a new editor window takes the remembered size |
+| `recentFiles.cap` | how many entries Open Recent keeps |
+| `run.defaultStepDelayMillis` | the Watch Speed a window starts at |
+| `log.file.maxBytes`, `log.file.maxBackups` | the log file's rotation policy |
+| `log.buffer.capacity` | records retained for the log window |
+| `log.window.autoScroll` | whether the log window follows new records |
+| `plugin.skipInstallWarning` | whether the node-library install warning is suppressed |
+
+State — written by the app as you work, not edited directly:
+
+| Key | Holds |
+| --- | --- |
+| `lastFile` | absolute path of the most recently saved/opened graph |
+| `recentFiles` | JSON array of recent absolute paths, newest first |
+| `graph.lastFolder` | the folder a graph was last opened from or saved to |
+| `window.width`, `window.height` | the size of the last editor window closed |
+| `log.level.<sink>` | each log output's chosen level |
+| `log.discord.enabled` | whether the external log destination is switched on |
+
+### Settings apply to the running app
+
+A setting is pushed onto the thing that implements it the moment it is saved, not at
+the next launch. `AppSettings.applyGlobally()` covers the process-wide half — the
+graph folder on `AppDirectories`, the rotation policy on the live `FileSink`, the
+ring size on the shared `LogBufferSink` — and `App.applySettings` covers the
+per-window half. A setting added without a home in one of those two is a setting that
+silently does nothing until restart.
+
+`startup.reopenLastGraph` and `window.restoreSize` are the exception, and not a gap:
+they describe what happens *during* startup, which has already happened by the time
+they can be edited.
+
+### The graph folder
+
+`AppDirectories.saves()` is the **only** directory that can be moved out from under
+the root, through `setSaves`. Graphs are the user's documents and belong wherever they
+keep documents; everything else under the root is the app's own state. Moving them
+with `HOUSEGRAPH_HOME` instead would drag the encrypted secret key, the plugin jars
+and the logs along with them.
+
+The override goes *through* `AppDirectories` rather than being a path the UI computes
+for itself, which is what keeps the "all on-disk paths go through `AppDirectories`"
+invariant true. A folder that cannot be created is reported while the picker is still
+open; one that has gone away since — an unplugged drive — logs a warning at startup
+and falls back to the default for that session, leaving the preference alone so it
+comes back when the drive does.
+
 An instance launched with `--graph`, meaning a supervised one, **does not write
-`LAST_FILE`** or touch the recent list. It would otherwise overwrite whatever the
+`LAST_FILE`**, touch the recent list, or record its window size. Settings are
+unaffected — those are the user's choices, not a record of the session. It would otherwise overwrite whatever the
 person at the keyboard had open, and on a machine running several graphs there is no
 single "last" file to record.
 
 ### The recent-files list
 
 `ui/io/RecentGraphs` owns it: absolute paths, newest first, deduplicated and capped
-at ten. The store is string-valued, so the list is encoded as a JSON array inside the
-one `recentFiles` value rather than getting a file of its own — a handful of paths is
-not structured state. An unreadable value reads back as an empty list, matching the
-store around it.
+at `recentFiles.cap` (ten by default). The store is string-valued, so the list is
+encoded as a JSON array inside the one `recentFiles` value rather than getting a file
+of its own — a handful of paths is not structured state. An unreadable value reads
+back as an empty list, matching the store around it.
+
+The cap is read on every load rather than captured, so lowering it shortens the list
+at the next read — which is the next time the Open Recent submenu opens, since that
+menu rebuilds itself each time it is shown.
 
 **Entries are never pruned for being absent.** A graph on an unplugged drive would
 otherwise be forgotten by the one launch that happened while it was away; the menu
@@ -172,5 +236,6 @@ tampered file. Distinct from the `UncheckedIOException` used for plain I/O.
 
 **When you change this, update…** this file and the relevant Javadoc whenever you
 change the directory layout, the encryption scheme or its threat model, the
-preferences format, the set of files under `config()`, or the rule about what may
+preferences format, **the set of preference keys or which of them is a setting**, the
+set of files under `config()`, or the rule about what may
 be written in plaintext.

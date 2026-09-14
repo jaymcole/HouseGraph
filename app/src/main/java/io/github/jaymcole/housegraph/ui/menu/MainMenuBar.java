@@ -16,7 +16,9 @@ import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 
 import java.io.File;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The application menu bar: File, Edit, View, Run, Tools, Help.
@@ -181,13 +183,22 @@ public class MainMenuBar extends MenuBar {
     private Menu runMenu() {
         Menu watch = new Menu("Watch Speed");
         ToggleGroup group = new ToggleGroup();
+        Map<WatchSpeed, RadioMenuItem> choices = new EnumMap<>(WatchSpeed.class);
         for (WatchSpeed speed : WatchSpeed.values()) {
             RadioMenuItem choice = new RadioMenuItem(speed.label());
             choice.setToggleGroup(group);
-            choice.setSelected(speed == WatchSpeed.OFF);
             choice.setOnAction(event -> actions.setStepDelayMillis(speed.millis()));
             watch.getItems().add(choice);
+            choices.put(speed, choice);
         }
+        // Read back from the window rather than assuming OFF: the speed a window starts at is a
+        // preference now, and the preferences window can change it under an open menu bar. Synced
+        // as the submenu opens, for the same reason the enablement above is — there is no model to
+        // observe, and a closed menu cannot be looked at.
+        watch.setOnShowing(event -> {
+            WatchSpeed current = WatchSpeed.forMillis(actions.stepDelayMillis()).orElse(null);
+            choices.forEach((speed, item) -> item.setSelected(speed == current));
+        });
 
         Menu menu = new Menu("Run");
         menu.getItems().add(watch);
@@ -201,7 +212,10 @@ public class MainMenuBar extends MenuBar {
                 item("Node Libraries…", null, actions::manageNodeLibraries),
                 item("Logs…", shortcut(KeyCode.L), actions::showLogs),
                 new SeparatorMenuItem(),
-                item("Open Data Folder", null, actions::openDataFolder));
+                item("Open Data Folder", null, actions::openDataFolder),
+                new SeparatorMenuItem(),
+                // Ctrl/Cmd+comma, which is where every desktop platform puts preferences.
+                item("Settings…", shortcut(KeyCode.COMMA), actions::openSettings));
         return menu;
     }
 
@@ -290,32 +304,4 @@ public class MainMenuBar extends MenuBar {
         return new KeyCodeCombination(code, modifiers);
     }
 
-    /**
-     * The step delays the Run ▸ Watch Speed menu offers, as {@code NodeGraph.setStepDelayMillis}
-     * values. A short list of round numbers rather than a slider: the useful range spans a factor of
-     * ten and the exact figure never matters, only whether a run crawls or flies.
-     */
-    private enum WatchSpeed {
-        OFF("Off", 0),
-        QUARTER_SECOND("0.25s", 250),
-        HALF_SECOND("0.5s", 500),
-        ONE_SECOND("1s", 1000),
-        TWO_SECONDS("2s", 2000);
-
-        private final String label;
-        private final long millis;
-
-        WatchSpeed(String label, long millis) {
-            this.label = label;
-            this.millis = millis;
-        }
-
-        String label() {
-            return label;
-        }
-
-        long millis() {
-            return millis;
-        }
-    }
 }

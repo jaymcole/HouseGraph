@@ -6,6 +6,7 @@ import io.github.jaymcole.housegraph.plugin.GitHubReleases;
 import io.github.jaymcole.housegraph.plugin.PluginCatalog;
 import io.github.jaymcole.housegraph.plugin.PluginInstaller;
 import io.github.jaymcole.housegraph.storage.AppPreferences;
+import io.github.jaymcole.housegraph.ui.settings.AppSettings;
 import io.github.jaymcole.housegraph.ui.widget.TaskProgressBar;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleObjectProperty;
@@ -74,8 +75,12 @@ public final class PluginWindow {
 
     private static PluginWindow instance;
 
-    /** Key in {@link AppPreferences} for "skip the trust-on-first-use install warning from now on". */
-    private static final String SKIP_INSTALL_WARNING_KEY = "plugin.skipInstallWarning";
+    /**
+     * Key in {@link AppPreferences} for "skip the trust-on-first-use install warning from now on".
+     * Named by {@link AppSettings}, because the checkbox here can only ever set it — the
+     * preferences window is the only place it can be cleared again.
+     */
+    private static final String SKIP_INSTALL_WARNING_KEY = AppSettings.SKIP_INSTALL_WARNING;
 
     private final PluginCatalog catalog;
     private final AppPreferences preferences;
@@ -613,11 +618,13 @@ public final class PluginWindow {
     }
 
     private boolean skipInstallWarning() {
-        return preferences.get(SKIP_INSTALL_WARNING_KEY).map(Boolean::parseBoolean).orElse(false);
+        // Read per install rather than cached, so clearing it in the preferences window brings the
+        // warning back for the very next install without this window being reopened.
+        return preferences.getBoolean(SKIP_INSTALL_WARNING_KEY, false);
     }
 
     private void setSkipInstallWarning(boolean skip) {
-        preferences.put(SKIP_INSTALL_WARNING_KEY, Boolean.toString(skip));
+        preferences.putBoolean(SKIP_INSTALL_WARNING_KEY, skip);
         preferences.save();
     }
 

@@ -14,7 +14,10 @@ import io.github.jaymcole.housegraph.storage.AppPreferences;
 import io.github.jaymcole.housegraph.ui.io.RecentGraphs;
 import io.github.jaymcole.housegraph.ui.log.ExternalLogDestinations;
 import io.github.jaymcole.housegraph.ui.log.LogLevelPreferences;
+import io.github.jaymcole.housegraph.ui.log.LogWindow;
 import io.github.jaymcole.housegraph.ui.plugin.PluginWindow;
+import io.github.jaymcole.housegraph.ui.settings.AppSettings;
+import io.github.jaymcole.housegraph.ui.settings.SettingsWindow;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.stage.Stage;
@@ -33,8 +36,9 @@ import java.util.concurrent.TimeUnit;
  *
  * <h2>What lives here and what lives in a window</h2>
  * This class owns the things there is exactly one of per process — the preferences store, the
- * node-library catalog and class loader, the node registry, the module library — and the list of
- * open {@link GraphWindow}s. A window owns everything a person can have several of at once: a
+ * settings read from it, the node-library catalog and class loader, the node registry, the module
+ * library — and the list of open {@link GraphWindow}s. It is also where a settings change lands
+ * once the preferences window has applied the process-wide half of it: see {@code applySettings}. A window owns everything a person can have several of at once: a
  * stage, a {@link NodeGraph}, a canvas, an open file, an undo history. Commands the menus issue are
  * a window's business; the few that are inherently app-wide — reloading node libraries, quitting,
  * opening another window — come back here.
@@ -44,12 +48,14 @@ import java.util.concurrent.TimeUnit;
  * reachable from another window's listener.
  *
  * <h2>Arguments</h2>
- * Launched bare, the app reopens whatever {@link AppPreferences#LAST_FILE} holds. One named
+ * Launched bare, the app reopens whatever {@link AppPreferences#LAST_FILE} holds — unless the
+ * user has switched that off in the preferences window. One named
  * parameter exists for running it under a supervisor (see {@code remote/} and
  * {@code docs/engine/remote-runtime.md}):
  * <ul>
  *   <li>{@code --graph=<path>} — open this file instead of the last one, and <b>do not</b> record it
- *       as the last file. A daemon-opened graph must not overwrite what the person at the keyboard
+ *       as the last file. Unaffected by the reopen-last-graph setting: an explicit request outranks
+ *       a preference about what to do when there is no request. A daemon-opened graph must not overwrite what the person at the keyboard
  *       had open, and on a machine running several graphs at once "last" is meaningless anyway.</li>
  * </ul>
  *
@@ -88,6 +94,13 @@ public class App extends Application {
 
     private final AppPreferences preferences = AppPreferences.load();
 
+    /**
+     * The settings currently in force. Replaced wholesale whenever the preferences window commits
+     * a change, so a window asking for {@link #settings()} always gets the live values rather than
+     * whatever was true when it was built.
+     */
+    private volatile AppSettings settings = AppSettings.load(preferences);
+
     /** Counted down at the end of {@link #stop()}, so the shutdown hook knows teardown finished. */
     private final CountDownLatch stopped = new CountDownLatch(1);
 
@@ -101,9 +114,11 @@ public class App extends Application {
     private ModuleLibrary moduleLibrary;
 
     /**
-     * Whether this run may write {@link AppPreferences#LAST_FILE}. False when a graph was named with
-     * {@code --graph}: a supervised instance must not overwrite what the person at the keyboard had
-     * open, and on a machine running several graphs at once there is no single "last" file to record.
+     * Whether this run may write the state that describes what the person at this keyboard was
+     * doing — {@link AppPreferences#LAST_FILE}, the recent list, the remembered window size. False
+     * when a graph was named with {@code --graph}: a supervised instance must not overwrite any of
+     * it, and on a machine running several graphs at once there is no single "last" anything to
+     * record. Settings are unaffected; those are the user's choices, not a record of this session.
      */
     private boolean trackLastFile = true;
 
@@ -118,6 +133,10 @@ public class App extends Application {
         // Stand up logging first (console + file + in-memory window buffer) so everything
         // from here on is captured. Idempotent, so a second entry point can call it too.
         Logging.bootstrap(AppDirectories.get().logs());
+        // Saved settings next, and before anything resolves a directory or logs in volume: this is
+        // what points AppDirectories.saves() at a chosen graph folder and sizes the log file and
+        // buffer. Forgiving — an unusable graph folder falls back rather than stopping startup.
+        settings.applyGlobally();
         // Stand up any external destination (a Discord webhook) before levels are reapplied, so
         // the sink it registers is one of the outputs restore() reaches.
         ExternalLogDestinations.restore(preferences);
@@ -157,9 +176,20 @@ public class App extends Application {
         trackLastFile = requested.isEmpty();
         requested.filter(file -> !file.isFile())
                 .ifPresent(file -> log.error("No graph file at {}", file.getAbsolutePath()));
-        requested.or(() -> preferences.get(AppPreferences.LAST_FILE).map(File::new))
+        requested.or(this::rememberedGraph)
                 .filter(File::isFile)
                 .ifPresent(file -> first.openGraph(file, false));
+    }
+
+    /**
+     * The graph a bare launch reopens: {@link AppPreferences#LAST_FILE}, unless the user has
+     * switched that off. A graph named with {@code --graph} does not come through here — an
+     * explicit request outranks a preference about what to do when there is no request.
+     */
+    private Optional<File> rememberedGraph() {
+        return settings.reopenLastGraph()
+                ? preferences.get(AppPreferences.LAST_FILE).map(File::new)
+                : Optional.empty();
     }
 
     /** The {@code --graph=<path>} argument, if one was given. */
@@ -295,6 +325,35 @@ public class App extends Application {
         return preferences;
     }
 
+    /** The settings currently in force; see {@link #settings}. */
+    AppSettings settings() {
+        return settings;
+    }
+
+    /**
+     * Opens the preferences window, wired so that every change it commits is applied to this
+     * running app rather than waiting for the next launch.
+     */
+    void openSettings() {
+        SettingsWindow.show(preferences, this::applySettings);
+    }
+
+    /**
+     * Takes settings the preferences window has just saved and applied process-wide, and applies
+     * the half that belongs to a window: every open editor window, and the log window if it is up.
+     *
+     * <p>{@code AppSettings.applyGlobally()} has already run by the time this is called — the
+     * split is deliberate, and is what lets the settings model stay free of JavaFX and of any
+     * knowledge that windows exist.
+     */
+    private void applySettings(AppSettings updated) {
+        settings = updated;
+        for (GraphWindow window : windows) {
+            window.applySettings(updated);
+        }
+        LogWindow.applySettings(updated);
+    }
+
     PluginCatalog pluginCatalog() {
         return pluginCatalog;
     }
@@ -356,6 +415,27 @@ public class App extends Application {
         preferences.put(AppPreferences.LAST_FILE, file.getAbsolutePath());
         // Writes the store, the key just put included, so there is one write rather than two.
         RecentGraphs.remember(preferences, file);
+    }
+
+    /**
+     * Records an editor window's size as the one the next window opens at.
+     *
+     * <p>Declined by a supervised instance for the same reason {@link #rememberOpenedFile} is: a
+     * daemon-opened window is sized by whatever started it, and letting that overwrite the size the
+     * person at the keyboard chose would be the same mistake as overwriting the file they had open.
+     * Declined too when the user has switched restoring off, so nothing accumulates against a
+     * setting that is not in use.
+     *
+     * @param width  the closing window's width, already known to be usable
+     * @param height the closing window's height
+     */
+    void rememberWindowSize(long width, long height) {
+        if (!trackLastFile || !settings.restoreWindowSize()) {
+            return;
+        }
+        preferences.putLong(AppSettings.WINDOW_WIDTH, width);
+        preferences.putLong(AppSettings.WINDOW_HEIGHT, height);
+        preferences.save();
     }
 
     // --- Node libraries ----------------------------------------------------------------

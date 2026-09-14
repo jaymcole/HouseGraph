@@ -15,8 +15,11 @@ import java.util.function.Consumer;
  * watching, so a freshly-opened window can replay the whole {@link #snapshot()} and then
  * follow along via a {@linkplain #addListener listener}.
  *
- * <p>The buffer is bounded to a fixed capacity (a ring): once full, the oldest record is
- * evicted as each new one arrives, so memory stays flat during a long-running session.
+ * <p>The buffer is bounded to a capacity (a ring): once full, the oldest record is evicted as
+ * each new one arrives, so memory stays flat during a long-running session. The capacity is
+ * settable through {@link #setCapacity}, which is how the preferences window changes it without
+ * the app restarting — and without invalidating the handle {@code Logging.buffer()} has already
+ * handed out.
  *
  * <p><b>Threading.</b> Records are published from arbitrary execution threads; listeners
  * are typically added/removed and invoked toward a UI thread. The record deque is guarded
@@ -27,7 +30,8 @@ import java.util.function.Consumer;
  */
 public final class LogBufferSink extends AbstractLogSink {
 
-    private final int capacity;
+    /** Guarded by the {@link #records} lock, which every read and write of it already holds. */
+    private int capacity;
     private final Deque<LogRecord> records;
     private final List<Consumer<LogRecord>> listeners = new CopyOnWriteArrayList<>();
 
@@ -50,13 +54,41 @@ public final class LogBufferSink extends AbstractLogSink {
      * @return the maximum number of buffered records
      */
     public int capacity() {
-        return capacity;
+        synchronized (records) {
+            return capacity;
+        }
+    }
+
+    /**
+     * Resizes the ring, discarding the oldest records when the new capacity is smaller than
+     * what is already held.
+     *
+     * <h4>Shrinking drops history immediately</h4>
+     * The trim happens here rather than being left to the next {@link #publish}, so the memory
+     * a lowered capacity is meant to reclaim is actually released at the point the user asks
+     * for it. Listeners are not notified — a window rendering the buffer re-reads
+     * {@link #snapshot()} instead, the same way it does after {@link #clear()}.
+     *
+     * @param capacity the new maximum number of retained records (must be positive)
+     */
+    public void setCapacity(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be positive: " + capacity);
+        }
+        synchronized (records) {
+            this.capacity = capacity;
+            while (records.size() > capacity) {
+                records.removeFirst();
+            }
+        }
     }
 
     @Override
     public void publish(LogRecord record) {
         synchronized (records) {
-            if (records.size() == capacity) {
+            // A loop rather than a single removal: setCapacity can shrink the ring between
+            // publishes, leaving more than one record to shed.
+            while (records.size() >= capacity) {
                 records.removeFirst();
             }
             records.addLast(record);

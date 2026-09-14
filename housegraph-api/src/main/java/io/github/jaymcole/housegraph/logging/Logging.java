@@ -1,6 +1,7 @@
 package io.github.jaymcole.housegraph.logging;
 
 import java.nio.file.Path;
+import java.util.Optional;
 
 /**
  * One-call setup and teardown for the application's logging outputs, plus the handle the
@@ -32,7 +33,12 @@ import java.nio.file.Path;
  */
 public final class Logging {
 
-    /** Number of records the window buffer retains before evicting the oldest. */
+    /**
+     * Number of records the window buffer retains before evicting the oldest, until something
+     * says otherwise. The app reads a saved preference over this at startup and can change it
+     * live through {@link LogBufferSink#setCapacity}; this is the value a fresh profile starts
+     * from and the one a headless run keeps.
+     */
     public static final int BUFFER_CAPACITY = 5_000;
 
     private static final LogBufferSink BUFFER = new LogBufferSink(BUFFER_CAPACITY, LogLevel.DEBUG);
@@ -52,6 +58,16 @@ public final class Logging {
      */
     public static LogBufferSink buffer() {
         return BUFFER;
+    }
+
+    /**
+     * The registered file output, for the few callers that need to reconfigure it rather than
+     * merely log to it — the preferences window changing the rotation policy.
+     *
+     * @return the file sink, or empty when file logging was skipped or has been shut down
+     */
+    public static synchronized Optional<FileSink> fileSink() {
+        return Optional.ofNullable(fileSink);
     }
 
     /**

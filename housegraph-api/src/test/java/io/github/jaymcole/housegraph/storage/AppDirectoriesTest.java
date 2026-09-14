@@ -3,12 +3,15 @@ package io.github.jaymcole.housegraph.storage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AppDirectoriesTest {
@@ -113,5 +116,65 @@ class AppDirectoriesTest {
 
     private static UnaryOperator<String> env(Map<String, String> values) {
         return values::get;
+    }
+
+    // --- The graph folder is the one directory that can be moved -------------------
+
+    @Test
+    void savesDefaultsToTheSavesDirectoryUnderTheRoot(@TempDir Path dir) {
+        AppDirectories directories = new AppDirectories(dir);
+
+        assertEquals(dir.resolve("saves"), directories.saves());
+        assertEquals(dir.resolve("saves"), directories.defaultSaves());
+        assertNull(directories.savesOverride(), "nothing is overridden until it is set");
+    }
+
+    @Test
+    void anOverrideMovesOnlyTheGraphFolder(@TempDir Path dir, @TempDir Path elsewhere) {
+        AppDirectories directories = new AppDirectories(dir);
+        Path graphs = elsewhere.resolve("my-graphs");
+
+        directories.setSaves(graphs);
+
+        assertEquals(graphs, directories.saves());
+        assertTrue(Files.isDirectory(graphs), "the chosen folder is created when it is set");
+        // The whole reason this is not HOUSEGRAPH_HOME: the secret key, the plugin jars and the
+        // logs must not follow the user's documents out of the app directory.
+        assertEquals(dir.resolve("secrets"), directories.secrets());
+        assertEquals(dir.resolve("plugins"), directories.plugins());
+        assertEquals(dir.resolve("logs"), directories.logs());
+        assertEquals(dir.resolve("config"), directories.config());
+    }
+
+    @Test
+    void aNullOverrideReturnsToTheDefault(@TempDir Path dir, @TempDir Path elsewhere) {
+        AppDirectories directories = new AppDirectories(dir);
+        directories.setSaves(elsewhere.resolve("my-graphs"));
+
+        directories.setSaves(null);
+
+        assertEquals(dir.resolve("saves"), directories.saves());
+        assertNull(directories.savesOverride());
+    }
+
+    @Test
+    void anOverrideIsStoredAbsoluteAndNormalised(@TempDir Path dir, @TempDir Path elsewhere) {
+        AppDirectories directories = new AppDirectories(dir);
+
+        directories.setSaves(elsewhere.resolve("nested").resolve("..").resolve("graphs"));
+
+        assertEquals(elsewhere.resolve("graphs"), directories.savesOverride());
+    }
+
+    @Test
+    void anUnusableOverrideIsRejectedWhenItIsSet(@TempDir Path dir) throws java.io.IOException {
+        AppDirectories directories = new AppDirectories(dir);
+        // A regular file where a directory is wanted: createDirectories cannot make this work, and
+        // the failure belongs here — while the user is choosing — not at their next save.
+        Path file = dir.resolve("not-a-folder");
+        Files.writeString(file, "x");
+
+        assertThrows(UncheckedIOException.class, () -> directories.setSaves(file));
+        assertEquals(dir.resolve("saves"), directories.saves(), "a rejected choice changes nothing");
     }
 }

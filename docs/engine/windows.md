@@ -25,7 +25,10 @@ and a module index built once however many windows are open.
 
 Each window has its own undo history, missing-library notice and Watch Speed.
 **File ▸ Save** writes the file of the window whose menu was opened, and the window
-title carries that file's name. The copy/paste clipboard is a `GraphCanvas` field, so
+title carries that file's name. A window's Watch Speed *starts* at the configured
+default and changing that default applies it to every open window — a setting that
+did nothing until a new window was opened would read as broken — but **Run ▸ Watch
+Speed** still sets one window apart from the rest. The copy/paste clipboard is a `GraphCanvas` field, so
 it is per-window too — copying between windows is not something the canvas supports.
 
 What windows share, besides the services above, is `ResourceRegistry.shared()`. A
@@ -45,8 +48,17 @@ fresh `Stage`, and nothing else distinguishes them. A new window is stepped down
 right of the one opened most recently, measured from that window's actual position —
 an unshown stage's `x` and `y` are `NaN` until the platform places it.
 
-`stage.setOnHidden` is what disposes a window's graph. Two things follow from putting
-it there rather than on a close request:
+A window opens at the remembered size when **Restore the last window size** is on and
+a usable one was saved, otherwise at 1100×750. The remembered size is written as a
+window closes, not on every resize — which would write the preferences file on every
+drag frame — so with several windows open the last one closed wins, the same rule
+`LAST_FILE` follows. It is bounded on the way back in: a size read from a
+hand-editable file, written on whatever display the last session used, could otherwise
+open a window larger than the screen or smaller than its own chrome, and neither is
+recoverable by dragging.
+
+`stage.setOnHidden` is what disposes a window's graph, and records that size. Two
+things follow from putting it there rather than on a close request:
 
 - A closed window's timers, connections and child processes go away with it, while
   every other window keeps running.
@@ -93,13 +105,16 @@ budget does not scale with the number of windows: each graph's release pass is a
 concurrent, and graphs are disposed in turn.
 
 `--graph=<path>` still names one file, opened in the first window, and still keeps
-this run out of `LAST_FILE` and the recent list — see the `App` Javadoc and
+this run out of `LAST_FILE`, the recent list and the remembered window size — a
+supervised window is sized by whatever started it, and letting that overwrite the size
+the person at the keyboard chose is the same mistake as overwriting the file they had
+open. See the `App` Javadoc and
 [remote-runtime.md](remote-runtime.md).
 
 ---
 
 **When you change this, update…** this file whenever you change how editor windows
-are opened, closed, positioned or torn down, or move something across the line
+are opened, closed, positioned, sized or torn down, or move something across the line
 between `App` and `GraphWindow`. Menu wording and accelerators belong in
 [ui-layer.md](ui-layer.md); the launch and shutdown sequence in
 [architecture.md](architecture.md).

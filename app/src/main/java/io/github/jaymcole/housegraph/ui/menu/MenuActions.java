@@ -98,4 +98,16 @@ public interface MenuActions {
      * see {@code NodeGraph.setStepDelayMillis}.
      */
     void setStepDelayMillis(long millis);
+
+    /**
+     * The step delay currently in force in this window, so the Run ▸ Watch Speed radio items can
+     * show which one is selected. Read as the submenu opens rather than tracked here, because the
+     * preferences window can change a window's speed without going through the menu.
+     *
+     * @return the current step delay in milliseconds
+     */
+    long stepDelayMillis();
+
+    /** Opens the preferences window. */
+    void openSettings();
 }

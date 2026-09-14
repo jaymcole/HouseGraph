@@ -37,6 +37,11 @@ subprojects {
 
     test {
         useJUnitPlatform()
+        // Never let a test touch the developer's real HouseGraph profile. AppDirectories reads this
+        // property ahead of every OS-specific location, so anything a test creates through it lands
+        // under the build directory rather than in ~/.local/share, %APPDATA% or ~/Library.
+        systemProperty 'housegraph.home',
+                layout.buildDirectory.dir('test-housegraph-home').get().asFile.absolutePath
     }
 
     javadoc {

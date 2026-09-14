@@ -19,8 +19,10 @@ ui/
 │                      EdgeInteractionListener, ExecutionPolicyIcons
 ├── editor/            SecretsEditor
 ├── command/           Command, UndoManager, and every *Command
-├── log/               LogWindow, LogLevelPreferences
-├── menu/              MainMenuBar, MenuActions
+├── log/               LogWindow, LogLevelPreferences, ExternalLogDestinations,
+│                      ExternalLogSettingsDialog
+├── menu/              MainMenuBar, MenuActions, WatchSpeed
+├── settings/          AppSettings (the model), SettingsWindow (the dialog over it)
 ├── plugin/            PluginWindow (the node-library manager)
 ├── module/            ModulePickerDialog (choose which module a node references)
 ├── export/            GraphComponents, GraphImageExport
@@ -493,7 +495,10 @@ node's inline editor never reaches the menu.
 are plain state on the canvas with nothing to observe, and a closed menu cannot be
 looked at, so recomputing as each menu opens is both sufficient and cheap. The same
 hook renames **Save** to **Save…** while no file has been chosen, since until then it
-prompts.
+prompts, and re-reads which **Run ▸ Watch Speed** is selected — the preferences window
+can change a window's speed without the menu having been touched.
+
+**Tools ▸ Settings…** (`Ctrl/Cmd+,`) opens the preferences window; see below.
 
 The toolbar under it is a shortcut strip: New, Open, Save, Undo, Redo, Zoom to Fit.
 Every one of them is also a menu item — nothing lives in the toolbar alone, which is
@@ -551,10 +556,10 @@ which asks before closing a dirty window — see
 
 ## Auxiliary windows
 
-Both are standalone, non-modal, unowned top-level stages with toggle-to-front
+All three are standalone, non-modal, unowned top-level stages with toggle-to-front
 singleton `show()` methods — not modal dialogs like `SecretsEditor`. One of each
 serves the whole app: opening **Logs** from a second editor window raises the window
-already showing, and both act on state `App` owns rather than on any one canvas.
+already showing, and each acts on state `App` owns rather than on any one canvas.
 
 **`log/LogWindow`** renders the shared `LogBufferSink`. On open it replays
 `snapshot()`, the full retained history including everything captured while it was
@@ -587,13 +592,51 @@ than one shared bar for the whole window; each row's cell watches that row's own
 `activeInstall` property and switches itself, so nothing elsewhere has to remember
 to refresh the table when a download starts or finishes.
 
+**`settings/SettingsWindow`** is the preferences window, opened from **Tools ▸
+Settings…**. Four tabs — General, Editor, Logging, Node Libraries — over
+`settings/AppSettings`, which holds every key, default and range check and imports no
+JavaFX so all of that is unit-testable headlessly.
+
+**There is no OK button.** Every control commits as it is changed: saved to
+`AppPreferences`, applied to the running app, and reflected in the open windows before
+the user looks away. A dialog that batched changes behind OK would have to explain
+which of them needed a restart; one that applies immediately does not, and lets the
+effect of a choice be watched while the window making it is still open — which is why
+this is non-modal like the other two rather than a modal dialog.
+
+A change lands in two halves. `AppSettings.applyGlobally()` covers what is
+process-wide: the graph folder on `AppDirectories`, the rotation policy on the live
+`FileSink`, the ring size on the shared `LogBufferSink`. `App.applySettings` covers
+what belongs to a window: each editor window's Watch Speed, and the log window through
+`LogWindow.applySettings`. That split is what keeps the model free of JavaFX and of
+any knowledge that windows exist. **A setting added without a home in one of those two
+halves silently does nothing until restart.**
+
+Two settings are labelled in the dialog as taking effect at the next launch —
+reopening the last graph, and restoring the window size. That is not a plumbing gap:
+both describe what happens *during* startup, which has already happened by the time
+they can be edited.
+
+Log levels and the external destination are not part of `AppSettings` — they have
+their own stores and their own live-apply paths in `log/` — so the Logging tab drives
+them through `LogLevelPreferences` and `ExternalLogDestinations` directly. That is
+also what keeps them in step with the log window's own controls: changing either moves
+the other. `ExternalLogSettingsDialog` is reachable from both.
+
+The Node Libraries tab is where the install warning's "don't show this again" can be
+switched back on — the only place it can be, since the node-library window's checkbox
+can only ever set it. What a headless daemon may fetch and run stays in
+`config/remote.json`, stated there and not offered here: that file is the trust
+boundary, and a checkbox that widened it would defeat the point of having one. See
+[security-model.md](security-model.md).
+
 ---
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the context menu, change the
 menus or the toolbar, change a node's visual states, change what a group frame
-commands or how frames stack, change either auxiliary window, change what image export
-draws, or change when a node's `NodePresentation` is installed or cleared. How editor
+commands or how frames stack, change any auxiliary window, **add or change a setting
+or where it is applied**, change what image export draws, or change when a node's `NodePresentation` is installed or cleared. How editor
 windows are opened, closed and torn down belongs in [windows.md](windows.md);
 save-format changes in [save-format.md](save-format.md); extension-point changes also
 touch

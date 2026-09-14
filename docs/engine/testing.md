@@ -53,6 +53,17 @@ override or the package-visible `openIn`/`loadFrom`/`AppDirectories(root)`
 constructors — never the real user profile. Follow `SecretsStoreTest`,
 `AppDirectoriesTest`, `AppPreferencesTest`.
 
+The `test` task sets `housegraph.home` under the build directory as a backstop, so a
+test that reaches `AppDirectories.get()` transitively — `AppSettingsTest` does, via
+the folder a file dialog would open in — cannot create directories in the developer's
+real profile. Prefer an explicit temp directory anyway; the property is there so that
+forgetting cannot do damage.
+
+**Settings tests** are headless by construction: `AppSettings` holds the keys, the
+defaults and the clamping and imports no JavaFX, so a round trip, an out-of-range
+value and a garbled file are all assertable without a display. `SettingsWindow` is the
+part that needs one, and is not unit-tested.
+
 **Node tests** exercise a single node's `process()` or dynamic-port behaviour;
 `ObjectDecomposerNodeTest` covers the reflective case. See
 [`../nodes/testing-nodes.md`](../nodes/testing-nodes.md).
