@@ -2,6 +2,7 @@ package io.github.jaymcole.housegraph.ui.view;
 
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
+import io.github.jaymcole.housegraph.graph.FailurePolicy;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.sdk.NodeContentProvider;
@@ -95,6 +96,17 @@ public class NodeView extends BorderPane {
     /** Explains, on hover, which required inputs are unsatisfied while the node is misconfigured. */
     private final Tooltip validationTooltip = new Tooltip();
 
+    /**
+     * The anchors for the engine-owned error path. Always built (so the canvas registers them and an
+     * edge can reach them) but hidden unless the path is wired or the user asked to see it — see
+     * {@link #refreshErrorPathVisibility()}.
+     */
+    private FlowPortView errorFlowPortView;
+    private PortView errorMessagePortView;
+
+    /** Set from the context menu to show the error anchors on a node whose error path is not wired yet. */
+    private boolean errorPathRevealed = false;
+
     /** Sits beside the title, holding the glyph for the node's current {@link ExecutionPolicy}. */
     private final StackPane policyIcon = new StackPane();
     private final Tooltip policyTooltip = new Tooltip();
@@ -128,6 +140,11 @@ public class NodeView extends BorderPane {
         for (FlowPort flowPort : node.getFlowOutputs()) {
             flowOutPorts.add(new FlowPortView(this, flowPort));
         }
+        // The engine-owned error anchors are built like any other, so the canvas registers them and
+        // an edge can be dragged to them - but start hidden, and are revealed by
+        // refreshErrorPathVisibility() below. See BaseNode.hasErrorPathWired().
+        errorFlowPortView = new FlowPortView(this, node.getErrorFlowPort());
+        flowOutPorts.add(errorFlowPortView);
 
         Label title = new Label(node.getName());
         title.setMaxWidth(Double.MAX_VALUE);
@@ -220,9 +237,24 @@ public class NodeView extends BorderPane {
                 outputsBox.getChildren().add(port);
             }
         }
-
+        // Read off the declared ports, before the error anchor joins the box below: the anchor is
+        // hidden and unmanaged on a node whose error path is nobody's business, and letting it make
+        // an input-only node look two-columned would re-lay out every such node on the canvas.
+        //
+        // The one node that does need the output column for it is one with no declared outputs whose
+        // Error Message is already wired - a Send or a viewer, loaded from a graph that handles its
+        // failure. Body layout is chosen once, here, so that has to be decided now.
+        //
+        // Known limit: on such a node, ticking "Show error path" later reveals the Error flow-out
+        // (which lives in the title bar and is the port that matters) but not the message anchor,
+        // because the output column it would appear in is not part of this node's body. Wiring the
+        // message on a node that has other outputs, or re-opening the graph, both work.
         boolean hasInputs = !inputsBox.getChildren().isEmpty();
-        boolean hasOutputs = !outputsBox.getChildren().isEmpty();
+        boolean hasOutputs = !outputsBox.getChildren().isEmpty() || node.hasErrorPathWired();
+
+        errorMessagePortView = new PortView(this, node.getErrorMessageOutput(), PortView.Direction.OUTPUT);
+        outputPorts.add(errorMessagePortView);
+        outputsBox.getChildren().add(errorMessagePortView);
 
         Region body;
         if (hasInputs && !hasOutputs) {
@@ -414,9 +446,13 @@ public class NodeView extends BorderPane {
             // three are meaningful for any node that participates in flow - a trigger, an LLM/camera
             // node, a transform - not just entry points.
             menu.getItems().add(buildExecutionPolicyMenu());
+            menu.getItems().add(buildFailurePolicyMenu());
             menu.getItems().add(buildConcurrencyMenu());
             menu.getItems().add(buildTimeoutMenu());
         }
+        // Outside participatesInFlow(): a pure data node fails too, and its Error Message output is
+        // worth reaching even though it has no flow ports to cascade from.
+        menu.getItems().add(buildErrorPathItem());
         if (!node.getInputs().isEmpty()) {
             menu.getItems().add(buildRequiredInputsMenu());
         }
@@ -451,6 +487,59 @@ public class NodeView extends BorderPane {
             policyMenu.getItems().add(item);
         }
         return policyMenu;
+    }
+
+    /**
+     * Shows or hides this node's error anchors. They appear once something is wired to them, or once
+     * the user has asked to see them from the context menu — so a graph that handles no failures
+     * looks exactly as it did, and one that handles a failure here shows where.
+     *
+     * <p>Hidden anchors are also taken out of layout ({@code setManaged(false)}), so an unwired
+     * error path costs a node no height.
+     */
+    private void refreshErrorPathVisibility() {
+        boolean show = errorPathRevealed || node.hasErrorPathWired();
+        for (javafx.scene.Node anchor : new javafx.scene.Node[]{errorFlowPortView, errorMessagePortView}) {
+            if (anchor != null) {
+                anchor.setVisible(show);
+                anchor.setManaged(show);
+            }
+        }
+    }
+
+    /**
+     * Toggles the error anchors on a node whose error path is not wired yet — how the path is found
+     * in the first place. Wiring one keeps them shown regardless, so unticking this never hides an
+     * edge the user can see.
+     */
+    private javafx.scene.control.CheckMenuItem buildErrorPathItem() {
+        javafx.scene.control.CheckMenuItem item = new javafx.scene.control.CheckMenuItem("Show error path");
+        item.setSelected(errorPathRevealed || node.hasErrorPathWired());
+        item.setDisable(node.hasErrorPathWired());
+        item.setOnAction(event -> {
+            errorPathRevealed = item.isSelected();
+            refreshErrorPathVisibility();
+        });
+        return item;
+    }
+
+    /**
+     * A submenu of mutually-exclusive failure policies (see {@link io.github.jaymcole.housegraph.graph.FailurePolicy}),
+     * with the node's current one pre-selected.
+     */
+    private Menu buildFailurePolicyMenu() {
+        Menu menu = new Menu("On failure");
+        ToggleGroup group = new ToggleGroup();
+        for (FailurePolicy policy : FailurePolicy.values()) {
+            RadioMenuItem item = new RadioMenuItem(policy == FailurePolicy.HALT
+                    ? "Halt the branch (fire Error)"
+                    : "Carry on as if it succeeded");
+            item.setToggleGroup(group);
+            item.setSelected(node.getFailurePolicy() == policy);
+            item.setOnAction(event -> node.setFailurePolicy(policy));
+            menu.getItems().add(item);
+        }
+        return menu;
     }
 
     /** Swaps in the glyph and tooltip for the node's current policy; called at build time and after a change. */
@@ -590,6 +679,7 @@ public class NodeView extends BorderPane {
      * Pure view refresh — the truth lives in {@link BaseNode#getUnsatisfiedRequiredInputs()}.
      */
     public void refreshValidation() {
+        refreshErrorPathVisibility();
         List<NodeVariable> missing = node.getUnsatisfiedRequiredInputs();
         boolean misconfigured = !missing.isEmpty();
 

@@ -29,3 +29,4 @@ Do not write one for an ordinary implementation choice.
 | [0013](0013-publishing-a-module-is-explicit.md) | Publishing a module is an explicit command, not a side effect of saving |
 | [0014](0014-the-daemon-updates-itself-by-swapping-its-jar.md) | The daemon updates itself by swapping its jar and exiting |
 | [0015](0015-nothing-blocks-inside-synchronized.md) | Nothing the engine holds while a node blocks is `synchronized` |
+| [0016](0016-a-failed-node-halts-its-branch.md) | A failed node halts its branch and fires an Error port |

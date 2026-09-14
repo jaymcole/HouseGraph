@@ -126,6 +126,45 @@ port per element, exposing `Current Item` and `Index`, then `activate`s a
 
 The mechanism is described in [`../engine/loops.md`](../engine/loops.md).
 
+## Fail: just throw
+
+Your node does not declare an error port and does not activate one. Every node has
+an engine-owned `Error` flow-out and an `Error Message` output, and throwing out of
+`process()` is how you fire them.
+
+```java
+@Override
+public void process(ProcessContext ctx) {
+    activate(checked);                       // no longer defensive - see below
+    try {
+        result = GitRepoSync.sync(url, path);
+    } catch (IOException | GitAPIException e) {
+        throw new RuntimeException("Git sync failed for " + url, e);
+    }
+    ...
+}
+```
+
+By default (`FailurePolicy.HALT`) a throw fires **only** the `Error` port and
+discards whatever you activated first, so the ordering above is a readability
+choice rather than a safety one. Before the error path existed, activating a port
+ahead of the risky call was the only way to stop "activated nothing → fire
+everything" from making a failure look like a success; that workaround is no longer
+needed.
+
+**Throw something with a message.** It becomes `Error Message`, which is what a
+graph shows the user. Wrap a low-level cause rather than letting a bare
+`NullPointerException` out — the message is all a handler gets.
+
+**Do not catch to return quietly.** Swallowing an exception and returning normally
+tells the engine the node succeeded, and the branch continues against outputs you
+never set. If a failure is genuinely not a failure — a poll that found nothing —
+say so with a port (`Found`/`None`), not with a silent return.
+
+**Mark an input `required()` if the node is meaningless without it.** A required
+input whose producer failed fails your node too, before `process()` runs. That is
+what stops a send from running against the last image a camera successfully took.
+
 ## Choosing between them
 
 | You want | Use |
@@ -136,12 +175,14 @@ The mechanism is described in [`../engine/loops.md`](../engine/loops.md).
 | Continue only after every parallel branch finishes | `isFlowJoin()` |
 | Run a branch once per element | `runFlowBranchToCompletion` |
 | Run something on every arrival, first-wins | nothing — default behaviour |
+| Report that the node could not do its job | `throw` — see [Fail](#fail-just-throw) |
 
 ---
 
 **When you change this, update…** this file whenever you change `activate`,
-the flow-in arrival contract, the join contract, or the loop seam. The engine side
-lives in
+the flow-in arrival contract, the join contract, the loop seam, or what throwing out
+of `process()` does. The engine side lives in
 [`../engine/execution-model.md`](../engine/execution-model.md),
+[`../engine/error-path.md`](../engine/error-path.md),
 [`../engine/concurrency.md`](../engine/concurrency.md) and
 [`../engine/loops.md`](../engine/loops.md).

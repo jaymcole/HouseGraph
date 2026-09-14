@@ -51,6 +51,7 @@ avoids the rebuild — a preference, not a guarantee.
 | [execution-model.md](execution-model.md) | resolve vs. execute, run lifecycle, node status, `ProcessContext` |
 | [concurrency.md](concurrency.md) | virtual threads, `ExecutionContext`, locking, fan-out and joins |
 | [execution-policy.md](execution-policy.md) | `DROP`/`RESTART`/`QUEUE`/`PARALLEL` at two scopes |
+| [error-path.md](error-path.md) | what a failed node does to its run: the `Error` port, failure policies, failed data inputs |
 | [loops.md](loops.md) | seeded sub-runs for for-each bodies |
 | [type-system.md](type-system.md) | anchor types, `TypeConverters`, conversion safety |
 | [node-lifecycle.md](node-lifecycle.md) | lifecycle hooks, two-phase teardown, shutdown budgets |

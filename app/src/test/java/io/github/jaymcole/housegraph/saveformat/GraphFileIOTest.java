@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.saveformat;
 import io.github.jaymcole.housegraph.graph.ProcessContext;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
+import io.github.jaymcole.housegraph.graph.FailurePolicy;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
 import io.github.jaymcole.housegraph.graph.NodeVariable;
 import io.github.jaymcole.housegraph.graph.nodes.MissingNode;
@@ -514,6 +515,66 @@ class GraphFileIOTest {
         GraphSnapshot legacy = fromJson(legacyRoot);
         assertEquals(ExecutionPolicy.QUEUE, legacy.nodes().get(0).node().getExecutionPolicy(),
                 "a save with no execution policy must default to QUEUE");
+    }
+
+    @Test
+    void failurePolicyRoundTripsAndIsWrittenOnlyWhenItIsNotTheDefault() {
+        AddNode continuing = new AddNode();
+        continuing.setFailurePolicy(FailurePolicy.CONTINUE);
+
+        GraphSnapshot roundTripped = roundTrip(new GraphSnapshot(
+                List.of(new ClipboardNode(continuing, 0.0, 0.0)), List.of(), List.of()));
+        assertEquals(FailurePolicy.CONTINUE, roundTripped.nodes().get(0).node().getFailurePolicy());
+
+        // A node left at HALT writes no key at all: one every node carries would cost a line per
+        // node in every save file for a setting almost none of them change.
+        JSONObject halting = toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0.0, 0.0)), List.of(), List.of()))
+                .getJSONArray("nodes").getJSONObject(0);
+        assertFalse(halting.has("failurePolicy"), "the default is the absence of the key");
+    }
+
+    @Test
+    void aPreV5SaveLoadsAsHaltRatherThanKeepingTheOldCascadeOnFailure() {
+        // v4 and earlier have no "failurePolicy" key, and migrate() deliberately does not stamp
+        // CONTINUE onto them: the old behaviour - a failed node cascading as though it had
+        // succeeded - is the bug this format version fixes, and an old graph is the one most
+        // likely to have been quietly suffering from it.
+        JSONObject legacyNode = new JSONObject();
+        legacyNode.put("type", AddNode.class.getName());
+        legacyNode.put("x", 0.0);
+        legacyNode.put("y", 0.0);
+        JSONObject legacyRoot = new JSONObject();
+        legacyRoot.put("version", 4);
+        legacyRoot.put("nodes", new JSONArray(List.of(legacyNode)));
+        legacyRoot.put("dataEdges", new JSONArray());
+        legacyRoot.put("flowEdges", new JSONArray());
+
+        GraphSnapshot legacy = fromJson(legacyRoot);
+        assertEquals(FailurePolicy.HALT, legacy.nodes().get(0).node().getFailurePolicy());
+    }
+
+    @Test
+    void anEdgeOutOfTheEngineOwnedErrorPortsSurvivesARoundTrip() {
+        // The Error flow-out and Error Message output live outside getFlowOutputs()/getOutputs(),
+        // so edge persistence has to reach them through the connectable lists or a graph's whole
+        // error-handling wiring is silently dropped on save.
+        AddNode failing = new AddNode();
+        AddNode handler = new AddNode();
+        handler.getInputs().get(0).setRequired(false);
+        GraphSnapshot snapshot = new GraphSnapshot(
+                List.of(new ClipboardNode(failing, 0.0, 0.0), new ClipboardNode(handler, 40.0, 0.0)),
+                List.of(new ClipboardDataEdge(0, indexOfErrorMessage(failing), 1, 0, List.of())),
+                List.of());
+
+        GraphSnapshot roundTripped = roundTrip(snapshot);
+
+        assertEquals(1, roundTripped.dataEdges().size(), "the edge off the Error Message output survives");
+        assertEquals(indexOfErrorMessage(failing), roundTripped.dataEdges().get(0).sourceVariableIndex());
+    }
+
+    private static int indexOfErrorMessage(BaseNode node) {
+        return node.getConnectableOutputs().indexOf(node.getErrorMessageOutput());
     }
 
     @Test

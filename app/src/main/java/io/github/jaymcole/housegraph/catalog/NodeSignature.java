@@ -21,6 +21,14 @@ import java.util.TreeSet;
  * check only needs to recompute the same string and compare — no need to diff two structures field
  * by field, and no ambiguity about which fields matter.
  *
+ * <h2>The engine's error ports are not part of it</h2>
+ * Every node also carries an {@code Error} flow-out and an {@code Error Message} output the engine
+ * owns (see {@link BaseNode#getErrorFlowPort()}). They are absent here for free, because they live
+ * outside {@code getFlowOutputs()}/{@code getOutputs()} — and that is the right answer: this
+ * fingerprint describes the shape a node's <em>author</em> declared, and a port every node has says
+ * nothing about which type this is. It also means adding the error path changed no existing type's
+ * signature, so {@code housegraph nodes check} kept reporting real drift rather than all of it.
+ *
  * <h2>Known limit — dynamic ports</h2>
  * A node whose ports depend on its wiring or saved state (the object decomposer, a Discord slash
  * command) reports the shape it <em>currently</em> has, not some fixed default. Computed against a

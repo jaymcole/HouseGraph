@@ -217,6 +217,24 @@ process, withdrawing an mDNS registration, logging a client out) goes in
 with every other node's. Both must be idempotent, and both must work even if the
 node's UI was never built.
 
+**Throwing out of `process()` is how a node reports failure, and the engine acts on
+it.** Every node has an engine-owned `Error` flow-out and an `Error Message` output
+you do not declare. Under the default `FailurePolicy.HALT` a throw fires the `Error`
+port, halts the branch, and **discards any port you activated before throwing** — so
+a node no longer has to call `activate` ahead of the work that might fail to stop a
+failure looking like a success. Throw with a message worth reading: it becomes
+`Error Message`, and it is all a handler gets.
+
+The corollary is that **catching an exception and returning normally is now a lie.**
+It tells the engine the node succeeded, and everything downstream runs against
+outputs the node never set. If a failure is genuinely not a failure — a poll that
+found nothing — say so with a port, not with a silent return.
+
+**Mark an input `required()` when the node is meaningless without it.** A required
+input whose producer failed fails your node too, before `process()` runs. An optional
+one does not. This is what keeps a send from running against the last image a camera
+successfully took.
+
 **The asset name matters if you publish several libraries from one repository.**
 HouseGraph matches a library to its jar as `<pluginId>-<version>-all.jar`. With a
 single library in the repository there is nothing to disambiguate and any name
@@ -306,5 +324,7 @@ not need.
 - [ ] `javafx.scene.Node` never imported
 - [ ] Teardown split between `onRemoved()` and `releaseResources()`, both idempotent
 - [ ] Running state in a field, clocks on `NodeTimer`, control updates via `present(...)`
+- [ ] Failures thrown, not swallowed, and with a message worth showing a user
+- [ ] Inputs the node is meaningless without marked `required()`
 - [ ] Single jar, or assets named `<pluginId>-<version>-all.jar`
 - [ ] Built jar contains no `housegraph-api`, no `org.slf4j`, no SLF4J provider

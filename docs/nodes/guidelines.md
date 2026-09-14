@@ -101,6 +101,19 @@ The string converters' `in`, the viewers' displayed value, the `If` nodes'
 condition and the object decomposer's `Object` are all required. `Add`'s operands
 are not, because 0 is a sensible default.
 
+It is also what the error path keys off: a required input whose producer failed
+fails your node too, before `process()` runs, rather than letting it compute on the
+producer's last successful value. An optional input does not, because declaring one
+optional is you saying the node copes without it. See
+[flow-control.md](flow-control.md#fail-just-throw).
+
+## Throw when you cannot do your job
+
+Every node has an engine-owned `Error` flow-out. Throwing out of `process()` fires
+it and halts the branch; catching the exception and returning normally tells the
+engine you succeeded, and everything downstream runs against outputs you never set.
+Throw with a message worth reading — it becomes the `Error Message` output.
+
 ## Give a sensible default where one exists
 
 An input that can reasonably default should default, and should not be `required()`.

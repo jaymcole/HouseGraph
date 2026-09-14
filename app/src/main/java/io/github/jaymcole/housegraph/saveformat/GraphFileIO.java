@@ -3,6 +3,7 @@ package io.github.jaymcole.housegraph.saveformat;
 import io.github.jaymcole.housegraph.catalog.NodeSignature;
 import io.github.jaymcole.housegraph.graph.BaseNode;
 import io.github.jaymcole.housegraph.graph.ExecutionPolicy;
+import io.github.jaymcole.housegraph.graph.FailurePolicy;
 import io.github.jaymcole.housegraph.graph.FlowPort;
 import io.github.jaymcole.housegraph.graph.NodeMetadata;
 import io.github.jaymcole.housegraph.graph.NodeRegistry;
@@ -128,7 +129,7 @@ public final class GraphFileIO {
      * this when a change can't be handled by the shape-sniffing forgiving reads below, and add the
      * corresponding step to {@link #migrate}.
      */
-    static final int CURRENT_VERSION = 4;
+    static final int CURRENT_VERSION = 5;
 
     /** The version assumed for a save file that has no {@code version} key (written before versioning). */
     static final int LEGACY_VERSION = 0;
@@ -259,6 +260,12 @@ public final class GraphFileIO {
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
             nodeJson.put("executionPolicy", node.getExecutionPolicy().name());
+            if (node.getFailurePolicy() != FailurePolicy.HALT) {
+                // Written only when it is not the default, unlike executionPolicy above, which
+                // predates this discipline: a key every node carries costs a line per node in
+                // every save file for a setting almost none of them change.
+                nodeJson.put("failurePolicy", node.getFailurePolicy().name());
+            }
             if (node.getMaxConcurrency() != 0) {
                 nodeJson.put("maxConcurrency", node.getMaxConcurrency());
             }
@@ -483,6 +490,10 @@ public final class GraphFileIO {
             }
             // Absent in saves written before execution policies existed; default to QUEUE.
             node.setExecutionPolicy(parsePolicy(nodeJson.optString("executionPolicy", null)));
+            // Absent both in saves written before failure policies existed and in any node left at
+            // the default, so it reads as HALT either way. That is the one behavioural change a
+            // v4 file sees on load under v5 — see migrate().
+            node.setFailurePolicy(parseFailurePolicy(nodeJson.optString("failurePolicy", null)));
             node.setMaxConcurrency(nodeJson.optInt("maxConcurrency", 0));
             node.setTimeoutMillis(nodeJson.optLong("timeoutMillis", 0));
             // optJSONArray, not getJSONArray: the schema marks both optional, and a hand-written or
@@ -593,6 +604,13 @@ public final class GraphFileIO {
             log.warn("Save file version {} is newer than this build understands ({}); loading it as-is",
                     version, CURRENT_VERSION);
         }
+        // v4 -> v5 is a passthrough, and deliberately so. v5 added the per-node "failurePolicy" key,
+        // whose absence reads as HALT - so a v4 file's nodes, which have no such key, load with the
+        // new behaviour rather than the one they were saved under. Stamping CONTINUE onto them here
+        // would preserve it, and that is exactly what was decided against: the old behaviour (a
+        // failed node cascading as though it had succeeded) is the bug this release fixes, and an
+        // old graph is the one most likely to be quietly suffering from it. See
+        // docs/decisions/0016-a-failed-node-halts-its-branch.md.
         return root;
     }
 
@@ -800,7 +818,7 @@ public final class GraphFileIO {
         if (node == null) {
             return index;
         }
-        List<NodeVariable> variables = output ? node.getOutputs() : node.getInputs();
+        List<NodeVariable> variables = output ? node.getConnectableOutputs() : node.getInputs();
         if (index < 0 || index >= variables.size()) {
             return index;
         }
@@ -814,7 +832,7 @@ public final class GraphFileIO {
             return number.intValue();
         }
         if (ref instanceof String name && node != null) {
-            return indexByName(output ? node.getOutputs() : node.getInputs(), name);
+            return indexByName(output ? node.getConnectableOutputs() : node.getInputs(), name);
         }
         return -1;
     }
@@ -824,7 +842,7 @@ public final class GraphFileIO {
         if (node == null) {
             return index;
         }
-        List<FlowPort> ports = out ? node.getFlowOutputs() : node.getFlowInputs();
+        List<FlowPort> ports = out ? node.getConnectableFlowOutputs() : node.getFlowInputs();
         if (index < 0 || index >= ports.size()) {
             return index;
         }
@@ -844,7 +862,7 @@ public final class GraphFileIO {
             return number.intValue();
         }
         if (ref instanceof String name && node != null) {
-            List<FlowPort> ports = out ? node.getFlowOutputs() : node.getFlowInputs();
+            List<FlowPort> ports = out ? node.getConnectableFlowOutputs() : node.getFlowInputs();
             for (int i = 0; i < ports.size(); i++) {
                 if (ports.get(i).name.equals(name) && uniqueFlowPortName(ports, name)) {
                     return i;
@@ -903,6 +921,22 @@ public final class GraphFileIO {
         } catch (IllegalArgumentException e) {
             log.warn("Unknown execution policy in save file, defaulting to QUEUE: {}", name);
             return ExecutionPolicy.QUEUE;
+        }
+    }
+
+    /**
+     * A node's {@code failurePolicy} key, defaulting to {@link FailurePolicy#HALT} when it is absent
+     * (a pre-v5 save, or any node left at the default) or names something this build does not know.
+     */
+    private static FailurePolicy parseFailurePolicy(String name) {
+        if (name == null || name.isBlank()) {
+            return FailurePolicy.HALT;
+        }
+        try {
+            return FailurePolicy.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            log.warn("Unknown failure policy in save file, defaulting to HALT: {}", name);
+            return FailurePolicy.HALT;
         }
     }
 
