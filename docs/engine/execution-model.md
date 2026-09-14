@@ -106,7 +106,17 @@ UI and for tests; the engine drives execution off the context copy.
 - A completed node is not re-run within the same run, so a node reached by two
   branches runs once.
 - A failed `process()` is caught: the node goes `FAILED`, its exception is stored
-  in `getLastError()`, and the run continues.
+  in `getLastError()`, and the run continues **down the error path** rather than
+  down the node's ordinary flow-outs. See [the error path](#the-error-path).
+
+## The error path
+
+A node whose `process()` fails does not cascade to its ordinary flow-outs. Every
+node carries an engine-owned `Error` flow-out and an `Error Message` output, and a
+per-node `FailurePolicy` decides whether a failure fires them (`HALT`, the default)
+or cascades as though nothing went wrong (`CONTINUE`). A failed **required** data
+input fails its consumer too. Cancellation is not failure. The whole of it is in
+[error-path.md](error-path.md).
 
 ## Which flow ports control came in and went out by
 
@@ -261,6 +271,9 @@ The methods the engine calls on a node, all no-ops by default:
 | `onOutputEdgeAdded/Removed(edge)` | after a data edge out of the node is (un)wired | react to whether an output is consumed |
 | `activate(port)` | from within `process()` | branch: fire only the chosen flow-out ports |
 | `activateNone()` | from within `process()` | arm/disarm: fire no flow-out port at all this run |
+| `getErrorFlowPort()` | fired by the engine on failure | wire a handler to what a node does when it fails |
+| `getErrorMessageOutput()` | set by the engine on failure | report what went wrong |
+| `setFailurePolicy(p)` | configuration, not a hook | opt a best-effort node out of halting its branch |
 | `ctx.triggeredVia()` | read from within `process()` | tell apart which flow-in port fired this node |
 | `runFlowBranchToCompletion(port, seed)` | from within `process()` | loop: run one branch per item |
 | `getOwningGraph()` | from a node driving a second graph | pass on the callback executor and step delay |
@@ -278,4 +291,5 @@ Full detail on the teardown pair is in
 
 **When you change this, update…** this file and the `NodeGraph` / `BaseNode` /
 `ProcessContext` Javadoc whenever you change the resolve/execute model, the status
-lifecycle, the callback-executor contract, or the set of lifecycle hooks.
+lifecycle, the callback-executor contract, the error path, or the set of lifecycle
+hooks.

@@ -30,6 +30,8 @@ housegraph doctor
 | Two branches reconverge and the node fires twice — or too early | An ordinary node fires on the first arrival | Use a **Join** node to wait for all branches |
 | A slow node blocks others | It shouldn't — runs are concurrent | If two `PARALLEL` triggers fan into one shared node, that node serializes them unless it is also set `PARALLEL`. Right-click → Execution Policy |
 | A node keeps running after I changed its inputs | Default `QUEUE` finishes the current run first | Set it to `RESTART` if only the newest input matters |
+| A branch stops halfway and nothing downstream runs | A node on it failed, and a failed node halts its branch | Hover the node, or open the log — the failure is recorded against it. Wire its **Error** port (right-click → *Show error path*) to handle it, or set right-click → *On failure* to "Carry on" if the step is genuinely best-effort |
+| A node never runs even though flow reaches it | One of its **required** inputs is fed by a node that failed | The consumer fails without running rather than computing on a stale value. Fix the producer, or clear *Required* on that input if the node can cope without it |
 | Nodes show as placeholders | A node library isn't installed | See below |
 | A value I typed didn't save | The field is a computed output, or holds a secret | Only manually-authored, non-secret values are saved |
 

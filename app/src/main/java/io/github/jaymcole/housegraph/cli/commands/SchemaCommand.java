@@ -27,7 +27,8 @@ public final class SchemaCommand implements Command {
      * is not invalid, it is older.
      */
     private static final Map<String, String> RESOURCES = Map.of(
-            "graph", "/schema/graph-save.v4.schema.json",
+            "graph", "/schema/graph-save.v5.schema.json",
+            "graph-v5", "/schema/graph-save.v5.schema.json",
             "graph-v4", "/schema/graph-save.v4.schema.json",
             "graph-v3", "/schema/graph-save.v3.schema.json",
             "graph-v2", "/schema/graph-save.v2.schema.json",

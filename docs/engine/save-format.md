@@ -15,7 +15,7 @@ snapshot and camera state off it and handing them to this package.
 
 ```jsonc
 {
-  "version": 4,                    // format version; absent = pre-versioning (legacy)
+  "version": 5,                    // format version; absent = pre-versioning (legacy)
   "plugins": [                     // node libraries this graph depends on; omitted when core-only
     { "id": "housegraph-discord", "name": "Discord", "version": "0.3.1",
       "repository": "https://github.com/jaymcole/housegraph-discord" }
@@ -33,6 +33,7 @@ snapshot and camera state off it and handing them to this package.
       "module": "6f1c…",              // which modules[] row a ModuleNode references; absent otherwise
       "x": 0.0, "y": 0.0,
       "executionPolicy": "QUEUE",     // DROP | RESTART | QUEUE | PARALLEL; absent = QUEUE
+      "failurePolicy": "CONTINUE",    // HALT | CONTINUE; absent = HALT, and written only when not HALT
       "inputs":  [ { "name": "V1", "value": 3.0 } ],   // keyed by port name
       "outputs": [ { "name": "Sum", "value": null } ], // computed values written as null
       "requiredInputs": [ "V1" ],     // names of required inputs; absent when none are
@@ -190,7 +191,7 @@ explicit `@Node.Type` id. On load, `NodeRegistry.resolveClass` matches it agains
 an index of every type's ids — simple names plus `@Node.Type` ids and aliases —
 falling back to fully-qualified-class-name resolution for older saves.
 
-**The root is versioned.** `GraphFileIO.CURRENT_VERSION` is 4; a file without it
+**The root is versioned.** `GraphFileIO.CURRENT_VERSION` is 5; a file without it
 reads as legacy. `GraphFileIO.migrate` is the single seam for structural migrations
 that shape-sniffing reads cannot express. Bump the version and add a step there
 together.
@@ -200,9 +201,20 @@ together.
 | v1 → v2 | the `plugins` table and the per-node `plugin` key | none — purely additive |
 | v2 → v3 | the `modules` table, the per-node `module` key, and a module file's own root `module` object | none — purely additive |
 | v3 → v4 | the `groups` table | none — purely additive |
+| v4 → v5 | the per-node `failurePolicy` key | none — and that changes behaviour, deliberately |
 
-All three are passthroughs, and `migrate` says so rather than being silent about it:
+All four are passthroughs, and `migrate` says so rather than being silent about it:
 a step that does nothing is a decision, and the next person needs to see it was made.
+
+**v4 → v5 is the one whose passthrough is load-bearing.** An absent `failurePolicy`
+reads as `HALT`, so a v4 file's nodes — which have no such key — load with the *new*
+behaviour rather than the one they were saved under: a node that fails now halts its
+branch instead of cascading. Stamping `CONTINUE` onto them would have preserved it,
+and that was decided against. The old behaviour is the bug this version fixes, and an
+old graph is the one most likely to have been quietly suffering from it. A graph that
+genuinely wants a best-effort step sets `CONTINUE` on that node, which is then
+written. See
+[`../decisions/0016-a-failed-node-halts-its-branch.md`](../decisions/0016-a-failed-node-halts-its-branch.md).
 
 **Nodes record which library provides them.** A built-in node writes no `plugin`
 key, so a graph using only core nodes produces a v2 file differing from its v1 form
@@ -301,6 +313,16 @@ graph referencing it, and drift is exactly what "the module's interface changed"
 looks like from outside. Separately, `SchemaDriftCheck` instantiates a node
 **without** applying its state, so a dynamic-port node's recomputed signature never
 matches the saved one — pre-existing, and equally true of the object decomposer.
+
+**The engine's error ports are wirable but not declared.** Every node carries an
+`Error` flow-out and an `Error Message` output the engine owns (see
+[error-path.md](error-path.md)). They live outside `getFlowOutputs()`/`getOutputs()`,
+so they never appear in a node's `inputs`/`outputs` arrays and never reach
+`nodeSignature` — adding them changed no existing type's fingerprint. An **edge** to
+either resolves through `getConnectableFlowOutputs()`/`getConnectableOutputs()`,
+which are the declared ports plus the error ones sorted last, so every declared port
+keeps the index it had and an older file's positional references stay valid. A graph's
+error wiring round-trips like any other edge.
 
 **Ports are persisted by name, not position.** Values are `{name, value}` objects
 matched to inputs by name on load. A data or flow edge references its

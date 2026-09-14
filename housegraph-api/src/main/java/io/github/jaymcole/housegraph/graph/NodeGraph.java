@@ -132,6 +132,19 @@ import java.util.function.Consumer;
  * cancellation is OR-ed into the driven run's, so being superseded or timed out crosses the
  * boundary. See {@code docs/engine/execution-model.md}.
  * <p>
+ * <b>A failed node halts its branch.</b> When a node's {@code process()} throws (or its timeout
+ * elapses), the run does not cascade to that node's ordinary flow-outs. Every node carries an
+ * engine-owned {@link BaseNode#getErrorFlowPort() Error} flow-out and an
+ * {@link BaseNode#getErrorMessageOutput() Error Message} output, and {@link FailurePolicy} decides
+ * which fires: {@link FailurePolicy#HALT} (the default) fires the Error port and nothing else,
+ * discarding whatever the node activated before it threw; {@link FailurePolicy#CONTINUE} is the
+ * previous behaviour. A <em>required</em> data input whose producer failed fails its consumer too,
+ * before {@code process()} runs, so a node never computes on a value whose producer did not
+ * actually produce it. <b>Cancellation is not failure</b> — a run superseded by a
+ * {@link ExecutionPolicy#RESTART} or stopped by {@link #dispose()} is {@code FAILED} without being
+ * recorded as a fault, and never routes to the error path. See
+ * {@code docs/engine/error-path.md}.
+ * <p>
  * <b>A run can be slowed down to be watched.</b> {@link #setStepDelayMillis} pauses before each
  * node's {@code process()} in a flow-driven run, stretching a cascade out to a pace the execution
  * callbacks below can actually be seen at. Off by default and never persisted. Every flow-driven
@@ -979,6 +992,24 @@ public class NodeGraph {
             setStatus(context, node, NodeProcessingStatus.IN_PROGRESS);
             for (Edge edge : getIncomingDataEdges(node)) {
                 resolveInternal(context, edge.getSourceNode());
+                Throwable upstreamFailure = context.failureOf(edge.getSourceNode());
+                boolean carriesTheFailure =
+                        BaseNode.isErrorMessageOutput(edge.getSourceNode(), edge.getSourceVariable());
+                if (upstreamFailure != null && edge.getTargetVariable().isRequired() && !carriesTheFailure) {
+                    // A required input whose producer failed has no value this node can honestly be
+                    // run against: the producer's output still holds whatever its last successful
+                    // run left there, so propagating would feed this node stale data dressed up as
+                    // fresh. Fail it instead, carrying the upstream failure as the cause, and let
+                    // its own failure policy route it — which propagates transitively down a chain
+                    // of required inputs and reaches the first Error port wired anywhere along it.
+                    // An *optional* input is left alone deliberately: declaring an input optional is
+                    // the author saying the node copes without it. So is an edge out of the failed
+                    // node's own Error Message output, whatever the input's requiredness: that edge
+                    // exists precisely to carry the failure to a handler, and failing the handler
+                    // for reading it would make the error path unusable.
+                    failFromDependency(context, node, edge, upstreamFailure);
+                    return;
+                }
                 propagateValue(edge);
                 callbackExecutor.execute(() -> notifyDataEdgeTraversed(edge));
             }
@@ -1000,6 +1031,57 @@ public class NodeGraph {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * Marks {@code node} failed because {@code edge}, one of its <em>required</em> data inputs, is
+     * fed by a node that failed — without running its {@code process()}, which has no honest inputs
+     * to run against.
+     *
+     * <p>The recorded failure names the input and the upstream node and carries the original as its
+     * cause, so a chain of these reads as one story rather than as an unexplained failure at the
+     * far end. The node is left {@code FAILED} with the failure recorded on the context, which is
+     * exactly the state {@link #runProcess} leaves a node that threw — so {@link Run#fire} routes it
+     * down the error path identically, and a node consuming <em>its</em> output through a required
+     * input fails in turn.
+     *
+     * <p>The started/executed notifications still fire: from the outside this is a node that was
+     * reached and did not work, and a UI that skipped it would show it as never having run.
+     */
+    /**
+     * Writes {@code failure}'s message into {@code node}'s engine-owned
+     * {@linkplain BaseNode#getErrorMessageOutput() error-message output} for this run, so a handler
+     * wired to the Error port can report what went wrong.
+     *
+     * <p>Written into the run's own context and then committed, exactly as a node's {@code process()}
+     * output would be, so two concurrent runs failing the same node each carry their own message
+     * rather than one overwriting the other's.
+     *
+     * <p>Falls back to the exception's type when its message is null — a bare
+     * {@code NullPointerException} says nothing otherwise, and an empty string downstream reads as
+     * "no error" rather than as an error nobody described.
+     */
+    private void publishErrorMessage(ExecutionContext context, BaseNode node, Throwable failure) {
+        String message = failure.getMessage();
+        context.setValue(node.getErrorMessageOutput(),
+                message == null || message.isBlank() ? failure.getClass().getSimpleName() : message);
+        context.commitValuesOf(node);
+    }
+
+    private void failFromDependency(ExecutionContext context, BaseNode node, Edge edge, Throwable cause) {
+        String message = "Required input \"" + edge.getTargetVariable().name + "\" of \"" + node.getName()
+                + "\" could not be resolved: \"" + edge.getSourceNode().getName() + "\" failed";
+        Throwable failure = new IllegalStateException(message, cause);
+        callbackExecutor.execute(() -> notifyNodeStarted(node));
+        setStatus(context, node, NodeProcessingStatus.FAILED);
+        node.setLastError(failure);
+        context.recordFailure(node, failure);
+        publishErrorMessage(context, node, failure);
+        log.debug("Skipping \"{}\": {}", node.getName(), message);
+        callbackExecutor.execute(() -> {
+            node.onExecuted();
+            notifyNodeExecuted(node);
+        });
     }
 
     /**
@@ -1095,6 +1177,14 @@ public class NodeGraph {
             if (cancelledNotTimedOut) {
                 log.debug("Node \"{}\" processing was cancelled", node.getName());
             } else {
+                // Genuine fault, so it routes down the error path; a plain cancellation does not
+                // (see ExecutionContext.failures). Recorded before the log line so a listener
+                // reacting to the log can already see the failure on the context.
+                context.recordFailure(node, error);
+                // Published here rather than where the cascade routes, so every failure sets it:
+                // a node failed by a plain resolve() pull has no cascade to route, and a node under
+                // CONTINUE still has a downstream that may want to know what went wrong.
+                publishErrorMessage(context, node, error);
                 // Attached as the record's throwable, not formatted into the text: toString() gives
                 // only the outermost message, which for a node that wraps a lower-level failure
                 // ("start failed for bridge") names the symptom and hides the reason. Attaching it
@@ -1429,13 +1519,28 @@ public class NodeGraph {
                     held = null;
                 }
 
+                // Did it genuinely fail (as opposed to being cancelled, which is not the graph's
+                // business - see ExecutionContext.failures)? Under HALT that replaces the node's
+                // ordinary cascade with its Error port, whatever it activated before it failed.
+                boolean routeToError = context.failureOf(node) != null
+                        && node.getFailurePolicy() == FailurePolicy.HALT;
+
                 // Which out-ports fired: whatever process() activated, or - if it activated nothing
                 // - all of them (see BaseNode.activate); an explicit activateNone() fires none at all.
                 // A branch node narrows the cascade this way; an arm/disarm entry point stops it here.
                 Set<FlowPort> activated = context.activatedOf(node);
                 boolean firesNothing = context.activatesNone(node);
                 for (FlowEdge flowEdge : getOutgoingFlowEdges(node)) {
-                    if (firesNothing || (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort()))) {
+                    boolean isErrorEdge = BaseNode.isErrorFlowPort(node, flowEdge.getSourcePort());
+                    if (routeToError != isErrorEdge) {
+                        // A failed node routing to its error path fires only the Error port; every
+                        // other firing fires everything except it. The Error port is never part of
+                        // the ordinary activation set, so a node that activates nothing still does
+                        // not fire it, and a node under CONTINUE never does either.
+                        continue;
+                    }
+                    if (!routeToError
+                            && (firesNothing || (!activated.isEmpty() && !activated.contains(flowEdge.getSourcePort())))) {
                         continue;
                     }
                     if (isCancelled()) {

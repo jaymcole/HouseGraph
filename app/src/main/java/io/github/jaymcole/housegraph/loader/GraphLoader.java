@@ -130,7 +130,7 @@ public final class GraphLoader {
                     entry.sourceNodeIndex(), entry.targetNodeIndex(), nodes.size());
             return null;
         }
-        NodeVariable sourceVariable = at(sourceNode.getOutputs(), entry.sourceVariableIndex());
+        NodeVariable sourceVariable = at(sourceNode.getConnectableOutputs(), entry.sourceVariableIndex());
         NodeVariable targetVariable = at(targetNode.getInputs(), entry.targetVariableIndex());
         if (sourceVariable == null || targetVariable == null) {
             log.warn("Skipping data edge with out-of-range port index (sourceVar={}, targetVar={}) between nodes {} and {}",
@@ -158,7 +158,7 @@ public final class GraphLoader {
                     entry.sourceNodeIndex(), entry.targetNodeIndex(), nodes.size());
             return null;
         }
-        FlowPort sourcePort = at(sourceNode.getFlowOutputs(), entry.sourcePortIndex());
+        FlowPort sourcePort = at(sourceNode.getConnectableFlowOutputs(), entry.sourcePortIndex());
         FlowPort targetPort = at(targetNode.getFlowInputs(), entry.targetPortIndex());
         if (sourcePort == null || targetPort == null) {
             log.warn("Skipping flow edge with out-of-range port index (sourcePort={}, targetPort={}) between nodes {} and {}",

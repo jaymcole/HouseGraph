@@ -203,9 +203,14 @@ class GraphFileIOModulesTest {
 
     @Test
     void theBundledSchemaDescribesExactlyWhatThisBuildWrites() throws Exception {
+        // Derived from the version this build writes rather than named literally, so bumping
+        // CURRENT_VERSION without bundling the matching schema fails here instead of silently
+        // checking the writer against a schema it has outgrown.
+        String schemaResource = "/schema/graph-save.v" + SaveFileFixture.currentVersion() + ".schema.json";
+        var schemaStream = GraphFileIO.class.getResourceAsStream(schemaResource);
+        assertNotNull(schemaStream, "no bundled schema for the version this build writes: " + schemaResource);
         JSONObject schema = new JSONObject(new String(
-                GraphFileIO.class.getResourceAsStream("/schema/graph-save.v4.schema.json").readAllBytes(),
-                java.nio.charset.StandardCharsets.UTF_8));
+                schemaStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
 
         assertEquals(SaveFileFixture.currentVersion(),
                 schema.getJSONObject("properties").getJSONObject("version").getInt("const"),

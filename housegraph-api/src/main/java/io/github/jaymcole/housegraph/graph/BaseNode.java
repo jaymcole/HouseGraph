@@ -12,6 +12,12 @@ import java.util.concurrent.Semaphore;
 
 public abstract class BaseNode {
 
+    /** Name of the engine-owned error flow-out every node carries. See {@link #getErrorFlowPort()}. */
+    public static final String ERROR_FLOW_PORT_NAME = "Error";
+
+    /** Name of the engine-owned error-message output every node carries. See {@link #getErrorMessageOutput()}. */
+    public static final String ERROR_MESSAGE_OUTPUT_NAME = "Error Message";
+
     private NodeGraph graph;
     private NodeProcessingStatus status = NodeProcessingStatus.NOT_STARTED;
     private Throwable lastError;
@@ -29,6 +35,30 @@ public abstract class BaseNode {
      * concurrent runs overlap on it).
      */
     private volatile ExecutionPolicy executionPolicy = ExecutionPolicy.QUEUE;
+
+    /**
+     * What happens to the cascade when this node's {@code process()} fails — see
+     * {@link FailurePolicy}. Read on firing threads, so kept {@code volatile}. Defaults to
+     * {@link FailurePolicy#HALT}: a failed node fires {@link #getErrorFlowPort() its Error port}
+     * rather than its ordinary flow-outs, so a branch does not continue against the values of a
+     * step that did not work.
+     */
+    private volatile FailurePolicy failurePolicy = FailurePolicy.HALT;
+
+    /**
+     * The engine-owned flow-out fired instead of this node's ordinary flow-outs when it fails under
+     * {@link FailurePolicy#HALT}. Every node has one; see {@link #getErrorFlowPort()} for why it is
+     * the engine's rather than each node author's.
+     */
+    private final FlowPort errorFlowPort = new FlowPort(ERROR_FLOW_PORT_NAME, FlowPort.Direction.OUT);
+
+    /**
+     * The engine-owned data output carrying the message of the failure that fired
+     * {@link #errorFlowPort}, so a handler can report what went wrong without the node author
+     * having to plumb it. Transient and never persisted — it describes one run, not the node.
+     */
+    private final NodeVariable<String> errorMessage =
+            new NodeVariable<String>(ERROR_MESSAGE_OUTPUT_NAME, String.class).transientValue();
 
     /**
      * Caps how many runs may execute this node's {@link #process(ProcessContext) process()} at once, across all concurrent
@@ -581,6 +611,52 @@ public abstract class BaseNode {
     }
 
     /**
+     * This node's flow-out ports <em>plus</em> its engine-owned {@link #getErrorFlowPort() Error}
+     * port — everything a {@link FlowEdge} may legitimately leave this node by.
+     *
+     * <h4>Why this is separate from {@link #getFlowOutputs()}</h4>
+     * {@code getFlowOutputs()} answers "what flow-outs did this node's author declare", and a great
+     * deal depends on that answer being unpolluted: a node with no flow ports at all is a pure data
+     * node, one with flow-outs and no flow-ins is an execution entry point
+     * ({@link #isExecutionEntryPoint()}), and a module's boundary markers derive a module's whole
+     * interface from theirs. Folding a port every node has into that list would make every constant
+     * a trigger and give every module a phantom port.
+     *
+     * <p>So the error port is <em>connectable</em> without being <em>declared</em>. Only the code
+     * that genuinely wires or draws ports reads this list: edge persistence, edge resolution on
+     * load, and the canvas. Everything asking about a node's shape keeps reading the other one and
+     * keeps getting the author's answer.
+     *
+     * <p>The error port sorts last, so every declared port keeps the index it had and an older save
+     * file's positional flow-edge references stay valid.
+     *
+     * @return this node's declared flow-outs followed by its error port, unmodifiable
+     */
+    public List<FlowPort> getConnectableFlowOutputs() {
+        ensureConfigured();
+        List<FlowPort> connectable = new ArrayList<>(flowOutputs);
+        connectable.add(errorFlowPort);
+        return Collections.unmodifiableList(connectable);
+    }
+
+    /**
+     * This node's data outputs <em>plus</em> its engine-owned
+     * {@link #getErrorMessageOutput() Error Message} output — everything an {@link Edge} may
+     * legitimately leave this node by. The data-side counterpart of
+     * {@link #getConnectableFlowOutputs()}, separate from {@link #getOutputs()} for the same
+     * reasons and sorted the same way.
+     *
+     * @return this node's declared outputs followed by its error-message output, unmodifiable
+     */
+    @SuppressWarnings("rawtypes")
+    public List<NodeVariable> getConnectableOutputs() {
+        ensureConfigured();
+        List<NodeVariable> connectable = new ArrayList<>(outputs);
+        connectable.add(errorMessage);
+        return Collections.unmodifiableList(connectable);
+    }
+
+    /**
      * The node's display name: {@link Display.Name#value()} if the class is annotated with it, else the simple class name.
      *
      * @return this node's display name
@@ -619,6 +695,121 @@ public abstract class BaseNode {
      */
     public void setExecutionPolicy(ExecutionPolicy executionPolicy) {
         this.executionPolicy = executionPolicy == null ? ExecutionPolicy.QUEUE : executionPolicy;
+    }
+
+    /**
+     * How a failure of this node's {@code process()} affects the cascade — see
+     * {@link FailurePolicy}. Never null.
+     *
+     * @return this node's failure policy
+     */
+    public FailurePolicy getFailurePolicy() {
+        return failurePolicy;
+    }
+
+    /**
+     * Sets how a failure of this node's {@code process()} affects the cascade.
+     *
+     * @param failurePolicy the policy to apply; null resets to {@link FailurePolicy#HALT}
+     */
+    public void setFailurePolicy(FailurePolicy failurePolicy) {
+        this.failurePolicy = failurePolicy == null ? FailurePolicy.HALT : failurePolicy;
+    }
+
+    /**
+     * This node's error flow-out: the port the engine fires, instead of the node's ordinary
+     * flow-outs, when {@code process()} fails under {@link FailurePolicy#HALT}.
+     *
+     * <h4>Why the engine owns it rather than each node declaring one</h4>
+     * A failure path only works if it is <em>universal</em>. An author who has to remember to add
+     * an {@code Error} port will add one to the node whose failure they anticipated and leave it
+     * off the rest, which is the state the engine was already in: every node could fail, and none
+     * could say so. Giving every node the port means a graph can handle a failure anywhere,
+     * including in a third-party library whose author never thought about it.
+     *
+     * <h4>It is fired by the engine, not by the node</h4>
+     * A node never {@link #activate}s this port — it has already thrown by the time it matters, and
+     * a node that could reach an {@code activate} call did not fail. {@link NodeGraph} fires it
+     * from the failure it recorded, and {@link #getErrorMessageOutput()} carries the message.
+     *
+     * @return the engine-owned error flow-out port, never null
+     */
+    public final FlowPort getErrorFlowPort() {
+        ensureConfigured();
+        return errorFlowPort;
+    }
+
+    /**
+     * This node's error-message output: the message of the failure that fired
+     * {@link #getErrorFlowPort()}, set by the engine immediately before it does.
+     * <p>
+     * Transient, so it is never written to a save file — it describes one run rather than the
+     * node's configuration. Null whenever the node's last run did not fail.
+     *
+     * @return the engine-owned error-message output, never null
+     */
+    public final NodeVariable<String> getErrorMessageOutput() {
+        ensureConfigured();
+        return errorMessage;
+    }
+
+    /**
+     * Whether {@code port} is the engine-owned {@link #getErrorFlowPort() error flow-out} of the
+     * node that owns it, rather than one its author declared.
+     * <p>
+     * The distinction matters wherever a node's <em>authored</em> shape is what is being described:
+     * a type fingerprint, or a view that should not draw an error anchor on every node on the
+     * canvas. Compared by identity, so a node that happens to declare a port called "Error" of its
+     * own is not mistaken for this one.
+     *
+     * @param node the node the port belongs to
+     * @param port the port to test
+     * @return true when {@code port} is {@code node}'s engine-owned error flow-out
+     */
+    public static boolean isErrorFlowPort(BaseNode node, FlowPort port) {
+        return node != null && port != null && port == node.errorFlowPort;
+    }
+
+    /**
+     * Whether {@code variable} is the engine-owned {@link #getErrorMessageOutput() error-message
+     * output} of the node that owns it. The counterpart of {@link #isErrorFlowPort}, for the same
+     * reasons.
+     *
+     * @param node the node the variable belongs to
+     * @param variable the variable to test
+     * @return true when {@code variable} is {@code node}'s engine-owned error-message output
+     */
+    public static boolean isErrorMessageOutput(BaseNode node, NodeVariable<?> variable) {
+        return node != null && variable != null && variable == node.errorMessage;
+    }
+
+    /**
+     * Whether anything is wired to either of this node's error ports — a flow edge out of
+     * {@link #getErrorFlowPort()}, or a data edge out of {@link #getErrorMessageOutput()}.
+     * <p>
+     * What a canvas draws error anchors for. Every node has them, and drawing two extra anchors on
+     * every node of a forty-node graph would cost far more legibility than the feature is worth, so
+     * they appear on the nodes whose failures a graph actually handles — and on any node the user
+     * asks to see them on.
+     *
+     * @return true when this node's error path is wired; false when it is not, or the node is not in a graph
+     */
+    public final boolean hasErrorPathWired() {
+        NodeGraph owner = getOwningGraph();
+        if (owner == null) {
+            return false;
+        }
+        for (FlowEdge edge : owner.getOutgoingFlowEdges(this)) {
+            if (edge.getSourcePort() == errorFlowPort) {
+                return true;
+            }
+        }
+        for (Edge edge : owner.getOutgoingDataEdges(this)) {
+            if (edge.getSourceVariable() == errorMessage) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

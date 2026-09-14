@@ -72,6 +72,20 @@ public final class ExecutionContext {
     private final Set<BaseNode> noActivation = ConcurrentHashMap.newKeySet();
 
     /**
+     * Nodes whose run <em>genuinely failed</em> this run, mapped to the failure, so the cascade can
+     * route them down the error path (see {@link FailurePolicy}).
+     *
+     * <p>Deliberately narrower than {@link NodeProcessingStatus#FAILED}. A node cancelled by a
+     * superseding {@link ExecutionPolicy#RESTART} or by {@link NodeGraph#dispose()} is also marked
+     * {@code FAILED}, but that is an expected outcome of the engine's own decision rather than
+     * something a graph should handle: firing an Error branch — a Discord alert, say — every time a
+     * repeating trigger superseded its own previous run would make {@code RESTART} unusable. So a
+     * failure is recorded here only when something actually went wrong, and everything downstream
+     * of the error path reads this rather than the status.
+     */
+    private final Map<BaseNode, Throwable> failures = new ConcurrentHashMap<>();
+
+    /**
      * The IN flow ports each node has had an edge arrive at this run — the inbound mirror of
      * {@link #activatedOutputs}. Accumulated by {@code NodeGraph.Run.schedule} on every arrival,
      * including ones the node-level dedup then drops, and snapshotted into the node's
@@ -219,7 +233,10 @@ public final class ExecutionContext {
         for (NodeVariable<?> variable : node.getInputs()) {
             commit(variable);
         }
-        for (NodeVariable<?> variable : node.getOutputs()) {
+        // getConnectableOutputs(), not getOutputs(): the engine-owned Error Message output lives
+        // outside the declared list, and a node's last failure is exactly the kind of thing the
+        // observers above exist to show.
+        for (NodeVariable<?> variable : node.getConnectableOutputs()) {
             commit(variable);
         }
     }
@@ -261,5 +278,30 @@ public final class ExecutionContext {
                 CURRENT.set(previous);
             }
         }
+    }
+
+    /**
+     * Records that {@code node} genuinely failed this run, so the cascade routes it down the error
+     * path. See {@link #failures} for why cancellation is not recorded here.
+     *
+     * @param node the node that failed
+     * @param failure what it failed with; ignored when null
+     */
+    void recordFailure(BaseNode node, Throwable failure) {
+        if (failure != null) {
+            failures.put(node, failure);
+        }
+    }
+
+    /**
+     * The failure {@code node} recorded this run, or null when it did not genuinely fail — which
+     * includes a node that was cancelled, and so is {@link NodeProcessingStatus#FAILED} without
+     * appearing here.
+     *
+     * @param node the node to look up
+     * @return that node's failure this run, or null
+     */
+    Throwable failureOf(BaseNode node) {
+        return failures.get(node);
     }
 }
