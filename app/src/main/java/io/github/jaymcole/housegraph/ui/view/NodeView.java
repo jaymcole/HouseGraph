@@ -104,6 +104,14 @@ public class NodeView extends BorderPane {
     private FlowPortView errorFlowPortView;
     private PortView errorMessagePortView;
 
+    /**
+     * What {@link #refreshErrorPathVisibility()} actually toggles for the {@code Error} flow-out.
+     * The anchor is a named one, so the flow-out column holds the label/anchor row built by
+     * {@link #labeledFlowAnchor}, not the anchor itself — hiding the anchor alone would leave the
+     * word "Error" sitting in the column with no triangle beside it.
+     */
+    private javafx.scene.Node errorFlowAnchorRow;
+
     /** Set from the context menu to show the error anchors on a node whose error path is not wired yet. */
     private boolean errorPathRevealed = false;
 
@@ -174,11 +182,13 @@ public class NodeView extends BorderPane {
         VBox flowOutColumn = new VBox(4);
         flowOutColumn.setAlignment(Pos.CENTER_RIGHT);
         for (FlowPortView flowOutPort : flowOutPorts) {
-            if (flowOutPort.getFlowPort().name.isBlank()) {
-                flowOutColumn.getChildren().add(flowOutPort);
-            } else {
-                flowOutColumn.getChildren().add(labeledFlowAnchor(flowOutPort, true));
+            javafx.scene.Node entry = flowOutPort.getFlowPort().name.isBlank()
+                    ? flowOutPort
+                    : labeledFlowAnchor(flowOutPort, true);
+            if (flowOutPort == errorFlowPortView) {
+                errorFlowAnchorRow = entry;
             }
+            flowOutColumn.getChildren().add(entry);
         }
 
         HBox titleRow = new HBox(6);
@@ -499,7 +509,8 @@ public class NodeView extends BorderPane {
      */
     private void refreshErrorPathVisibility() {
         boolean show = errorPathRevealed || node.hasErrorPathWired();
-        for (javafx.scene.Node anchor : new javafx.scene.Node[]{errorFlowPortView, errorMessagePortView}) {
+        javafx.scene.Node errorFlowAnchor = errorFlowAnchorRow != null ? errorFlowAnchorRow : errorFlowPortView;
+        for (javafx.scene.Node anchor : new javafx.scene.Node[]{errorFlowAnchor, errorMessagePortView}) {
             if (anchor != null) {
                 anchor.setVisible(show);
                 anchor.setManaged(show);
