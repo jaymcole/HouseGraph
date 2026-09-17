@@ -170,6 +170,26 @@ class GraphFileIOTest {
     }
 
     @Test
+    void aPlaceholdersSizeIsBothPreservedAndDroppable() {
+        // A MissingNode's row is written back byte-for-byte apart from its geometry, so the two
+        // directions are worth stating: a size it arrives with survives, and one the user resets
+        // away has to actually leave the row rather than being outlived by the file it came from.
+        JSONObject original = unknownNodeJson(1.0, 2.0);
+        original.put("width", 280.0);
+        ClipboardNode placeholder = fromJson(rootWith(List.of(original), List.of(), List.of())).nodes().get(0);
+        assertEquals(280.0, placeholder.width());
+
+        JSONObject kept = toJson(new GraphSnapshot(List.of(placeholder), List.of(), List.of()))
+                .getJSONArray("nodes").getJSONObject(0);
+        assertEquals(280.0, kept.getDouble("width"));
+
+        JSONObject reset = toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(placeholder.node(), 1.0, 2.0)), List.of(), List.of()))
+                .getJSONArray("nodes").getJSONObject(0);
+        assertFalse(reset.has("width"), "resetting the size has to win over the row it was read from");
+    }
+
+    @Test
     void aPlaceholderRefusesToRunRatherThanSilentlyDoingNothing() {
         GraphSnapshot snapshot = fromJson(rootWith(List.of(unknownNodeJson(0.0, 0.0)), List.of(), List.of()));
         BaseNode placeholder = snapshot.nodes().get(0).node();
@@ -601,6 +621,47 @@ class GraphFileIOTest {
                 List.of(new ClipboardNode(plain, 0.0, 0.0)), List.of(), List.of())).nodes().get(0).node();
         assertEquals(0, reloadedPlain.getMaxConcurrency());
         assertEquals(0L, reloadedPlain.getTimeoutMillis());
+    }
+
+    @Test
+    void manualSizeRoundTripsAndIsOnlyWrittenOnAnAxisTheUserSized() {
+        // A node dragged wider but left to size its own height.
+        GraphSnapshot roundTripped = roundTrip(new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 10.0, 20.0, 320.0, 0)), List.of(), List.of()));
+        ClipboardNode reloaded = roundTripped.nodes().get(0);
+        assertEquals(320.0, reloaded.width());
+        assertEquals(0.0, reloaded.height(), "an axis left alone reloads as sizing itself");
+
+        JSONObject sized = toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0.0, 0.0, 320.0, 0)), List.of(), List.of()))
+                .getJSONArray("nodes").getJSONObject(0);
+        assertEquals(320.0, sized.getDouble("width"));
+        assertFalse(sized.has("height"), "the axis that sizes itself writes no key");
+
+        // Which is every axis of almost every node: a graph nobody resized reads the same as one
+        // saved before nodes could be resized at all.
+        JSONObject automatic = toJson(new GraphSnapshot(
+                List.of(new ClipboardNode(new AddNode(), 0.0, 0.0)), List.of(), List.of()))
+                .getJSONArray("nodes").getJSONObject(0);
+        assertFalse(automatic.has("width"));
+        assertFalse(automatic.has("height"));
+    }
+
+    @Test
+    void aNodeSavedBeforeManualSizingLoadsSizingItself() {
+        JSONObject nodeJson = new JSONObject();
+        nodeJson.put("type", AddNode.class.getSimpleName());
+        nodeJson.put("x", 0.0);
+        nodeJson.put("y", 0.0);
+        JSONObject root = new JSONObject();
+        root.put("version", 5);
+        root.put("nodes", new JSONArray(List.of(nodeJson)));
+        root.put("dataEdges", new JSONArray());
+        root.put("flowEdges", new JSONArray());
+
+        ClipboardNode loaded = fromJson(root).nodes().get(0);
+        assertEquals(0.0, loaded.width());
+        assertEquals(0.0, loaded.height());
     }
 
     @Test

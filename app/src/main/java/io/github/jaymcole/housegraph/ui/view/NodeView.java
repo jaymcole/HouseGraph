@@ -22,7 +22,9 @@ import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.ContextMenuEvent;
@@ -49,6 +51,13 @@ import java.util.List;
  * Flow anchors come straight from the node's {@link BaseNode#getFlowInputs()} /
  * {@link BaseNode#getFlowOutputs()} — a node with no flow ports gets no anchors, and a
  * node exposing several out-ports (e.g. a branch/decider) gets one anchor each.
+ *
+ * <h2>A node sizes itself, unless told a floor</h2>
+ * By default a node is exactly as big as its title, ports and inline content need. Three grips —
+ * right edge, bottom edge, bottom-right corner — set a <b>manual size floor</b> on top of that (see
+ * {@link #setManualSize}), which is what makes a node with a long value or a cramped viewer
+ * readable. The floor is a minimum, never a fixed size: a node whose content outgrows it still
+ * grows, and "Reset size" in the context menu drops it again. It is saved with the graph.
  */
 public class NodeView extends BorderPane {
 
@@ -61,6 +70,50 @@ public class NodeView extends BorderPane {
 
         /** The drag gesture (mouse button released) finished - a good point to record it as one undo step. */
         void onNodeReleased();
+
+        /**
+         * The node's manual size floor changed — a grip drag that ended, or a reset from the context
+         * menu. Already applied to the view, so this is a record-it-for-undo call, the same shape as
+         * {@link #onNodeReleased()} for a move. A width or height of {@code 0} means that axis sizes
+         * itself; see {@link NodeView#setManualSize}.
+         */
+        void onNodeResized(NodeView node, double fromWidth, double fromHeight, double toWidth, double toHeight);
+
+        /**
+         * Hands keyboard focus back to the canvas. A gesture that consumes its own press would
+         * otherwise leave focus wherever it was, and the next Ctrl/Cmd+Z would go there instead.
+         */
+        void focusCanvas();
+    }
+
+    /**
+     * Which axes a resize grip drives. The node's top-left corner never moves — position is the
+     * canvas's business, not the view's — so every grip grows the node right and/or down. A grip
+     * sits pinned to the far edge on the axis it resizes and centred on the one it leaves alone,
+     * which is what puts the corner grip in the corner and each side grip at its midpoint.
+     */
+    private enum ResizeHandle {
+        EAST(true, false, Cursor.E_RESIZE),
+        SOUTH(false, true, Cursor.S_RESIZE),
+        SOUTH_EAST(true, true, Cursor.SE_RESIZE);
+
+        final boolean horizontal;
+        final boolean vertical;
+        final Cursor cursor;
+
+        ResizeHandle(boolean horizontal, boolean vertical, Cursor cursor) {
+            this.horizontal = horizontal;
+            this.vertical = vertical;
+            this.cursor = cursor;
+        }
+
+        double x(double width) {
+            return horizontal ? width - GRIP_SIZE : (width - GRIP_SIZE) / 2;
+        }
+
+        double y(double height) {
+            return vertical ? height - GRIP_SIZE : (height - GRIP_SIZE) / 2;
+        }
     }
 
     private final BaseNode node;
@@ -87,6 +140,20 @@ public class NodeView extends BorderPane {
     private static final double PROCESSING_DASH_LENGTH = 10;
     private static final double PROCESSING_GAP_LENGTH = 8;
     private static final double PROCESSING_CYCLE_LENGTH = PROCESSING_DASH_LENGTH + PROCESSING_GAP_LENGTH;
+
+    /**
+     * Deliberately a little smaller than {@code GroupView}'s frame grips: a frame's corner has
+     * nothing but empty canvas near it, a node's has ports. Grips sit inside the node rather than
+     * straddling its edge for the same reason the overlays do — the node's bounds are what edges
+     * follow, what an export measures and what a frame's containment is judged against, and a
+     * decoration has no business changing any of them.
+     */
+    private static final double GRIP_SIZE = 12;
+    private static final Color GRIP_COLOR = Color.web("#8a9199");
+    private static final double GRIP_RESTING_OPACITY = 0.45;
+
+    /** A width or height of this means "size that axis to the content" - the state every node starts in. */
+    public static final double AUTOMATIC = 0;
 
     private final Rectangle validationBorder;
     private final Rectangle highlightBorder;
@@ -119,6 +186,23 @@ public class NodeView extends BorderPane {
     /** Sits beside the title, holding the glyph for the node's current {@link ExecutionPolicy}. */
     private final StackPane policyIcon = new StackPane();
     private final Tooltip policyTooltip = new Tooltip();
+
+    /**
+     * The grips that set {@link #setManualSize the manual size floor}: one per {@link ResizeHandle},
+     * in that enum's order, which is what {@link #layoutChildren()} relies on to place them.
+     */
+    private final List<Rectangle> resizeGrips = new ArrayList<>();
+
+    /** The floor in force, per axis, or {@link #AUTOMATIC}. The view's copy of what the save file stores. */
+    private double manualWidth = AUTOMATIC;
+    private double manualHeight = AUTOMATIC;
+
+    /** True between a grip's press and its release, so the grips stay visible while the pointer leaves the node. */
+    private boolean resizing = false;
+
+    /** The floor the current grip drag started from, captured for undo. */
+    private double resizeGestureStartWidth;
+    private double resizeGestureStartHeight;
 
     private Point2D lastDragContentPoint;
     private boolean selected = false;
@@ -316,11 +400,11 @@ public class NodeView extends BorderPane {
 
         // Right-click the node for its per-node settings (execution policy, concurrency limit and
         // timeout for any node that participates in flow; which inputs are required, for any node
-        // with inputs). Nodes with none of these (a constant, a resource with no inputs) get no menu
-        // and the event falls through to the canvas's add-node menu, as before.
-        if (participatesInFlow() || !node.getInputs().isEmpty()) {
-            setOnContextMenuRequested(this::showContextMenu);
-        }
+        // with inputs; dropping a manual size, for any node that has one). Which of those a node
+        // offers is decided per open rather than here, because the last one comes and goes with a
+        // resize - showContextMenu bows out without consuming when it has nothing, so a node with
+        // none of them still falls through to the canvas's add-node menu, as before.
+        setOnContextMenuRequested(this::showContextMenu);
 
         // Emphasis overlay for the selected and pulse states: an unmanaged, mouse-
         // transparent rectangle stretched over the whole node, stroked on the inside
@@ -394,9 +478,157 @@ public class NodeView extends BorderPane {
                 new KeyFrame(Duration.seconds(0.6), new KeyValue(processingStripes.strokeDashOffsetProperty(), PROCESSING_CYCLE_LENGTH)));
         processingAnimation.setCycleCount(Timeline.INDEFINITE);
 
+        // The resize grips, added last so they sit above every overlay and take the press. They are
+        // unmanaged like the overlays, but unlike them they are placed rather than stretched, which
+        // is what layoutChildren() below does. Hidden until the pointer is over the node: a grip on
+        // every node at rest would clutter a canvas of them, and the cursor change plus the hover
+        // reveal is how the gesture announces itself.
+        for (ResizeHandle handle : ResizeHandle.values()) {
+            Rectangle grip = buildResizeGrip(handle);
+            resizeGrips.add(grip);
+            getChildren().add(grip);
+        }
+        hoverProperty().addListener((obs, was, now) -> refreshGripVisibility());
+
         // Reflect the node's initial configured state (a fresh node with unwired required
         // inputs shows red at once, before any edge is drawn).
         refreshValidation();
+    }
+
+    /**
+     * Places the resize grips, which are unmanaged and so are nobody else's job. Everything else
+     * here is either a laid-out child of the {@link BorderPane} or an overlay bound to the node's
+     * own width/height, and needs nothing from this.
+     */
+    @Override
+    protected void layoutChildren() {
+        super.layoutChildren();
+        ResizeHandle[] handles = ResizeHandle.values();
+        for (int i = 0; i < resizeGrips.size(); i++) {
+            Rectangle grip = resizeGrips.get(i);
+            grip.setLayoutX(handles[i].x(getWidth()));
+            grip.setLayoutY(handles[i].y(getHeight()));
+        }
+    }
+
+    private Rectangle buildResizeGrip(ResizeHandle handle) {
+        Rectangle grip = new Rectangle(GRIP_SIZE, GRIP_SIZE);
+        grip.setArcWidth(4);
+        grip.setArcHeight(4);
+        grip.setFill(GRIP_COLOR);
+        grip.setOpacity(GRIP_RESTING_OPACITY);
+        grip.setCursor(handle.cursor);
+        grip.setManaged(false);
+        grip.setVisible(false);
+        grip.setOnMouseEntered(event -> grip.setOpacity(1));
+        grip.setOnMouseExited(event -> grip.setOpacity(GRIP_RESTING_OPACITY));
+        grip.setOnMousePressed(event -> {
+            beginResize();
+            event.consume();
+        });
+        grip.setOnMouseDragged(event -> {
+            resizeTo(handle, content.sceneToLocal(event.getSceneX(), event.getSceneY()));
+            event.consume();
+        });
+        grip.setOnMouseReleased(event -> {
+            endResize();
+            event.consume();
+        });
+        return grip;
+    }
+
+    private void beginResize() {
+        if (dragController != null) {
+            dragController.focusCanvas();
+        }
+        resizing = true;
+        resizeGestureStartWidth = manualWidth;
+        resizeGestureStartHeight = manualHeight;
+        refreshGripVisibility();
+    }
+
+    /**
+     * Applies a grip drag: the pointer is where the node's right and/or bottom edge should now be,
+     * measured in the same content coordinates the node's own {@code layoutX}/{@code layoutY} are in,
+     * so zoom and pan need no arithmetic of their own. The axis a side grip does not own is left
+     * exactly as it was.
+     */
+    private void resizeTo(ResizeHandle handle, Point2D pointerContentPoint) {
+        double width = manualWidth;
+        double height = manualHeight;
+        if (handle.horizontal) {
+            width = flooredOrAutomatic(pointerContentPoint.getX() - getLayoutX(), prefWidth(-1));
+        }
+        if (handle.vertical) {
+            height = flooredOrAutomatic(pointerContentPoint.getY() - getLayoutY(), prefHeight(-1));
+        }
+        setManualSize(width, height);
+    }
+
+    /**
+     * A drag that asks for less than the node's own content needs stores no floor at all, rather than
+     * one the layout would ignore anyway: a floor under the content is indistinguishable from none,
+     * and this makes dragging an edge back in the gesture that returns that axis to sizing itself —
+     * the same thing "Reset size" does for both at once.
+     */
+    private static double flooredOrAutomatic(double dragged, double contentSize) {
+        return dragged > contentSize ? dragged : AUTOMATIC;
+    }
+
+    private void endResize() {
+        resizing = false;
+        refreshGripVisibility();
+        if (dragController != null
+                && (manualWidth != resizeGestureStartWidth || manualHeight != resizeGestureStartHeight)) {
+            dragController.onNodeResized(this, resizeGestureStartWidth, resizeGestureStartHeight,
+                    manualWidth, manualHeight);
+        }
+    }
+
+    /** Grips show while the pointer is over the node, and go on showing for as long as one is being dragged. */
+    private void refreshGripVisibility() {
+        boolean show = resizing || isHover();
+        for (Rectangle grip : resizeGrips) {
+            grip.setVisible(show);
+        }
+    }
+
+    /**
+     * Sets this node's manual size floor in content coordinates, {@link #AUTOMATIC} on an axis that
+     * should size itself. Public because it is applied from three places: a grip drag, a loaded or
+     * pasted graph, and {@code ResizeNodeCommand} undoing either.
+     *
+     * <h4>Why a floor and not a size</h4>
+     * The floor is the region's <em>minimum</em> width/height, leaving its preferred size computed
+     * from its content as before. So a node can be made bigger than it needs to be — which is the
+     * whole point, a value field too narrow to read is the reason to reach for this — but never
+     * smaller than the ports and controls it has to draw, and a node whose content later outgrows the
+     * floor (a dynamic-port node gaining a port, a viewer handed a longer string) still grows to fit
+     * it. A fixed preferred size would clip that node instead, and clipping is not something a user
+     * who dragged an edge two months ago would connect to what they are now looking at.
+     */
+    public void setManualSize(double width, double height) {
+        manualWidth = width > 0 ? width : AUTOMATIC;
+        manualHeight = height > 0 ? height : AUTOMATIC;
+        // USE_COMPUTED_SIZE, not 0: a real 0 minimum is a floor too, and one that lets the node be
+        // squashed below its content by anything that ever chooses to.
+        setMinWidth(manualWidth > 0 ? manualWidth : USE_COMPUTED_SIZE);
+        setMinHeight(manualHeight > 0 ? manualHeight : USE_COMPUTED_SIZE);
+    }
+
+    /** The manual width floor, or {@link #AUTOMATIC}. What the save file stores and a rebuild carries across. */
+    public double getManualWidth() {
+        return manualWidth;
+    }
+
+    /** The manual height floor, or {@link #AUTOMATIC}. */
+    public double getManualHeight() {
+        return manualHeight;
+    }
+
+    /** Whether either axis carries a manual floor — which is what puts "Reset size" in the context menu. */
+    public boolean hasManualSize() {
+        return manualWidth > 0 || manualHeight > 0;
     }
 
     /**
@@ -466,6 +698,15 @@ public class NodeView extends BorderPane {
         menu.getItems().add(buildErrorPathItem());
         if (!node.getInputs().isEmpty()) {
             menu.getItems().add(buildRequiredInputsMenu());
+        }
+        // Last, and separated: everything above is what the node does, this is what it looks like.
+        // Only on a node that has been resized - there is nothing to reset otherwise, and a node with
+        // no other settings keeps falling through to the canvas's add-node menu.
+        if (hasManualSize()) {
+            if (!menu.getItems().isEmpty()) {
+                menu.getItems().add(new SeparatorMenuItem());
+            }
+            menu.getItems().add(buildResetSizeItem());
         }
         if (menu.getItems().isEmpty()) {
             return;
@@ -613,6 +854,24 @@ public class NodeView extends BorderPane {
             menu.getItems().add(item);
         }
         return menu;
+    }
+
+    /**
+     * Drops the manual size floor, returning the node to sizing itself. Applied here and reported to
+     * the canvas afterwards, the same way a grip drag is, so the two arrive on the undo stack as the
+     * same kind of step.
+     */
+    private MenuItem buildResetSizeItem() {
+        MenuItem item = new MenuItem("Reset size");
+        item.setOnAction(event -> {
+            double fromWidth = manualWidth;
+            double fromHeight = manualHeight;
+            setManualSize(AUTOMATIC, AUTOMATIC);
+            if (dragController != null) {
+                dragController.onNodeResized(this, fromWidth, fromHeight, AUTOMATIC, AUTOMATIC);
+            }
+        });
+        return item;
     }
 
     public void setSelected(boolean selected) {

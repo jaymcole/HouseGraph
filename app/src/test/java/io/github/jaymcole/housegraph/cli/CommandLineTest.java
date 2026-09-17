@@ -1,5 +1,6 @@
 package io.github.jaymcole.housegraph.cli;
 
+import io.github.jaymcole.housegraph.saveformat.SaveFileFixture;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -38,7 +39,10 @@ class CommandLineTest {
         assertEquals(0, commandLine.run("schema"));
 
         assertTrue(output().contains("\"$schema\""));
-        assertTrue(output().contains("HouseGraph save file (format version 4)"));
+        // Derived from the version this build writes, not named literally: `schema` with no argument
+        // promises the schema for what this build writes, and that promise is the thing under test.
+        assertTrue(output().contains("HouseGraph save file (format version "
+                + SaveFileFixture.currentVersion() + ")"));
     }
 
     @Test

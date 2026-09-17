@@ -15,7 +15,7 @@ snapshot and camera state off it and handing them to this package.
 
 ```jsonc
 {
-  "version": 5,                    // format version; absent = pre-versioning (legacy)
+  "version": 6,                    // format version; absent = pre-versioning (legacy)
   "plugins": [                     // node libraries this graph depends on; omitted when core-only
     { "id": "housegraph-discord", "name": "Discord", "version": "0.3.1",
       "repository": "https://github.com/jaymcole/housegraph-discord" }
@@ -32,6 +32,7 @@ snapshot and camera state off it and handing them to this package.
       "plugin": "housegraph-discord", // which library provides it; absent for a built-in
       "module": "6f1c…",              // which modules[] row a ModuleNode references; absent otherwise
       "x": 0.0, "y": 0.0,
+      "width": 320.0, "height": 180.0, // manual size FLOOR; per axis, absent = that axis sizes itself
       "executionPolicy": "QUEUE",     // DROP | RESTART | QUEUE | PARALLEL; absent = QUEUE
       "failurePolicy": "CONTINUE",    // HALT | CONTINUE; absent = HALT, and written only when not HALT
       "inputs":  [ { "name": "V1", "value": 3.0 } ],   // keyed by port name
@@ -56,7 +57,7 @@ snapshot and camera state off it and handing them to this package.
 
 ## Formal schema
 
-The shape above is documentation; [`graph-save.v4.schema.json`](../../app/src/main/resources/schema/graph-save.v4.schema.json)
+The shape above is documentation; [`graph-save.v6.schema.json`](../../app/src/main/resources/schema/graph-save.v6.schema.json)
 is the JSON Schema an external tool — an agent harness generating or validating a
 graph, in particular — can actually run against a file, via `housegraph schema` or
 directly from the repository. `housegraph schema graph` serves the version this
@@ -191,7 +192,7 @@ explicit `@Node.Type` id. On load, `NodeRegistry.resolveClass` matches it agains
 an index of every type's ids — simple names plus `@Node.Type` ids and aliases —
 falling back to fully-qualified-class-name resolution for older saves.
 
-**The root is versioned.** `GraphFileIO.CURRENT_VERSION` is 5; a file without it
+**The root is versioned.** `GraphFileIO.CURRENT_VERSION` is 6; a file without it
 reads as legacy. `GraphFileIO.migrate` is the single seam for structural migrations
 that shape-sniffing reads cannot express. Bump the version and add a step there
 together.
@@ -202,8 +203,9 @@ together.
 | v2 → v3 | the `modules` table, the per-node `module` key, and a module file's own root `module` object | none — purely additive |
 | v3 → v4 | the `groups` table | none — purely additive |
 | v4 → v5 | the per-node `failurePolicy` key | none — and that changes behaviour, deliberately |
+| v5 → v6 | the per-node `width`/`height` keys | none — purely additive |
 
-All four are passthroughs, and `migrate` says so rather than being silent about it:
+All five are passthroughs, and `migrate` says so rather than being silent about it:
 a step that does nothing is a decision, and the next person needs to see it was made.
 
 **v4 → v5 is the one whose passthrough is load-bearing.** An absent `failurePolicy`
@@ -230,6 +232,17 @@ name the missing library, not enough to offer to install it. Re-saving on a mach
 that has the library repairs the file. A `MissingNode`'s row is re-emitted verbatim
 and never regenerated, because the file it came from may hold a version or key this
 build does not know.
+
+**A node's size is a floor, not a size.** `width`/`height` record how big the user
+dragged a node, and the canvas applies them as the view's *minimum* size — never its
+fixed one. A node is therefore drawn at whichever is larger, the floor or what its own
+ports and content need, so a graph opened on a different machine, at a different font
+size, or after a library update that gave a node another port, cannot end up clipping
+what it has to show. Each axis is independent and each is written only when it is set,
+so a graph nobody resized is byte-for-byte what v5 wrote apart from the version number.
+An axis with no key sizes itself, which is what every pre-v6 file means. The rule lives
+with the view that applies it, `NodeView.setManualSize`; nothing in the engine has an
+opinion about how big a node is.
 
 **A module is identified by a stable id, not a path.** A graph published as a
 module carries `module.id` in its root, and a consumer stores *that*. A path breaks
@@ -455,7 +468,7 @@ A reopened graph resumes any node that was running when it was saved — see
 
 **When you change this, update…** this file and the `GraphFileIO` Javadoc whenever
 you change the JSON shape, the versioning or migration seam, the identity rules, or
-the compatibility behaviour, **and** `graph-save.v4.schema.json` in the same change
+the compatibility behaviour, **and** `graph-save.v6.schema.json` in the same change
 — a schema that drifts from what `GraphFileIO` actually writes is worse than no
 schema at all. A change to the `plugins` table, or to what a `modules` row records about a module's
 own libraries, also touches [plugin-runtime.md](plugin-runtime.md); a change to how a

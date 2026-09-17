@@ -17,6 +17,17 @@ import io.github.jaymcole.housegraph.graph.BaseNode;
  * {@code null} now means only "the factory genuinely failed to build a type we <em>do</em> have" —
  * an internal error with no user data to preserve. The slot is still kept so later nodes stay at
  * their original index and the edges referencing them resolve correctly.
+ * <p>
+ * {@code width}/{@code height} are the node's <em>manual size floor</em> — how big the user dragged
+ * it, which is not derivable from anything else here and so is carried alongside the position. Zero
+ * on either axis means that axis sizes itself from the node's content, which is how every node
+ * starts and what every save written before this existed reads as. The rule behind the floor lives
+ * with the view that applies it: {@code NodeView.setManualSize}.
  */
-public record ClipboardNode(BaseNode node, double x, double y) {
+public record ClipboardNode(BaseNode node, double x, double y, double width, double height) {
+
+    /** A node left to size itself, which is most of them — and every one a headless caller builds. */
+    public ClipboardNode(BaseNode node, double x, double y) {
+        this(node, x, y, 0, 0);
+    }
 }

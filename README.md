@@ -16,7 +16,7 @@ design idea:
 ## Features
 
 - **Infinite node canvas** — pan, zoom, rubber-band select, copy/paste, undo/redo,
-  and manual edge routing.
+  manual edge routing, and nodes you can drag bigger when one is too cramped to read.
 - **Concurrent execution engine** — each trigger runs as an isolated concurrent
   run, so a slow node slows only its own branch. Branch fan-out, AND-barrier joins,
   for-each loops, and data-cycle detection. Per-node re-entrancy policy,
