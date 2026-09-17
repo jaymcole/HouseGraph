@@ -55,6 +55,16 @@ private void startOffThread() {
 Override `onExecuted()`, which runs right after `process()` whether it succeeded or
 failed. Do not update UI from inside `process()` — that runs on an engine thread.
 
+## Keep inline content a fixed size
+
+A status label's text must not grow with the data it summarizes — joining a list
+of arbitrary length (installed models, matched files, queued items) into the label
+makes the node's size on the canvas unpredictable, and a node someone carefully
+arranged can silently balloon the next time it runs. Report a count or a fixed
+short phrase ("Running", "3 models loaded") instead of the list itself; put the
+list on a data output, where a downstream node can display or log it under its own
+sizing rules.
+
 ## Do not import `javafx.scene.Node`
 
 If your node also uses `@Node.Type` from

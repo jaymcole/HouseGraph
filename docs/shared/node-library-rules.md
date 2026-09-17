@@ -209,6 +209,14 @@ callback executor, so your UI code needs no `Platform.runLater`. Work *you* star
 a socket bind, an HTTP call, a gateway login — does: keep it off the FX thread and
 hop back to show the result.
 
+**Keep inline content a fixed size.** A status label's text must not grow with the
+data it summarizes — joining a list of arbitrary length (installed models, matched
+files, queued items) into the label makes the node's size on the canvas
+unpredictable, and a node someone carefully arranged can silently balloon the next
+time it runs. Report a count or a fixed short phrase instead, and put the list
+itself on a data output. See
+[`../nodes/inline-ui.md`](../nodes/inline-ui.md#keep-inline-content-a-fixed-size).
+
 **Split your teardown.** `onRemoved()` runs on the removing thread and is not time
 bounded — use it for fast, thread-affine work such as stopping a `NodeTimer` or
 unregistering a name. Anything that waits on the outside world (reaping a child
@@ -326,6 +334,7 @@ not need.
 - [ ] `javafx.scene.Node` never imported
 - [ ] Teardown split between `onRemoved()` and `releaseResources()`, both idempotent
 - [ ] Running state in a field, clocks on `NodeTimer`, control updates via `present(...)`
+- [ ] Inline status content stays a fixed size — no list of unbounded length joined into it
 - [ ] Failures thrown, not swallowed, and with a message worth showing a user
 - [ ] Inputs the node is meaningless without marked `required()`
 - [ ] Single jar, or assets named `<pluginId>-<version>-all.jar`
