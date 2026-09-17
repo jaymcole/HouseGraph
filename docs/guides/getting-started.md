@@ -59,9 +59,11 @@ To build something:
 4. **Type values** directly into editable input fields.
 5. Add a trigger node and press its button.
 
-A node is normally exactly as big as it needs to be. When one is too cramped to read —
-a long file path in a value field, a viewer showing an image — hover it and drag one of
-the grips that appear at its right edge, bottom edge and bottom-right corner. That sets
+A node is normally exactly as big as it needs to be. A value field grows with what you
+type into it, but only so far — past that a node would balloon across the canvas, so it
+stops, and a long path or prompt runs out of room. When a node is too cramped to read,
+hover it and drag one of the grips that appear at its right edge, bottom edge and
+bottom-right corner; the width goes to the field, so the whole value is readable. That sets
 a **minimum** size, not a fixed one: the node can only get bigger than it would be on
 its own, so it can never end up clipping what it has to show, and it still grows by
 itself if its contents later need more room. The size is saved with the graph. To undo

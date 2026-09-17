@@ -363,13 +363,29 @@ public class NodeView extends BorderPane {
             // A small fixed gap between the columns (matching PortView's own internal
             // circle/label/field spacing) rather than a greedy spacer Region. Any extra
             // width the row ends up with (e.g. the title bar needing more room than the
-            // ports do) is instead given to the columns themselves via hgrow, so it
-            // flows down into each PortView's own growable value field instead of
-            // sitting as dead space - see PortView.createValueField().
+            // ports do, or a manual size floor) is instead given to the columns
+            // themselves via hgrow, so it flows down into each PortView's own growable
+            // value field instead of sitting as dead space - see
+            // PortView.createValueField().
+            //
+            // Which column gets it depends on which can use it. A column of bare anchors
+            // and labels cannot use a pixel, so growing it in step with the other one -
+            // which an unconditional hgrow on both does - costs a node dragged wider to
+            // read a long string half of the width it was given, and turns that half into
+            // a gap in front of the opposite column. When neither column has a field
+            // they both grow as before: that even split is what holds the output column
+            // against the node's right edge, and with nothing to fill there is no better
+            // use for the space.
+            boolean inputsUseWidth = anyHasValueField(inputPorts);
+            boolean outputsUseWidth = anyHasValueField(outputPorts);
+            if (inputsUseWidth == outputsUseWidth) {
+                inputsUseWidth = true;
+                outputsUseWidth = true;
+            }
             inputsBox.setMaxWidth(Double.MAX_VALUE);
             outputsBox.setMaxWidth(Double.MAX_VALUE);
-            HBox.setHgrow(inputsBox, Priority.ALWAYS);
-            HBox.setHgrow(outputsBox, Priority.ALWAYS);
+            HBox.setHgrow(inputsBox, inputsUseWidth ? Priority.ALWAYS : Priority.NEVER);
+            HBox.setHgrow(outputsBox, outputsUseWidth ? Priority.ALWAYS : Priority.NEVER);
 
             HBox row = new HBox(6, inputsBox, outputsBox);
             row.setPadding(new Insets(0, 10, 0, 10));
@@ -646,6 +662,16 @@ public class NodeView extends BorderPane {
     /** Whether either axis carries a manual floor — which is what puts "Reset size" in the context menu. */
     public boolean hasManualSize() {
         return manualWidth > 0 || manualHeight > 0;
+    }
+
+    /** Whether any port in a body column has an inline value field to grow into spare width. */
+    private static boolean anyHasValueField(List<PortView> ports) {
+        for (PortView port : ports) {
+            if (port.hasValueField()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

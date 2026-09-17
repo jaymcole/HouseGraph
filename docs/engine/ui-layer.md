@@ -392,8 +392,18 @@ leaving its preferred size computed from its content:
 
 - A node can be made bigger than it needs to be, which is the point. The extra width
   reaches each `PortView`'s growable value field through the hgrow the body columns
-  already carry, so widening a node widens the fields rather than padding the gap
-  between them.
+  carry, so widening a node widens the fields rather than padding the gap between them.
+  This is the answer to a string value longer than `PortView.MAX_FIELD_WIDTH`, which is
+  where a field stops growing on its own — the cap is what stops one long value
+  ballooning a node across the canvas, and a drag is how you say you meant it.
+
+  **Only a column that can use the width grows.** A body column whose ports are bare
+  anchors and labels has nothing to fill, so an unconditional hgrow on both columns
+  handed it half of every pixel the user dragged for the other one, and turned that
+  half into a gap. `NodeView` gives hgrow to the column holding a `PortView` with a
+  value field (`PortView.hasValueField()`). When both have one, or neither does, both
+  grow: with nothing to fill, the even split is what holds the output column against
+  the node's right edge.
 - A node can never be made smaller than what it has to draw. A drag that asks for less
   than the content needs stores **no floor at all** on that axis rather than one the
   layout would ignore, which makes dragging an edge back in the gesture that returns
