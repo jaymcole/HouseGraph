@@ -91,9 +91,29 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Two attempts, because attaching the jars is the step that fails. The action creates the
+      # release as a draft, uploads, then publishes; an upload that errors leaves the draft behind
+      # with some of its jars, which is a release nobody can install from and a red run somebody has
+      # to notice and re-run by hand. Uploads are sequential rather than all-at-once (preserve_order)
+      # since it is the largest assets that fail, and a retry is safe to repeat because
+      # overwrite_files defaults to true: the second pass replaces what landed and fills in what did
+      # not, then publishes the draft the first pass left. The config is duplicated because a step
+      # cannot be reused by reference — keep the two `with:` blocks identical.
       - name: Attach the platform jars to the release
+        id: attach
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           files: dist/*.jar
           generate_release_notes: true
+          preserve_order: true
+
+      - name: Attach them again if the first attempt dropped one
+        if: steps.attach.outcome == 'failure'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: dist/*.jar
+          generate_release_notes: true
+          preserve_order: true
