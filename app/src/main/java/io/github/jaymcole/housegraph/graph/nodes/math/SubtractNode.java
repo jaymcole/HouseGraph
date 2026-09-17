@@ -14,9 +14,13 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Node.Keywords({"subtract", "minus", "difference", "-", "arithmetic", "math"})
 public class SubtractNode extends BaseNode {
 
-    private final NodeVariable<Float> v1 = new NodeVariable<>("V1", Float.class);
-    private final NodeVariable<Float> v2 = new NodeVariable<>("V2", Float.class);
-    private final NodeVariable<Float> difference = new NodeVariable<>("Difference", Float.class);
+    private final NodeVariable<Float> v1 = new NodeVariable<>("V1", Float.class)
+            .describedAs("The number subtracted from. Order matters: Difference is V1 minus V2, so swapping the "
+                    + "two flips the sign. Unwired counts as 0.");
+    private final NodeVariable<Float> v2 = new NodeVariable<>("V2", Float.class)
+            .describedAs("The amount taken away from V1. Unwired counts as 0.");
+    private final NodeVariable<Float> difference = new NodeVariable<>("Difference", Float.class)
+            .describedAs("V1 minus V2.");
 
     @Override
     public void process(ProcessContext ctx) {

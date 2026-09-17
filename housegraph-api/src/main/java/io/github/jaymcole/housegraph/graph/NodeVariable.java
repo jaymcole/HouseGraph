@@ -9,6 +9,7 @@ public class NodeVariable<T> {
     public final Class<T> type;
     public final boolean manuallyEditable;
     private T value;
+    private String description;
     private boolean secret = false;
     private boolean transientValue = false;
     private boolean required = false;
@@ -69,6 +70,50 @@ public class NodeVariable<T> {
     @SuppressWarnings("unchecked")
     void commitComputed(Object computed) {
         this.value = (T) computed;
+    }
+
+    /**
+     * Describes what this port means, for the tooltip the UI shows when the pointer rests on the
+     * port's <em>name</em> (and on its inline value field, so the hint is still reachable once a
+     * value hides the label). The anchor's own tooltip keeps stating the type; this answers the
+     * other question a port raises — what the value <em>does</em>.
+     * <p>
+     * Write it for someone looking at the node for the first time. A name says {@code Temperature};
+     * only a description can say which direction is which and where the useful range ends:
+     * {@code "How much the model is allowed to wander. 0 is repeatable and literal, 1 is loose and
+     * inventive; above ~1.5 most models turn to noise. Blank leaves the server's own default."}
+     * Units, the meaning of 0 or blank, and the sane range are the things worth the line; repeating
+     * the name is not.
+     * <p>
+     * Authored in code and never persisted — it is part of the node type, like the port's name.
+     * Fluent, for use at field initialisation:
+     * {@code new NodeVariable<>("Temperature", Float.class, true).describedAs("...")}.
+     *
+     * @param description what this port means; blank or null leaves the port with no hint
+     * @return this variable, for chaining
+     */
+    public NodeVariable<T> describedAs(String description) {
+        this.description = description;
+        return this;
+    }
+
+    /**
+     * This port's description, or {@code null} when its author gave none.
+     *
+     * @return the description set by {@link #describedAs(String)}, or null
+     * @see #describedAs(String)
+     */
+    public String getDescription() {
+        return description;
+    }
+
+    /**
+     * Whether this port carries a description worth showing.
+     *
+     * @return true if {@link #describedAs(String)} was given non-blank text
+     */
+    public boolean hasDescription() {
+        return description != null && !description.isBlank();
     }
 
     /**

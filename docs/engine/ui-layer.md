@@ -341,6 +341,21 @@ does **not** run inside `place`, which paste and redo also use: a rebuild replac
 Flow anchors come straight from `BaseNode.getFlowInputs()`/`getFlowOutputs()`, so a
 branch node with several out-ports gets one anchor each automatically.
 
+### Port tooltips
+
+A data port carries two tooltips, split by what the pointer is over, because they
+answer different questions:
+
+- **The anchor circle** states the **type** — `Expects: Float`, `Outputs: String` —
+  which is what decides whether two ports can be wired. `FlowPortView`'s equivalent
+  states the direction, and the port name when it has one.
+- **The name label, and the inline value field**, state what the port **means**:
+  the author's `NodeVariable.describedAs(...)` text, wrapped. Both carry it because
+  the two swap places — a manual input showing a value hides its label — and a
+  typed-in value is exactly when someone is wondering what to type. A port whose
+  author wrote no description gets no tooltip here at all. See
+  [`../nodes/ports-and-values.md`](../nodes/ports-and-values.md#describing-a-port).
+
 ### Flow-edge wiring
 
 A flow-in anchor accepts **several** incoming edges: two triggers can both be wired
@@ -705,8 +720,8 @@ boundary, and a checkbox that widened it would defeat the point of having one. S
 
 **When you change this, update…** this file whenever you change canvas
 interactions, add a view type or a `Command`, change the context menu, change the
-menus or the toolbar, change a node's visual states, change what a group frame
-commands or how frames stack, change any auxiliary window, **add or change a setting
+menus or the toolbar, change a node's visual states, change what a port's tooltips
+say, change what a group frame commands or how frames stack, change any auxiliary window, **add or change a setting
 or where it is applied**, change what image export draws, or change when a node's `NodePresentation` is installed or cleared. How editor
 windows are opened, closed and torn down belongs in [windows.md](windows.md);
 save-format changes in [save-format.md](save-format.md); extension-point changes also

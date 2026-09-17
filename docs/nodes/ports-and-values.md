@@ -28,8 +28,36 @@ private final NodeVariable<String> host =
         new NodeVariable<>("Host", String.class).required();
 ```
 
-`markSecret()`, `transientValue()` and `required()` are fluent, for field
-initialization.
+`markSecret()`, `transientValue()`, `required()` and `describedAs()` are fluent, for
+field initialization.
+
+## Describing a port
+
+`describedAs(text)` gives a port a **hover description**: what the value means, shown
+when the pointer rests on the port's name, and on its inline value field so the hint
+survives a typed-in value hiding the label. The anchor circle keeps its own tooltip
+stating the type — the two answer different questions and neither replaces the other.
+
+```java
+private final NodeVariable<Float> temperature =
+        new NodeVariable<>("Temperature", Float.class, true)
+                .describedAs("How much the model is allowed to wander. 0 is repeatable "
+                        + "and literal, 1 is loose and inventive. Blank leaves the "
+                        + "server's own default.");
+```
+
+Write it for someone looking at the node for the first time. A port name has room for
+`Temperature`; only a description has room for which direction is which, where the
+useful range ends, and what blank means. Units, the meaning of 0 or blank, the sane
+range, and which of two operands comes first are what earn the line.
+
+**Not every port wants one.** A port whose name already says it gets no tooltip at
+all, which is better than one restating the name — `Add`'s operands have none, while
+`Subtract`'s say which is subtracted from which. Blank text counts as none.
+
+The description is authored in code and belongs to the node type, like the port's
+name. Nothing about it is persisted, so it is safe to reword: unlike a rename, it
+cannot break an existing save.
 
 ## Persistence rules
 
@@ -104,5 +132,5 @@ from a static block on one of its nodes. See [inline-ui.md](inline-ui.md).
 ---
 
 **When you change this, update…** this file whenever you change the port model,
-the persistence markers, the required-input contract, or the editable-type
-mechanism.
+the persistence markers, the required-input contract, the port-description contract,
+or the editable-type mechanism.

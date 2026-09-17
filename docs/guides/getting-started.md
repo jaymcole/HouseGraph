@@ -73,6 +73,12 @@ The room you make goes to the node's own content where the content can use it: a
 Viewer dragged bigger shows a bigger preview. A node whose content is a button or a
 status line keeps that at its normal size and simply has more room around it.
 
+**Hovering a port explains it.** Rest the pointer on a port's circle and it names the
+type — what may be wired there. Rest it on the port's *name*, or on the value field
+once something is typed in, and a node that has explained itself says what the value
+means: which direction a number runs, what units it is in, what leaving it blank
+does. Ports whose name already says everything have nothing extra to show.
+
 While a graph runs, nodes flash cyan as they fire and show orange marching ants
 while working. A node with a red border is misconfigured — hover it for a tooltip
 naming the inputs that need a value.
@@ -133,6 +139,7 @@ they never change what a graph does or how fast it runs.
 | Bend an edge | double-click it to add a waypoint |
 | Resize a node | hover it, then drag a grip on its right edge, bottom edge or corner |
 | Un-resize a node | right-click it ▸ **Reset size**, or drag the edge back inside the node |
+| See what a port is for | hover its name (or its value field); hover the circle for the type |
 | Node options | right-click a node |
 | Group options | right-click a group's title bar |
 
