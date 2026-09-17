@@ -375,8 +375,6 @@ public class NodeView extends BorderPane {
             row.setPadding(new Insets(0, 10, 0, 10));
             body = row;
         }
-        setCenter(body);
-
         if (node instanceof NodeContentProvider contentProvider) {
             // Installed *before* createNodeContent() so a node that presents something while
             // building its controls is already view-aware, and so the node's own start path -
@@ -386,8 +384,27 @@ public class NodeView extends BorderPane {
             if (customContent instanceof Region region) {
                 region.setMaxWidth(Double.MAX_VALUE);
             }
-            BorderPane.setMargin(customContent, new Insets(0, 10, 10, 10));
-            setBottom(customContent);
+
+            // The ports and the inline content share one column, rather than the content sitting in
+            // the BorderPane's bottom slot as it used to: a bottom child is given exactly its
+            // preferred height and there is no way to hand it more, so every pixel of a manual size
+            // floor pooled between the ports and the content instead of reaching either. Dragging a
+            // viewer taller bought a bigger empty rectangle, which is no reason to drag anything.
+            // In a VBox the ports keep their preferred height and this vgrow sends what is left to
+            // the content.
+            //
+            // Whether the content then uses it is the content's own business, and deliberately not
+            // forced here: a Pane or a StackPane grows (which is how ImageViewerNode's preview
+            // scales with the node), while a control that would rather keep its natural height - a
+            // lone Button, a status Label - keeps it, and the slack sits below it. Overwriting the
+            // content's maxHeight to make everything stretch turns a trigger's button into a slab
+            // the height of the node.
+            VBox.setMargin(customContent, new Insets(0, 10, 10, 10));
+            VBox.setVgrow(customContent, Priority.ALWAYS);
+            setCenter(new VBox(body, customContent));
+        } else {
+            // Nothing to give the slack to, so the body simply sits in a taller node.
+            setCenter(body);
         }
 
         titleBar.setOnMousePressed(this::handleDragStart);

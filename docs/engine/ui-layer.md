@@ -402,6 +402,16 @@ leaving its preferred size computed from its content:
   gained a port, a viewer handed a longer string. A fixed preferred size would clip it
   instead, months after the drag that caused it.
 
+Height a node gains this way goes to its **inline content**, not to the gap above it.
+The ports body and a `NodeContentProvider`'s content share one `VBox` in the centre,
+with the vgrow on the content — the content used to sit in the `BorderPane`'s bottom
+slot, which is given exactly its preferred height and cannot be handed more, so a
+taller node was only ever a bigger empty rectangle. Whether the content uses the space
+is left to what the node returned and is never forced: a `Pane` grows (which is how
+`ImageViewerNode`'s preview scales with the node), a lone `Button` keeps its natural
+height and the slack sits below it. See
+[`../nodes/inline-ui.md`](../nodes/inline-ui.md#the-space-your-content-is-given).
+
 The top-left corner never moves, so a resize is not also a move: position stays the
 canvas's business. The grips are unmanaged children placed by `NodeView.layoutChildren`,
 unlike the overlay rectangles above, which are stretched by binding.

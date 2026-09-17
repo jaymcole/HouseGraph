@@ -217,6 +217,13 @@ time it runs. Report a count or a fixed short phrase instead, and put the list
 itself on a data output. See
 [`../nodes/inline-ui.md`](../nodes/inline-ui.md#keep-inline-content-a-fixed-size).
 
+**But do fill the box you are given.** A node can be resized by hand, and the height
+that adds goes to your content. A `Pane`/`StackPane` grows into it — bind whatever
+cannot resize itself, such as an `ImageView`'s fit box, to the container you return —
+while a lone button or label keeps its natural height. Sizing yourself from the space
+the user chose is the opposite of sizing yourself from your data. See
+[`../nodes/inline-ui.md`](../nodes/inline-ui.md#the-space-your-content-is-given).
+
 **Split your teardown.** `onRemoved()` runs on the removing thread and is not time
 bounded — use it for fast, thread-affine work such as stopping a `NodeTimer` or
 unregistering a name. Anything that waits on the outside world (reaping a child

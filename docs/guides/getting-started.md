@@ -67,6 +67,10 @@ its own, so it can never end up clipping what it has to show, and it still grows
 itself if its contents later need more room. The size is saved with the graph. To undo
 it, right-click the node and choose **Reset size**, or just drag the edge back inside.
 
+The room you make goes to the node's own content where the content can use it: an Image
+Viewer dragged bigger shows a bigger preview. A node whose content is a button or a
+status line keeps that at its normal size and simply has more room around it.
+
 While a graph runs, nodes flash cyan as they fire and show orange marching ants
 while working. A node with a red border is misconfigured — hover it for a tooltip
 naming the inputs that need a value.
