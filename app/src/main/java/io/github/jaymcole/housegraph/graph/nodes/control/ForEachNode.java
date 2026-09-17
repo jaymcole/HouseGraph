@@ -41,9 +41,16 @@ public class ForEachNode extends BaseNode {
 
     @SuppressWarnings("unchecked")
     private final NodeVariable<List<?>> list =
-            new NodeVariable<>("List", (Class<List<?>>) (Class<?>) List.class, false).required();
-    private final NodeVariable<Object> currentItem = new NodeVariable<>("Current Item", Object.class);
-    private final NodeVariable<Integer> index = new NodeVariable<>("Index", Integer.class);
+            new NodeVariable<>("List", (Class<List<?>>) (Class<?>) List.class, false)
+                    .required()
+                    .describedAs("The list to walk. Body fires once per entry, in order, each pass finishing "
+                            + "before the next starts; an empty or missing list runs Body zero times and goes "
+                            + "straight to Completed.");
+    private final NodeVariable<Object> currentItem = new NodeVariable<>("Current Item", Object.class)
+            .describedAs("The entry this pass of Body is for. Typed Object because a list's element type is "
+                    + "erased, so feeding a strongly-typed input may need a converter.");
+    private final NodeVariable<Integer> index = new NodeVariable<>("Index", Integer.class)
+            .describedAs("Which pass this is, counting from 0.");
 
     private final FlowPort bodyPort = new FlowPort("Body", FlowPort.Direction.OUT);
     private final FlowPort completedPort = new FlowPort("Completed", FlowPort.Direction.OUT);

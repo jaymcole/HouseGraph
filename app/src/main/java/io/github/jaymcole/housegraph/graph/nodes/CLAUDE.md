@@ -40,6 +40,10 @@ for the walkthrough.
 
 Then, as needed:
 
+- **A port whose name cannot carry it** → `describedAs("...")`, which puts a
+  sentence behind the name on hover (`math/DivideNode.java` says which operand is
+  divided by which). Skip it where the name is already the whole story — an
+  undescribed port shows no tooltip, which beats one repeating its label.
 - **Branch** → several named OUT `FlowPort`s plus `activate(port)` in `process()`
   (`control/IfNode.java`).
 - **Loop** → `runFlowBranchToCompletion(port, seed)` (`control/ForEachNode.java`).

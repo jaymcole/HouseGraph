@@ -28,7 +28,9 @@ public class DebugDelayNode extends BaseNode {
 
     private static final long SLICE_MILLIS = 50;
 
-    private final NodeVariable<Integer> delayMillis = new NodeVariable<>("Delay (ms)", Integer.class, true);
+    private final NodeVariable<Integer> delayMillis = new NodeVariable<>("Delay (ms)", Integer.class, true)
+            .describedAs("How long to hold the flow, in milliseconds. 0, blank or negative returns straight away. "
+                    + "A run that is cancelled or times out cuts the wait short instead of sitting out the clock.");
 
     @Override
     public void process(ProcessContext ctx) {

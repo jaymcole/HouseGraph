@@ -32,6 +32,11 @@ import javafx.scene.text.Text;
  * marked {@code manuallyEditable} and its type is registered in {@link ValueEditors},
  * an inline field lets the user type a value directly onto it instead of/alongside
  * wiring an edge.
+ * <p>
+ * Two tooltips, deliberately split by what the pointer is over. The anchor circle states the
+ * port's <em>type</em> — what may be wired to it. The name label and the inline field state what
+ * the port <em>means</em>, from {@link NodeVariable#describedAs(String)}, for ports whose author
+ * wrote one.
  */
 public class PortView extends HBox implements EdgeAnchor {
 
@@ -62,6 +67,10 @@ public class PortView extends HBox implements EdgeAnchor {
             Color.TRANSPARENT, BorderStrokeStyle.SOLID, new CornerRadii(3), new BorderWidths(1)));
     private static final Border MISSING_REQUIRED_BORDER = new Border(new BorderStroke(
             Color.web("#e06c75"), BorderStrokeStyle.SOLID, new CornerRadii(3), new BorderWidths(1)));
+
+    // Descriptions run to a sentence or two, so the name tooltip wraps rather than stretching
+    // off the side of the screen as one line.
+    private static final double DESCRIPTION_TOOLTIP_WIDTH = 320;
 
     // An inline value field grows to fit its text (e.g. a long string constant) rather than
     // staying a fixed width regardless of content, clamped so one very long value can't blow
@@ -110,6 +119,7 @@ public class PortView extends HBox implements EdgeAnchor {
         label.setStyle("-fx-text-fill: #dddddd; -fx-font-size: 11px;");
 
         valueField = isEditable(variable) ? createValueField() : null;
+        installDescriptionTooltip();
 
         // For editable ports the label doubles as a click target that swaps itself out
         // for the inline field, so hint that it's interactive.
@@ -316,6 +326,30 @@ public class PortView extends HBox implements EdgeAnchor {
         Tooltip tooltip = new Tooltip(verb + ": " + variable.type.getSimpleName());
         tooltip.setShowDelay(Duration.millis(300));
         Tooltip.install(circle, tooltip);
+    }
+
+    /**
+     * Shows what the port <em>means</em> on hover over its name — the author's
+     * {@link NodeVariable#describedAs(String) description}, which is where a port like
+     * {@code Temperature} gets to say which direction is which and what blank does. Ports whose
+     * author wrote no description get no tooltip here at all, rather than one restating the name.
+     * <p>
+     * Installed on the inline value field too, because the two swap places: a manual input showing
+     * a typed-in value hides its label (see {@link #updateFieldVisibility()}), and that is exactly
+     * when someone is most likely to be wondering what to type.
+     */
+    private void installDescriptionTooltip() {
+        if (!variable.hasDescription()) {
+            return;
+        }
+        Tooltip tooltip = new Tooltip(variable.getDescription());
+        tooltip.setShowDelay(Duration.millis(300));
+        tooltip.setWrapText(true);
+        tooltip.setMaxWidth(DESCRIPTION_TOOLTIP_WIDTH);
+        Tooltip.install(label, tooltip);
+        if (valueField != null) {
+            Tooltip.install(valueField, tooltip);
+        }
     }
 
     private void applyVisualState() {

@@ -91,6 +91,18 @@ Port names are read by users on a small rectangle. `Interval (s)` beats
 Ports are persisted **by name**, so renaming a port breaks existing saves in a way
 that reordering does not. Choose names once.
 
+## Describe a port its name cannot explain
+
+`describedAs()` puts a sentence behind the port name on hover. `Temperature` is a
+good port name and still leaves a user guessing whether higher is more creative or
+less, and what happens if they leave it blank; that is what the description is for.
+Units, the meaning of 0 or blank, the sane range, and which of two operands comes
+first are what earn it.
+
+Skip it where the name already says everything. A port with nothing extra to say
+gets no tooltip, which reads better than one repeating its own label. See
+[ports-and-values.md](ports-and-values.md#describing-a-port).
+
 ## Mark inputs required when a missing value makes the node meaningless
 
 `required()` makes a node show as misconfigured — red border, red port, tooltip —
@@ -170,6 +182,7 @@ New nodes ship with a test mirroring the nearest existing one. See
 - [ ] Does one thing; no mode dropdown that changes its identity
 - [ ] Control-oriented or action-oriented, not both (unless it owns a connection)
 - [ ] `@Display.Name` set; port names readable, with units
+- [ ] Ports whose name cannot carry the whole story are `describedAs()`
 - [ ] `@Node.Kind`, `@Display.Description` and `@Node.Keywords` set, so search can find it
 - [ ] No computed or secret value persisted; secrets marked `markSecret()`
 - [ ] Inputs that must have a value are `required()`; the rest have defaults

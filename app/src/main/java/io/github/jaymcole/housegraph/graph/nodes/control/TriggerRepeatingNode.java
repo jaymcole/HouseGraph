@@ -58,7 +58,12 @@ public class TriggerRepeatingNode extends BaseNode implements NodeContentProvide
      */
     private static final long TICK_MILLIS = 1_000;
 
-    private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true).required();
+    private final NodeVariable<Integer> intervalSeconds = new NodeVariable<>("Interval (s)", Integer.class, true)
+            .required()
+            .describedAs("Seconds between runs. Must be 1 or more — Start refuses anything else. It is read when "
+                    + "Start is pressed, so changing it while the timer is running takes effect only after a Stop "
+                    + "and Start. A run is fired and not waited on, so one that outlasts the interval does not "
+                    + "push the next one back.");
     private final FlowPort startFlowInput = new FlowPort("Start", FlowPort.Direction.IN);
     private final FlowPort stopFlowInput = new FlowPort("Stop", FlowPort.Direction.IN);
 

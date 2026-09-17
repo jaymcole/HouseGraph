@@ -23,7 +23,9 @@ import io.github.jaymcole.housegraph.graph.NodeVariable;
 @Node.Keywords({"branch", "conditional", "compare", "switch", "else", "condition", "equals"})
 public class IfNode extends BaseNode {
 
-    private final NodeVariable<Float> condition = new NodeVariable<>("Condition", Float.class, true).required();
+    private final NodeVariable<Float> condition = new NodeVariable<>("Condition", Float.class, true)
+            .required()
+            .describedAs("Which branch fires. Any value other than 0 takes True; 0, or no value at all, takes False.");
     private final FlowPort truePort = new FlowPort("True", FlowPort.Direction.OUT);
     private final FlowPort falsePort = new FlowPort("False", FlowPort.Direction.OUT);
 

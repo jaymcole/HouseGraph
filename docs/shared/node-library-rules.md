@@ -265,7 +265,7 @@ Everything in `housegraph-api`:
 
 | Package | Provides |
 | --- | --- |
-| `graph` | `BaseNode`, `NodeVariable`, `FlowPort`, `Edge`, `ProcessContext`, `ExecutionPolicy`, `TypeConverters` |
+| `graph` | `BaseNode`, `NodeVariable` (`required()`, `markSecret()`, `transientValue()`, `describedAs()`), `FlowPort`, `Edge`, `ProcessContext`, `ExecutionPolicy`, `TypeConverters` |
 | `annotations` | `@Display.Name`, `@Display.Description`, `@Node.Type`, `@Node.Kind`, `@Node.Keywords`, `@Node.Disabled` |
 | `sdk` | `NodeContentProvider` (inline JavaFX UI), `AutoStartable` (resume on load), `NodeTimer` (a toolkit-free clock), `NodePresentation` (behind `BaseNode.present`), `ValueEditors`, `Secrets`, `RuntimeMode` |
 | `logging` | `Log.get(YourClass.class)` — lands in HouseGraph's own log window and file |
@@ -315,6 +315,23 @@ precedent for fusing scheduling into an ordinary action node.
 
 ---
 
+## Describe a port its name cannot explain
+
+`NodeVariable.describedAs("...")` puts a sentence behind the port name, shown when
+the pointer rests on it and on its inline value field. The anchor circle keeps its
+own tooltip stating the type; this one says what the value *means*.
+
+A library's ports are where this matters most, because the node is somebody else's
+and its javadoc is not on the canvas. `Temperature` is a good port name and still
+leaves a user guessing whether higher is more creative or less, what the useful
+range is, and what blank does. Units, the meaning of 0 or blank, the sane range, and
+which of two operands comes first are what earn the line.
+
+Skip it where the name already says everything: a port with no description gets no
+tooltip, which reads better than one repeating its own label.
+
+---
+
 ## A word about trust
 
 A node library runs **inside HouseGraph's JVM with the user's full privileges**:
@@ -344,5 +361,6 @@ not need.
 - [ ] Inline status content stays a fixed size — no list of unbounded length joined into it
 - [ ] Failures thrown, not swallowed, and with a message worth showing a user
 - [ ] Inputs the node is meaningless without marked `required()`
+- [ ] Ports whose name cannot carry the whole story given `describedAs("...")`
 - [ ] Single jar, or assets named `<pluginId>-<version>-all.jar`
 - [ ] Built jar contains no `housegraph-api`, no `org.slf4j`, no SLF4J provider
