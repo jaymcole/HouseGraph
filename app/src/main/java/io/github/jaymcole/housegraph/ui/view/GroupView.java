@@ -69,8 +69,12 @@ public class GroupView extends Region {
     /** Lets the owning canvas apply a frame's gestures to everything the frame commands, and record them. */
     public interface GroupController {
 
-        /** A drag on the title bar is starting: select the frame and work out what rides along. */
-        void onGroupPressed(GroupView group);
+        /**
+         * A drag on the title bar is starting: select the frame and work out what rides along.
+         *
+         * @param shiftDown whether Shift was held, so the canvas can add to the selection rather than replace it.
+         */
+        void onGroupPressed(GroupView group, boolean shiftDown);
 
         /** The title-bar drag moved by this much, in content coordinates. Already applied to this frame. */
         void onGroupDragged(double deltaContentX, double deltaContentY);
@@ -366,7 +370,7 @@ public class GroupView extends Region {
     // --- Title bar drag ----------------------------------------------------------
 
     private void handleDragStart(MouseEvent event) {
-        controller.onGroupPressed(this);
+        controller.onGroupPressed(this, event.isShiftDown());
         lastDragContentPoint = content.sceneToLocal(event.getSceneX(), event.getSceneY());
         event.consume();
     }

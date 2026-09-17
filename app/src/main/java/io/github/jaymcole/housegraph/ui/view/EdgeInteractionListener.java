@@ -11,8 +11,12 @@ import java.util.List;
  */
 public interface EdgeInteractionListener {
 
-    /** A single click on the edge: select just this one, replacing the current selection. */
-    void selectEdge(AbstractEdgeView edge);
+    /**
+     * A single click on the edge: select just this one, replacing the current selection — unless
+     * {@code shiftDown}, in which case the edge is added to (or, if already selected, removed from)
+     * whatever is currently selected.
+     */
+    void selectEdge(AbstractEdgeView edge, boolean shiftDown);
 
     /**
      * The edge's routing waypoints changed (one was added, dragged, or removed). The
