@@ -54,7 +54,8 @@ public class NodeView extends BorderPane {
 
     /** Lets the owning canvas coordinate selection and group-dragging across nodes. */
     public interface DragController {
-        void onNodePressed(NodeView node);
+        /** @param shiftDown whether Shift was held, so the canvas can add to the selection rather than replace it. */
+        void onNodePressed(NodeView node, boolean shiftDown);
 
         void onNodeDragged(double deltaContentX, double deltaContentY);
 
@@ -419,7 +420,7 @@ public class NodeView extends BorderPane {
 
     private void handleDragStart(MouseEvent event) {
         if (dragController != null) {
-            dragController.onNodePressed(this);
+            dragController.onNodePressed(this, event.isShiftDown());
         }
         lastDragContentPoint = content.sceneToLocal(event.getSceneX(), event.getSceneY());
         event.consume();

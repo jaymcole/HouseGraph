@@ -90,6 +90,16 @@ Interactions, with the class Javadoc as the authoritative list:
   results until you type, then the Add-Node menu below it for browsing by
   category folder (`NodeRegistry.discover()`, grouped by `categoryPath`), and an
   **Add Module…** row under it. See "Node search box" and "Modules" below.
+- Shift extends selection instead of replacing it, everywhere a click or a drag
+  selects something: a Shift-click on a node, a group's title bar, or an edge adds
+  it (or, already selected, drops just that one); a Shift-drag rubber-band unions
+  what the band catches with whatever was already selected, rather than clearing
+  it first. `GraphCanvas` reads `MouseEvent.isShiftDown()` at the point of each
+  press — `NodeView.DragController.onNodePressed`, `GroupView.GroupController.
+  onGroupPressed`, and `EdgeInteractionListener.selectEdge` all take it as a
+  parameter — and a Shift-drag's rubber band snapshots the pre-drag selection
+  (`selectionDragBase*`) so the live band adds to it each frame instead of
+  starting from empty.
 - The rubber-band also catches individual edge waypoint handles (`AbstractEdgeView.
   waypointIndicesIn`), independently of whether the edge's curve itself is caught.
   Dragging any selected node then translates every selected waypoint by the same

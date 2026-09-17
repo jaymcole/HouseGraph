@@ -35,8 +35,9 @@ import java.util.Set;
  * <b>Interaction.</b> The visible curve is thin and mouse-transparent; a wider,
  * fully transparent "hit" path laid over the same route is what actually catches
  * clicks, so the ~2px line needn't be hit precisely. A single click selects the edge
- * (so it can be deleted with the keyboard — there's no longer a delete button); a
- * double-click adds a waypoint. Selection and undo-recording are delegated back to the
+ * (so it can be deleted with the keyboard — there's no longer a delete button), replacing
+ * whatever else was selected unless Shift is held, which adds it to (or removes it from) the
+ * current selection instead; a double-click adds a waypoint. Selection and undo-recording are delegated back to the
  * canvas through an {@link EdgeInteractionListener}, since both are canvas-wide concerns.
  * <p>
  * <b>Waypoint selection.</b> A waypoint handle caught by the canvas's rubber-band
@@ -116,7 +117,7 @@ public abstract class AbstractEdgeView extends Group implements ConnectionView {
                 addWaypoint(content.sceneToLocal(event.getSceneX(), event.getSceneY()));
                 notifyWaypointsChanged(before);
             } else {
-                listener.selectEdge(this);
+                listener.selectEdge(this, event.isShiftDown());
             }
             event.consume();
         });

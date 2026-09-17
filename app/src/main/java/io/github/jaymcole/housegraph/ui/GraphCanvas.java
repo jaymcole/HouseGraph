@@ -104,7 +104,10 @@ import java.util.function.Function;
  * Panning: middle-click-drag on empty canvas space. Zooming: mouse scroll, anchored to
  * the cursor. Left-click-drag on empty canvas space rubber-band-selects nodes/edges,
  * including individual edge waypoint handles caught by the band — dragging a selected
- * node then carries any selected waypoints along with it, as one undo step; Ctrl/Cmd+F opens a
+ * node then carries any selected waypoints along with it, as one undo step. Holding Shift
+ * on a click (a node, a group's title bar, or an edge) or a drag (the rubber band) adds to
+ * the current selection instead of replacing it — a Shift-click on something already
+ * selected removes just that item. Ctrl/Cmd+F opens a
  * find bar in the top-right corner that rings every matching node on the canvas in yellow (see
  * {@link io.github.jaymcole.housegraph.search.GraphSearch GraphSearch}), and Escape closes it;
  * right-click opens a menu led by a ranked node search box, focused immediately; it shows
@@ -207,6 +210,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
 
     private Rectangle selectionRectangle;
     private Point2D selectionStartContent;
+    /**
+     * The selection a rubber-band drag started from, snapshotted at mouse-press. Empty for a plain
+     * drag (which clears the selection before drawing the band); on a Shift+drag it holds whatever
+     * was already selected, so the live band adds to it instead of replacing it.
+     */
+    private Set<NodeView> selectionDragBaseNodes = Set.of();
+    private Set<GroupView> selectionDragBaseGroups = Set.of();
+    private Set<ConnectionView> selectionDragBaseConnections = Set.of();
+    private Map<AbstractEdgeView, Set<Integer>> selectionDragBaseWaypoints = Map.of();
 
     private final ContextMenu contextMenu;
     private final TextField nodeSearchField;
@@ -981,9 +993,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     private Map<AbstractEdgeView, List<Point2D>> dragGestureWaypointsBefore;
 
     @Override
-    public void onNodePressed(NodeView node) {
+    public void onNodePressed(NodeView node, boolean shiftDown) {
         requestFocus();
-        if (!selectedNodes.contains(node)) {
+        if (shiftDown) {
+            if (selectedNodes.contains(node)) {
+                deselectNode(node);
+            } else {
+                selectNode(node);
+            }
+        } else if (!selectedNodes.contains(node)) {
             clearSelection();
             selectNode(node);
         }
@@ -1014,9 +1032,15 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
      * everything at every depth.
      */
     @Override
-    public void onGroupPressed(GroupView group) {
+    public void onGroupPressed(GroupView group, boolean shiftDown) {
         requestFocus();
-        if (!selectedGroups.contains(group)) {
+        if (shiftDown) {
+            if (selectedGroups.contains(group)) {
+                deselectGroup(group);
+            } else {
+                selectGroup(group);
+            }
+        } else if (!selectedGroups.contains(group)) {
             clearSelection();
             selectGroup(group);
         }
@@ -1358,8 +1382,17 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     // --- EdgeInteractionListener (edges reporting back to the canvas) --------------
 
     @Override
-    public void selectEdge(AbstractEdgeView edge) {
-        selectOnlyConnection(edge);
+    public void selectEdge(AbstractEdgeView edge, boolean shiftDown) {
+        if (shiftDown) {
+            requestFocus();
+            if (selectedConnections.contains(edge)) {
+                deselectConnection(edge);
+            } else {
+                selectConnection(edge);
+            }
+        } else {
+            selectOnlyConnection(edge);
+        }
     }
 
     @Override
@@ -1888,7 +1921,20 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
             lastDragSceneX = event.getSceneX();
             lastDragSceneY = event.getSceneY();
         } else if (event.getButton() == MouseButton.PRIMARY) {
-            clearSelection();
+            if (event.isShiftDown()) {
+                // Shift+drag adds to the existing selection rather than replacing it: snapshot it
+                // now so the live band can union against it as the rectangle grows and shrinks.
+                selectionDragBaseNodes = new LinkedHashSet<>(selectedNodes);
+                selectionDragBaseGroups = new LinkedHashSet<>(selectedGroups);
+                selectionDragBaseConnections = new LinkedHashSet<>(selectedConnections);
+                selectionDragBaseWaypoints = new HashMap<>(selectedWaypoints);
+            } else {
+                clearSelection();
+                selectionDragBaseNodes = Set.of();
+                selectionDragBaseGroups = Set.of();
+                selectionDragBaseConnections = Set.of();
+                selectionDragBaseWaypoints = Map.of();
+            }
             selectionStartContent = content.sceneToLocal(event.getSceneX(), event.getSceneY());
             selectionRectangle = new Rectangle(selectionStartContent.getX(), selectionStartContent.getY(), 0, 0);
             selectionRectangle.setFill(Color.web("#61afef", 0.15));
@@ -1927,6 +1973,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
             content.getChildren().remove(selectionRectangle);
             selectionRectangle = null;
         }
+        selectionDragBaseNodes = Set.of();
+        selectionDragBaseGroups = Set.of();
+        selectionDragBaseConnections = Set.of();
+        selectionDragBaseWaypoints = Map.of();
     }
 
     // --- Find in graph ---------------------------------------------------------------
@@ -2294,21 +2344,21 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
         // any band drawn inside it - and rubber-banding a few nodes that happen to sit in a frame
         // must not pick up the frame, or the next drag would move everything else in it too.
         for (GroupView group : groupViews) {
-            if (rect.contains(boundsOf(group))) {
+            if (rect.contains(boundsOf(group)) || selectionDragBaseGroups.contains(group)) {
                 selectGroup(group);
             } else {
                 deselectGroup(group);
             }
         }
         for (NodeView node : nodeViews) {
-            if (node.getBoundsInParent().intersects(rect)) {
+            if (node.getBoundsInParent().intersects(rect) || selectionDragBaseNodes.contains(node)) {
                 selectNode(node);
             } else {
                 deselectNode(node);
             }
         }
         for (ConnectionView connection : allConnections()) {
-            if (connection.intersects(rect)) {
+            if (connection.intersects(rect) || selectionDragBaseConnections.contains(connection)) {
                 selectConnection(connection);
             } else {
                 deselectConnection(connection);
@@ -2326,6 +2376,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     /** Reconciles one edge's selected-waypoint indices against the live rubber-band rect. */
     private void updateWaypointSelection(AbstractEdgeView edge, Bounds rect) {
         Set<Integer> hits = new LinkedHashSet<>(edge.waypointIndicesIn(rect));
+        hits.addAll(selectionDragBaseWaypoints.getOrDefault(edge, Set.of()));
         Set<Integer> current = selectedWaypoints.getOrDefault(edge, Set.of());
         int waypointCount = edge.getWaypoints().size();
         for (int i = 0; i < waypointCount; i++) {
