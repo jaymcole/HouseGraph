@@ -140,6 +140,15 @@ public class PortView extends HBox implements EdgeAnchor {
         updateFieldVisibility();
     }
 
+    /**
+     * Whether this port carries an inline value field — and so whether it is something extra width
+     * can usefully be given to. A bare anchor and label cannot use any; a field grows into all of
+     * it. {@link NodeView} asks when it decides which body column gets the slack.
+     */
+    public boolean hasValueField() {
+        return valueField != null;
+    }
+
     private static boolean isEditable(NodeVariable<?> variable) {
         return variable.manuallyEditable && ValueEditors.isEditable(variable.type);
     }

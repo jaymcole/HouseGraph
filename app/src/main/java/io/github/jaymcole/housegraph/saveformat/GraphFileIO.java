@@ -45,7 +45,9 @@ import java.util.TreeSet;
  * The root carries a {@code version} (see {@link #CURRENT_VERSION}) and a {@link #migrate} seam for
  * future structural format changes. Per node the file stores its {@code type} — a stable type id
  * ({@link NodeRegistry#persistentTypeId}, decoupled from the class name so moving/renaming a node
- * class doesn't strand old saves), canvas {@code x}/{@code y}, its {@code executionPolicy} (see
+ * class doesn't strand old saves), canvas {@code x}/{@code y}, the {@code width}/{@code height} the
+ * user manually sized it to (written per axis, and only when they did — see
+ * {@code NodeView.setManualSize}), its {@code executionPolicy} (see
  * {@link ExecutionPolicy}), its {@code maxConcurrency} and {@code timeoutMillis} (both written only
  * when non-zero), its persistable input/output values, a {@code requiredInputs} entry, and any
  * node-specific {@code state}.
@@ -129,7 +131,7 @@ public final class GraphFileIO {
      * this when a change can't be handled by the shape-sniffing forgiving reads below, and add the
      * corresponding step to {@link #migrate}.
      */
-    static final int CURRENT_VERSION = 5;
+    static final int CURRENT_VERSION = 6;
 
     /** The version assumed for a save file that has no {@code version} key (written before versioning). */
     static final int LEGACY_VERSION = 0;
@@ -230,6 +232,9 @@ public final class GraphFileIO {
                 JSONObject preserved = new JSONObject(missing.rawJson().toString());
                 preserved.put("x", entry.x());
                 preserved.put("y", entry.y());
+                // Removed, not just overwritten, when the floor is gone: the raw JSON still carries
+                // whatever this node was saved with, and resetting its size has to be able to win.
+                putSizeOrRemove(preserved, entry);
                 nodesJson.put(preserved);
                 if (missing.missingPluginId() != null) {
                     pluginRows.putIfAbsent(missing.missingPluginId(),
@@ -259,6 +264,10 @@ public final class GraphFileIO {
             }
             nodeJson.put("x", entry.x());
             nodeJson.put("y", entry.y());
+            // Written only on an axis the user actually sized, like maxConcurrency/timeoutMillis
+            // below: almost every node sizes itself, and a key per axis per node would cost two
+            // lines each in every save file to say so.
+            putSizeOrRemove(nodeJson, entry);
             nodeJson.put("executionPolicy", node.getExecutionPolicy().name());
             if (node.getFailurePolicy() != FailurePolicy.HALT) {
                 // Written only when it is not the default, unlike executionPolicy above, which
@@ -432,6 +441,24 @@ public final class GraphFileIO {
         return row;
     }
 
+    /**
+     * Writes a node's manual size floor, per axis, or takes the key away on an axis that sizes itself.
+     * Removing matters only for a {@link MissingNode}, whose row starts as the one it was read from —
+     * every other row is built fresh and has nothing to remove.
+     */
+    private static void putSizeOrRemove(JSONObject nodeJson, ClipboardNode entry) {
+        if (entry.width() > 0) {
+            nodeJson.put("width", entry.width());
+        } else {
+            nodeJson.remove("width");
+        }
+        if (entry.height() > 0) {
+            nodeJson.put("height", entry.height());
+        } else {
+            nodeJson.remove("height");
+        }
+    }
+
     /** Writes {@code key} only when {@code value} says something, mirroring {@link PluginCatalog}. */
     private static void putIfPresent(JSONObject json, String key, String value) {
         if (value != null && !value.isBlank()) {
@@ -457,6 +484,10 @@ public final class GraphFileIO {
             String pluginId = nodeJson.optString("plugin", null);
             double x = nodeJson.getDouble("x");
             double y = nodeJson.getDouble("y");
+            // Absent on every save written before a node could be resized, and on every node left to
+            // size itself since - either way the node sizes itself, which is the default state.
+            double width = nodeJson.optDouble("width", 0);
+            double height = nodeJson.optDouble("height", 0);
             Class<? extends BaseNode> nodeClass = registry.resolveClass(typeName, pluginId);
             if (nodeClass == null) {
                 log.warn("Node type \"{}\"{} is not installed; keeping it as a placeholder so it survives a save",
@@ -464,14 +495,14 @@ public final class GraphFileIO {
                 // NOT a null slot. A null was dropped by place() and never written back, so opening a
                 // graph without the providing library and re-saving destroyed the node, its values,
                 // its state, and every edge touching it. MissingNode preserves all of that verbatim.
-                nodes.add(new ClipboardNode(MissingNode.from(nodeJson, pluginRows.get(pluginId)), x, y));
+                nodes.add(new ClipboardNode(MissingNode.from(nodeJson, pluginRows.get(pluginId)), x, y, width, height));
                 continue;
             }
             BaseNode node = NodeRegistry.instantiate(nodeClass);
             if (node == null) {
                 // A resolvable type that won't instantiate is an internal error, not absent user
                 // data — there is nothing to preserve, so the index-holding null slot still applies.
-                nodes.add(new ClipboardNode(null, x, y));
+                nodes.add(new ClipboardNode(null, x, y, width, height));
                 continue;
             }
             // Restore node config BEFORE touching ports. A dynamic-port node (the object
@@ -506,7 +537,7 @@ public final class GraphFileIO {
             if (nodeJson.has("requiredInputs")) {
                 applyRequired(node.getInputs(), nodeJson.getJSONArray("requiredInputs"));
             }
-            nodes.add(new ClipboardNode(node, x, y));
+            nodes.add(new ClipboardNode(node, x, y, width, height));
         }
 
         JSONArray dataEdgesJson = root.getJSONArray("dataEdges");
@@ -611,6 +642,10 @@ public final class GraphFileIO {
         // failed node cascading as though it had succeeded) is the bug this release fixes, and an
         // old graph is the one most likely to be quietly suffering from it. See
         // docs/decisions/0016-a-failed-node-halts-its-branch.md.
+        //
+        // v5 -> v6 is a passthrough too, and an ordinary one: v6 added the per-node "width"/"height"
+        // keys, and a node with neither sizes itself to its content - which is what every v5 node
+        // did, so a v5 file loads exactly as it did before.
         return root;
     }
 

@@ -10,6 +10,7 @@ import io.github.jaymcole.housegraph.ui.command.MoveNodesCommand;
 import io.github.jaymcole.housegraph.ui.command.PasteCommand;
 import io.github.jaymcole.housegraph.ui.command.RemoveGroupsCommand;
 import io.github.jaymcole.housegraph.ui.command.RemoveNodesCommand;
+import io.github.jaymcole.housegraph.ui.command.ResizeNodeCommand;
 import io.github.jaymcole.housegraph.ui.command.SetGroupCommand;
 import io.github.jaymcole.housegraph.ui.command.SetWaypointsCommand;
 import io.github.jaymcole.housegraph.ui.command.UndoManager;
@@ -486,6 +487,10 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
         }
         double x = oldView.getLayoutX();
         double y = oldView.getLayoutY();
+        // Carried across like the position: the floor is the user's answer to how big this node
+        // should be, and it outlives a port change the same way the node's place on the canvas does.
+        double manualWidth = oldView.getManualWidth();
+        double manualHeight = oldView.getManualHeight();
 
         List<CapturedRebuildEdge> capturedData = new ArrayList<>();
         List<CapturedRebuildFlowEdge> capturedFlow = new ArrayList<>();
@@ -507,6 +512,7 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
         removeNodeView(oldView);
 
         NodeView newView = new NodeView(node, content, this);
+        newView.setManualSize(manualWidth, manualHeight);
         addNodeView(newView, x, y);
         forceLayout();
 
@@ -1018,6 +1024,16 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
     @Override
     public void onNodeReleased() {
         endDragGesture();
+    }
+
+    /**
+     * A node's manual size floor changed, and the view has already applied it — see
+     * {@link NodeView#setManualSize}. Recorded rather than executed, like the end of a move: the
+     * whole gesture is one undo step, and it has been on screen since the first pixel of it.
+     */
+    @Override
+    public void onNodeResized(NodeView node, double fromWidth, double fromHeight, double toWidth, double toHeight) {
+        undoManager.record(new ResizeNodeCommand(node, fromWidth, fromHeight, toWidth, toHeight));
     }
 
     // --- GroupView.GroupController (group frames reporting back to the canvas) -----
@@ -1548,7 +1564,8 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
 
         List<ClipboardNode> nodes = new ArrayList<>();
         for (NodeView nodeView : ordered) {
-            nodes.add(new ClipboardNode(nodeView.getNode(), nodeView.getLayoutX(), nodeView.getLayoutY()));
+            nodes.add(new ClipboardNode(nodeView.getNode(), nodeView.getLayoutX(), nodeView.getLayoutY(),
+                    nodeView.getManualWidth(), nodeView.getManualHeight()));
         }
 
         List<ClipboardDataEdge> dataEdges = new ArrayList<>();
@@ -1623,6 +1640,9 @@ public class GraphCanvas extends Pane implements NodeView.DragController, GroupV
             // onActivated() - so the view, and with it createNodeContent(), is built and on the
             // canvas by the time the node activates, as it was when this method added nodes itself.
             NodeView nodeView = new NodeView(node, content, this);
+            // Before it joins the canvas, so the node's first layout is already the size it was
+            // saved or copied at rather than a frame at its content size and then a jump.
+            nodeView.setManualSize(entry.width(), entry.height());
             addNodeView(nodeView, entry.x() + offsetX, entry.y() + offsetY);
             placed.add(nodeView);
         });

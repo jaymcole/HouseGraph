@@ -55,6 +55,27 @@ private void startOffThread() {
 Override `onExecuted()`, which runs right after `process()` whether it succeeded or
 failed. Do not update UI from inside `process()` — that runs on an engine thread.
 
+## The space your content is given
+
+Your content sits below the node's ports, and is handed the node's full width. It is
+also handed **any height the user's manual resize added** — nodes can be dragged
+bigger ([ui-layer.md](../engine/ui-layer.md#manual-node-size)), and the slack goes to
+the content rather than pooling above it.
+
+Whether your content *uses* that height is up to what you return, and nothing here
+overrides your choice:
+
+- A `Pane`, `VBox` or `StackPane` grows. That is how `ImageViewerNode` scales its
+  preview with the node: it returns a `StackPane` whose preferred size is the default
+  160×160 and binds the `ImageView`'s `fitWidth`/`fitHeight` to it, so the image fills
+  whatever box the frame ends up with. An `ImageView` on its own cannot be resized and
+  would ignore the space entirely.
+- A lone `Button` or status `Label` keeps its natural height, and the slack sits below
+  it — which is what you want, rather than a button the height of the node.
+
+Bind to the container you return, never to the node view: your content has no handle
+on it, and the size you want to follow is the one you were given.
+
 ## Keep inline content a fixed size
 
 A status label's text must not grow with the data it summarizes — joining a list
@@ -64,6 +85,9 @@ arranged can silently balloon the next time it runs. Report a count or a fixed
 short phrase ("Running", "3 models loaded") instead of the list itself; put the
 list on a data output, where a downstream node can display or log it under its own
 sizing rules.
+
+This is about content that resizes *itself* from the data it is given. Filling the box
+the user chose, as above, is the opposite case and is fine: the size is still theirs.
 
 ## Do not import `javafx.scene.Node`
 

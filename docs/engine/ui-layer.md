@@ -331,7 +331,7 @@ does **not** run inside `place`, which paste and redo also use: a rebuild replac
 
 | View | Renders |
 | --- | --- |
-| `NodeView` | a `BaseNode`: title bar with drag handle and corner flow anchors, left input column, right output column |
+| `NodeView` | a `BaseNode`: title bar with drag handle and corner flow anchors, left input column, right output column, and three grips that set a manual size floor |
 | `GroupView` | a `NodeGroup`: a translucent labelled rectangle behind the graph. Mouse-transparent body, a draggable/editable title bar at the top-left, four corner and four side resize grips |
 | `PortView` (`EdgeAnchor`) | one `NodeVariable`; drag its circle to make a data edge; inline editable field when the variable is manually editable and its type is in `ValueEditors` |
 | `FlowPortView` (`EdgeAnchor`) | one `FlowPort` anchor |
@@ -379,6 +379,63 @@ with an `INSIDE` stroke so they never shift or resize it:
   drag "invalid target" state. Every port carries a transparent border of the same
   width by default, so toggling never reflows the node.
 
+### Manual node size
+
+A node sizes itself to its title, ports and inline content. Three grips — right edge,
+bottom edge, bottom-right corner — set a **size floor** on top of that, for the node
+whose value field is too narrow to read or whose viewer is too cramped to see. They are
+hidden until the pointer is over the node, and stay visible for as long as one is being
+dragged.
+
+`NodeView.setManualSize` applies the floor as the region's **minimum** width/height,
+leaving its preferred size computed from its content:
+
+- A node can be made bigger than it needs to be, which is the point. The extra width
+  reaches each `PortView`'s growable value field through the hgrow the body columns
+  carry, so widening a node widens the fields rather than padding the gap between them.
+  This is the answer to a string value longer than `PortView.MAX_FIELD_WIDTH`, which is
+  where a field stops growing on its own — the cap is what stops one long value
+  ballooning a node across the canvas, and a drag is how you say you meant it.
+
+  **Only a column that can use the width grows.** A body column whose ports are bare
+  anchors and labels has nothing to fill, so an unconditional hgrow on both columns
+  handed it half of every pixel the user dragged for the other one, and turned that
+  half into a gap. `NodeView` gives hgrow to the column holding a `PortView` with a
+  value field (`PortView.hasValueField()`). When both have one, or neither does, both
+  grow: with nothing to fill, the even split is what holds the output column against
+  the node's right edge.
+- A node can never be made smaller than what it has to draw. A drag that asks for less
+  than the content needs stores **no floor at all** on that axis rather than one the
+  layout would ignore, which makes dragging an edge back in the gesture that returns
+  that axis to sizing itself. **Reset size** in the context menu does both axes at once.
+- A node whose content later outgrows the floor still grows — a dynamic-port node that
+  gained a port, a viewer handed a longer string. A fixed preferred size would clip it
+  instead, months after the drag that caused it.
+
+Height a node gains this way goes to its **inline content**, not to the gap above it.
+The ports body and a `NodeContentProvider`'s content share one `VBox` in the centre,
+with the vgrow on the content — the content used to sit in the `BorderPane`'s bottom
+slot, which is given exactly its preferred height and cannot be handed more, so a
+taller node was only ever a bigger empty rectangle. Whether the content uses the space
+is left to what the node returned and is never forced: a `Pane` grows (which is how
+`ImageViewerNode`'s preview scales with the node), a lone `Button` keeps its natural
+height and the slack sits below it. See
+[`../nodes/inline-ui.md`](../nodes/inline-ui.md#the-space-your-content-is-given).
+
+The top-left corner never moves, so a resize is not also a move: position stays the
+canvas's business. The grips are unmanaged children placed by `NodeView.layoutChildren`,
+unlike the overlay rectangles above, which are stretched by binding.
+
+Edge curves follow automatically — `AbstractEdgeView` listens to each endpoint node's
+`boundsInParent`, which a resize changes just as a move does.
+
+The floor is the view's, not the model's: `BaseNode` knows nothing about it. It rides
+`ClipboardNode`'s `width`/`height` alongside the position, so it survives copy/paste, a
+port-change rebuild (`rebuildNodeView` carries it to the replacement view), and
+save/load — see [save-format.md](save-format.md). A grip drag applies live and records a
+`ResizeNodeCommand` on release; **Reset size** goes through the same path, so both are
+one kind of undo step.
+
 ## Node context menu
 
 Right-clicking a node opens `NodeView.showContextMenu`, rebuilt on each open so it
@@ -390,11 +447,15 @@ reflects current state.
 | Concurrency limit | same | `maxConcurrency` |
 | Process timeout | same | `timeoutMillis` |
 | Required inputs | any node with inputs | per-input `required` flag, driving the misconfigured indicator |
+| Reset size | any node carrying a manual size floor | drops it, returning the node to sizing itself |
 
-These mutate the model directly rather than through the undo stack, and all
-round-trip through the [save format](save-format.md). A node with none of them — a
-constant, an input-less resource — shows no menu, and right-clicking falls through
-to the canvas Add-Node menu.
+The first four mutate the model directly rather than through the undo stack; **Reset
+size** is a view change and is recorded as a `ResizeNodeCommand`. All of them round-trip
+through the [save format](save-format.md). A node with none of them — an unresized
+constant, an input-less resource — shows no menu, and right-clicking falls through to
+the canvas Add-Node menu. The handler is installed on every node regardless, because
+whether the last entry applies changes with a drag; `showContextMenu` bows out without
+consuming the event when it has nothing to show, which is what keeps the fall-through.
 
 Each policy has a glyph in `ExecutionPolicyIcons`, drawn from primitive JavaFX
 shapes with no image assets: a ringed slash (Drop), a circular arrow (Restart),
@@ -542,7 +603,7 @@ headlessly against a temp preferences file.
   and becomes a single undo step when the gesture ends.
 
 Current commands: `AddNodeCommand`, `RemoveNodesCommand`, `MoveNodesCommand`,
-`CreateEdgeCommand`, `CreateFlowEdgeCommand`, `PasteCommand`,
+`ResizeNodeCommand`, `CreateEdgeCommand`, `CreateFlowEdgeCommand`, `PasteCommand`,
 `SetWaypointsCommand`, `AddGroupCommand`, `RemoveGroupsCommand`, `SetGroupCommand`,
 `CompositeCommand` (bundles several already-applied commands
 into one undo step — e.g. a node drag that also carries selected waypoints along

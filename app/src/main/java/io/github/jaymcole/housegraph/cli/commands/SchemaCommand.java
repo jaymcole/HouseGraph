@@ -27,7 +27,8 @@ public final class SchemaCommand implements Command {
      * is not invalid, it is older.
      */
     private static final Map<String, String> RESOURCES = Map.of(
-            "graph", "/schema/graph-save.v5.schema.json",
+            "graph", "/schema/graph-save.v6.schema.json",
+            "graph-v6", "/schema/graph-save.v6.schema.json",
             "graph-v5", "/schema/graph-save.v5.schema.json",
             "graph-v4", "/schema/graph-save.v4.schema.json",
             "graph-v3", "/schema/graph-save.v3.schema.json",
@@ -52,10 +53,10 @@ public final class SchemaCommand implements Command {
 
     @Override
     public String usage() {
-        return "  schema [graph|graph-v4|graph-v3|graph-v2|catalog]\n\n"
+        return "  schema [graph|graph-v6|graph-v5|graph-v4|graph-v3|graph-v2|catalog]\n\n"
                 + "graph (default) is the JSON Schema for the save-file format this build writes\n"
-                + "(version 4). graph-v4, graph-v3 and graph-v2 name a specific format version, for\n"
-                + "checking a file this build did not write. catalog is the schema for\n"
+                + "(version 6). graph-v6 … graph-v2 name a specific format version, for checking a\n"
+                + "file this build did not write. catalog is the schema for\n"
                 + "`nodes list --json`'s output.\n\n"
                 + "Redirect it to a file to hand to any standard JSON Schema validator:\n"
                 + "  housegraph schema > graph.schema.json";
@@ -66,7 +67,8 @@ public final class SchemaCommand implements Command {
         String which = args.positional(0).orElse("graph");
         String resource = RESOURCES.get(which);
         if (resource == null) {
-            out.println("Unknown schema: " + which + " (expected graph, graph-v4, graph-v3, graph-v2 or catalog)");
+            out.println("Unknown schema: " + which
+                    + " (expected graph, graph-v6, graph-v5, graph-v4, graph-v3, graph-v2 or catalog)");
             out.println(usage());
             return 2;
         }
