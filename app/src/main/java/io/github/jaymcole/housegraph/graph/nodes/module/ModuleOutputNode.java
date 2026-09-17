@@ -47,7 +47,9 @@ public class ModuleOutputNode extends ModuleDataBoundaryNode {
      */
     @Override
     public void configureInputs() {
-        addInput(newBoundaryPort());
+        addInput(newBoundaryPort().describedAs("Wire the graph's result in here; this is what becomes visible "
+                + "outside the graph as this declared output. This port is an input, not an output, despite "
+                + "the node's name — see the class description."));
     }
 
     @Override

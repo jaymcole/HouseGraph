@@ -55,7 +55,9 @@ public class DataStoreNode extends BaseNode implements NodeContentProvider {
     private static final String DEFAULT_NAME = "store";
 
     private final NodeVariable<JsonDocumentStore> storeOutput =
-            new NodeVariable<>("Store", JsonDocumentStore.class).transientValue();
+            new NodeVariable<>("Store", JsonDocumentStore.class).transientValue()
+                    .describedAs("The live store handle for this node's chosen name, not a copy of its "
+                            + "contents. Any node wiring this in reads and writes the same on-disk document.");
 
     private String name = DEFAULT_NAME;
     /** The store currently observed for the size label; kept so its listener can be detached. */
