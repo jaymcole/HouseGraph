@@ -26,8 +26,11 @@ public class ListToStringNode extends BaseNode {
 
     @SuppressWarnings("unchecked")
     private final NodeVariable<List<?>> in =
-            new NodeVariable<>("in", (Class<List<?>>) (Class<?>) List.class, false).required();
-    private final NodeVariable<String> out = new NodeVariable<>("out", String.class, false);
+            new NodeVariable<>("in", (Class<List<?>>) (Class<?>) List.class, false).required()
+                    .describedAs("The list to flatten. Null or empty produces an empty string, not an error.");
+    private final NodeVariable<String> out = new NodeVariable<>("out", String.class, false)
+            .describedAs("The list, one entry per line. Each entry is stringified with String.valueOf, so a "
+                    + "null entry renders as the literal text \"null\".");
 
     @Override
     public void process(ProcessContext ctx) {

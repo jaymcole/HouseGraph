@@ -39,7 +39,10 @@ public class SecretLoaderNode extends BaseNode implements NodeContentProvider {
 
     private static final Logger log = Log.get(SecretLoaderNode.class);
 
-    private final NodeVariable<String> value = new NodeVariable<>("Value", String.class).markSecret();
+    private final NodeVariable<String> value = new NodeVariable<>("Value", String.class).markSecret()
+            .describedAs("The resolved secret for the selected key. Falls back to an OS environment "
+                    + "variable of the same name if the key isn't in the store; null if no key is selected "
+                    + "or neither source has it.");
     private String selectedKey;
 
     @Override
