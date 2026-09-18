@@ -17,7 +17,6 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.StrokeType;
@@ -33,27 +32,40 @@ import java.util.List;
  * <h2>The body is mouse-transparent; the chrome is not</h2>
  * A frame is a large background region, and a large background region that swallows clicks would
  * make the canvas inside it unusable — no rubber band, no click-through to what is behind. So the
- * fill and the border take no input at all. The two pieces of chrome do: the <b>title bar</b> at the
- * top-left is the drag handle (and the label, and the right-click target), and the four <b>corner
- * grips</b> resize the frame: one at each corner, plus one at the midpoint of each side. That is the
- * same division {@link NodeView} makes, where the title bar drags and the body does not.
+ * <b>fill</b> takes no input at all. The two pieces of chrome do: the <b>title bar</b> at the
+ * top-left is the drag handle (and the label, and the right-click target), and the <b>border</b>
+ * resizes the frame. That is the same division {@link NodeView} makes, where the title bar drags
+ * and the body does not.
  *
- * <h2>Side grips resize on one axis only</h2>
- * A corner grip drags both adjacent edges. A side grip drags only the edge it sits on: the grips on
- * the left and right sides move horizontally and change width alone, and the grips on the top and
- * bottom sides move vertically and change height alone — a side never touches the axis it doesn't
- * own.
+ * <h2>The border is the resize control, the way an OS window's is</h2>
+ * Eight handles cover the frame's own border: one strip down each edge, running it end to end, and
+ * one square at each corner. Nothing is drawn for them — the gesture announces itself with the
+ * resize cursor and by lighting the edges the drag would move, in the frame's own colour. A frame
+ * at rest is its rectangle and its title, with no resize furniture stuck to it.
+ *
+ * <p>Only the border strip is live, not the fill, so everything the frame is drawn around stays
+ * reachable. The cost is that a rubber band cannot be started in the few pixels directly over an
+ * edge, which is what buys the gesture everywhere along the border rather than at a few points
+ * on it.
+ *
+ * <h2>Side handles resize on one axis only</h2>
+ * A corner handle drags both adjacent edges. A side handle drags only the edge it covers: the left
+ * and right strips move horizontally and change width alone, and the top and bottom strips move
+ * vertically and change height alone — a side never touches the axis it doesn't own. Corners are
+ * added to the frame after the sides, so the pixels they share start the two-axis drag.
  *
  * <h2>Resizing does not move anything</h2>
- * A drag on the title bar moves the frame and everything it commands. A drag on a grip changes the
- * rectangle only — which is the whole point, since the rectangle is what decides membership: growing
- * a frame over a node is how that node joins it, and shrinking off one is how it leaves.
+ * A drag on the title bar moves the frame and everything it commands. A drag on the border changes
+ * the rectangle only — which is the whole point, since the rectangle is what decides membership:
+ * growing a frame over a node is how that node joins it, and shrinking off one is how it leaves.
  *
  * <h2>The title bar paints in a layer above every node</h2>
  * The body renders behind the graph so its translucent fill never washes out what is inside it —
  * but a title sitting at the frame's own paint depth would then vanish under any node placed near
  * that corner. So the title bar is not a child of this {@code Region}: {@link #getTitleBar()} hands
  * it to {@code GraphCanvas}, which keeps it in a separate group stacked above every {@code NodeView}.
+ * It is inset by a corner's width so the top-left corner handle stays reachable beneath it, and
+ * clamped so it can never grow across the top-right one.
  * {@link #setGroup} repositions and resizes it there directly, in the same content coordinates this
  * frame itself uses, since it can no longer rely on this {@code Region}'s own {@code layoutChildren}
  * to place a child that is not actually its child.
@@ -103,15 +115,16 @@ public class GroupView extends Region {
         void focusCanvas();
     }
 
-    /** Where a grip sits along one axis: pinned to an edge, or centred between the two. */
+    /** Where a handle sits along one axis: pinned to an edge, or spanning the whole of it. */
     private enum Anchor {
         START, MIDDLE, END
     }
 
     /**
-     * Where a resize grip sits on the frame, and therefore which edges its drag moves. A corner
-     * combines a non-{@code MIDDLE} anchor on both axes and moves both edges; a side grip is
-     * {@code MIDDLE} on one axis — the axis it does not resize — and pinned on the other.
+     * Where a resize handle sits on the frame's border, and therefore which edges its drag moves. A
+     * corner combines a non-{@code MIDDLE} anchor on both axes and moves both edges; a side handle is
+     * {@code MIDDLE} on one axis — the axis it does not resize, and the one it spans end to end —
+     * and pinned on the other.
      */
     private enum Handle {
         NORTH_WEST(Anchor.START, Anchor.START, Cursor.NW_RESIZE),
@@ -149,21 +162,38 @@ public class GroupView extends Region {
             return vertical == Anchor.START;
         }
 
-        /** Where this grip sits along one axis, given the frame's size on that axis and the grip's own size. */
-        private static double position(Anchor anchor, double frameSize, double gripSize) {
-            return switch (anchor) {
-                case START -> 0;
-                case END -> frameSize - gripSize;
-                case MIDDLE -> (frameSize - gripSize) / 2;
-            };
+        boolean isCorner() {
+            return resizesHorizontal() && resizesVertical();
         }
 
-        double x(double width) {
-            return position(horizontal, width, GRIP_SIZE);
+        /**
+         * How big this handle's strip is on a frame of the given size. A side handle is thin across
+         * the edge it drags and spans the frame on the axis it leaves alone; a corner is thick on
+         * both. Clamped against the frame's own size, though {@code NodeGroup}'s minimums keep a
+         * frame well clear of that.
+         */
+        double width(double frameWidth) {
+            return size(horizontal, frameWidth);
         }
 
-        double y(double height) {
-            return position(vertical, height, GRIP_SIZE);
+        double height(double frameHeight) {
+            return size(vertical, frameHeight);
+        }
+
+        private double size(Anchor anchor, double frameSize) {
+            if (anchor == Anchor.MIDDLE) {
+                return frameSize;
+            }
+            return Math.min(isCorner() ? RESIZE_CORNER_SPAN : RESIZE_BORDER_THICKNESS, frameSize);
+        }
+
+        /** A handle hugs the edge it drags, and starts at zero on an axis it spans. */
+        double x(double frameWidth) {
+            return horizontal == Anchor.END ? frameWidth - width(frameWidth) : 0;
+        }
+
+        double y(double frameHeight) {
+            return vertical == Anchor.END ? frameHeight - height(frameHeight) : 0;
         }
     }
 
@@ -178,11 +208,27 @@ public class GroupView extends Region {
             {"Grey", "#8a9199"},
     };
 
-    private static final double GRIP_SIZE = 14;
+    /**
+     * How far into the frame a resize handle reaches. Wider than {@link NodeView}'s: that one has to
+     * stay clear of a port circle twelve pixels in, while a frame's border has nothing near it but
+     * empty canvas. A frame is also the thing you zoom out to see whole, and a handle does not
+     * compensate for zoom the way the title bar does, so a strip that is thin in canvas pixels is
+     * thin on screen too.
+     */
+    private static final double RESIZE_BORDER_THICKNESS = 10;
+    private static final double RESIZE_CORNER_SPAN = 20;
+
+    /**
+     * The edges a resize handle lights, drawn in the frame's own colour at full strength over its
+     * own border. Held back from the corners by the border's arc, which a straight bar run edge to
+     * edge would otherwise overshoot.
+     */
+    private static final double RESIZE_EDGE_WIDTH = 3;
+    private static final double CORNER_ARC = 10;
+
     private static final double BORDER_WIDTH = 2;
     private static final double FILL_OPACITY = 0.10;
     private static final double BORDER_OPACITY = 0.55;
-    private static final double GRIP_RESTING_OPACITY = 0.35;
     private static final Color SELECTED_BORDER_COLOR = Color.web("#e5c07b");
     private static final double SELECTED_BORDER_WIDTH = 2;
 
@@ -194,7 +240,22 @@ public class GroupView extends Region {
     private final HBox titleBar = new HBox();
     private final Label titleLabel = new Label();
     private final TextField titleField = new TextField();
-    private final List<StackPane> grips = new ArrayList<>();
+    /**
+     * The transparent strips of border that resize the frame: one per {@link Handle}, in that enum's
+     * order, which is what {@link #layoutChildren()} relies on to place them. Nothing is drawn for
+     * them — see {@link #edgeHighlights}.
+     */
+    private final List<Rectangle> resizeZones = new ArrayList<>();
+
+    /**
+     * What a resize handle actually shows: the edges it would move, in {@link Handle#values()}-
+     * independent order — top, right, bottom, left — matching {@link #refreshResizeHighlight()}.
+     */
+    private final List<Rectangle> edgeHighlights = new ArrayList<>();
+
+    /** The handle under the pointer and the handle being dragged. A drag outranks the pointer. */
+    private Handle hoveredHandle;
+    private Handle draggedHandle;
     /** Grows the title bar back to its 1:1 on-screen size as the canvas zooms out past it; see {@link #setZoom}. */
     private final Scale titleZoomCompensation = new Scale(1, 1, 0, 0);
 
@@ -202,7 +263,7 @@ public class GroupView extends Region {
     private boolean selected;
 
     private Point2D lastDragContentPoint;
-    /** The rectangle a grip drag started from, so every step of it is measured against one fixed origin. */
+    /** The rectangle a resize drag started from, so every step of it is measured against one fixed origin. */
     private NodeGroup resizeOrigin;
 
     /**
@@ -215,8 +276,8 @@ public class GroupView extends Region {
         this.controller = controller;
 
         background.setMouseTransparent(true);
-        background.setArcWidth(10);
-        background.setArcHeight(10);
+        background.setArcWidth(CORNER_ARC);
+        background.setArcHeight(CORNER_ARC);
         background.setStrokeType(StrokeType.INSIDE);
         background.setStrokeWidth(BORDER_WIDTH);
 
@@ -226,8 +287,8 @@ public class GroupView extends Region {
         selectionBorder.setStroke(SELECTED_BORDER_COLOR);
         selectionBorder.setStrokeWidth(SELECTED_BORDER_WIDTH);
         selectionBorder.setStrokeType(StrokeType.INSIDE);
-        selectionBorder.setArcWidth(10);
-        selectionBorder.setArcHeight(10);
+        selectionBorder.setArcWidth(CORNER_ARC);
+        selectionBorder.setArcHeight(CORNER_ARC);
         selectionBorder.setMouseTransparent(true);
         selectionBorder.setManaged(false);
         selectionBorder.setVisible(false);
@@ -235,11 +296,31 @@ public class GroupView extends Region {
         buildTitleBar();
         titleBar.getTransforms().add(titleZoomCompensation);
         for (Handle handle : Handle.values()) {
-            grips.add(buildGrip(handle));
+            resizeZones.add(buildResizeZone(handle));
+        }
+        for (int i = 0; i < 4; i++) {
+            Rectangle highlight = new Rectangle();
+            highlight.setMouseTransparent(true);
+            highlight.setManaged(false);
+            highlight.setVisible(false);
+            edgeHighlights.add(highlight);
         }
 
         getChildren().add(background);
-        getChildren().addAll(grips);
+        getChildren().addAll(edgeHighlights);
+        // Sides first, then corners, so a corner sits on top of the two sides it overlaps and the
+        // pixels all three share start the two-axis drag - which is what a pointer aimed at a corner
+        // means. Every handle is transparent, so this is about which one takes the press, not paint.
+        for (int i = 0; i < resizeZones.size(); i++) {
+            if (!Handle.values()[i].isCorner()) {
+                getChildren().add(resizeZones.get(i));
+            }
+        }
+        for (int i = 0; i < resizeZones.size(); i++) {
+            if (Handle.values()[i].isCorner()) {
+                getChildren().add(resizeZones.get(i));
+            }
+        }
         getChildren().add(selectionBorder);
 
         setGroup(group);
@@ -296,40 +377,72 @@ public class GroupView extends Region {
         });
     }
 
-    private StackPane buildGrip(Handle handle) {
-        Rectangle rect = new Rectangle(GRIP_SIZE, GRIP_SIZE);
-        rect.setArcWidth(4);
-        rect.setArcHeight(4);
-
-        StackPane grip = new StackPane(rect);
-        grip.setManaged(false);
-        grip.setCursor(handle.cursor);
-        grip.setOpacity(GRIP_RESTING_OPACITY);
-        grip.setOnMouseEntered(event -> grip.setOpacity(1));
-        grip.setOnMouseExited(event -> grip.setOpacity(GRIP_RESTING_OPACITY));
-        grip.setOnMousePressed(event -> {
+    /**
+     * Builds one handle: a strip over the border it drags, filled with {@code Color.TRANSPARENT} and
+     * not left unfilled — an unfilled shape is invisible to the pointer, which is the one thing this
+     * has to be. Sized by {@link #layoutChildren()}, the only place that knows the frame's size.
+     */
+    private Rectangle buildResizeZone(Handle handle) {
+        Rectangle zone = new Rectangle();
+        zone.setFill(Color.TRANSPARENT);
+        zone.setManaged(false);
+        zone.setCursor(handle.cursor);
+        zone.setOnMouseEntered(event -> {
+            hoveredHandle = handle;
+            refreshResizeHighlight();
+        });
+        zone.setOnMouseExited(event -> {
+            if (hoveredHandle == handle) {
+                hoveredHandle = null;
+            }
+            refreshResizeHighlight();
+        });
+        zone.setOnMousePressed(event -> {
             // The same reason NodeView's drag focuses the canvas: a gesture that consumes its own
             // press leaves focus wherever it was, and the next Ctrl/Cmd+Z would go there instead.
             controller.focusCanvas();
             resizeOrigin = group;
+            draggedHandle = handle;
+            refreshResizeHighlight();
             controller.onGroupFrameEditStarted(this);
             event.consume();
         });
-        grip.setOnMouseDragged(event -> {
+        zone.setOnMouseDragged(event -> {
             resizeTo(handle, content.sceneToLocal(event.getSceneX(), event.getSceneY()));
             event.consume();
         });
-        grip.setOnMouseReleased(event -> {
+        zone.setOnMouseReleased(event -> {
+            // A drag moves the border out from under the pointer, so the strip's own enter/exit is no
+            // longer a reliable account of where the pointer ended up. Settle it from the release
+            // point, or a frame just dragged wider keeps its edges lit.
+            hoveredHandle = zone.contains(event.getX(), event.getY()) ? handle : null;
+            draggedHandle = null;
+            refreshResizeHighlight();
             resizeOrigin = null;
             controller.onGroupFrameEdited(this);
             event.consume();
         });
-        grip.getProperties().put("handle", rect);
-        return grip;
+        return zone;
     }
 
     /**
-     * Applies a grip drag. Moved edges are measured from the rectangle the gesture started on rather
+     * Lights the edges the current handle would move, and keeps them lit for as long as one is being
+     * dragged: a gesture in progress should go on showing what it is doing even while the pointer
+     * runs ahead of the edge it is pulling.
+     */
+    private void refreshResizeHighlight() {
+        Handle handle = draggedHandle != null ? draggedHandle : hoveredHandle;
+        boolean horizontal = handle != null && handle.resizesHorizontal();
+        boolean vertical = handle != null && handle.resizesVertical();
+        // Top, right, bottom, left - the order edgeHighlights is built and laid out in.
+        edgeHighlights.get(0).setVisible(vertical && handle.movesTopEdge());
+        edgeHighlights.get(1).setVisible(horizontal && !handle.movesLeftEdge());
+        edgeHighlights.get(2).setVisible(vertical && !handle.movesTopEdge());
+        edgeHighlights.get(3).setVisible(horizontal && handle.movesLeftEdge());
+    }
+
+    /**
+     * Applies a resize drag. Moved edges are measured from the rectangle the gesture started on rather
      * than from the previous frame, so a drag that pushes an edge past its opposite one and back
      * again comes out where the pointer is instead of accumulating whatever the minimum-size clamp
      * swallowed on the way. A side handle leaves the axis it doesn't own untouched — a horizontal
@@ -483,8 +596,10 @@ public class GroupView extends Region {
         background.setFill(color.deriveColor(0, 1, 1, FILL_OPACITY));
         background.setStroke(color.deriveColor(0, 1, 1, BORDER_OPACITY));
         titleBar.setStyle("-fx-background-color: " + toRgba(color, 0.85) + "; -fx-background-radius: 4;");
-        for (StackPane grip : grips) {
-            ((Rectangle) grip.getProperties().get("handle")).setFill(color.deriveColor(0, 1, 1, 0.9));
+        // Full strength, against the border's own BORDER_OPACITY: a lit edge reads as this frame's,
+        // and as brighter than the edge it is drawn over.
+        for (Rectangle highlight : edgeHighlights) {
+            highlight.setFill(color);
         }
         titleLabel.setText(group.title().isEmpty() ? "Group" : group.title());
         titleLabel.setOpacity(group.title().isEmpty() ? 0.6 : 1);
@@ -495,13 +610,16 @@ public class GroupView extends Region {
     /**
      * Places the title bar in content coordinates directly, since it sits in the canvas's
      * title-overlay layer rather than as a child of this {@code Region} — see the class Javadoc.
-     * Inset by a grip width so the title sits beside the top-left grip rather than over it, and
-     * clamped so it can never grow across the top-right one.
+     * Inset by a corner's width so the title sits beside the top-left corner handle rather than over
+     * it, and clamped so it can never grow across the top-right one. The bar lives in a layer above
+     * this frame, so anywhere it reaches is a place the border cannot be grabbed — which is the
+     * bargain an OS window makes too, its title bar being the move handle.
      */
     private void layoutTitleBar() {
-        double available = Math.max(0, group.width() - 2 * GRIP_SIZE);
+        double available = Math.max(0, group.width() - 2 * RESIZE_CORNER_SPAN);
         double barWidth = Math.min(titleBar.prefWidth(-1), available);
-        titleBar.resizeRelocate(group.x() + GRIP_SIZE, group.y(), barWidth, titleBar.prefHeight(barWidth));
+        titleBar.resizeRelocate(group.x() + RESIZE_CORNER_SPAN, group.y(),
+                barWidth, titleBar.prefHeight(barWidth));
     }
 
     private static String toRgba(Color color, double alpha) {
@@ -550,9 +668,29 @@ public class GroupView extends Region {
         selectionBorder.setHeight(height);
         selectionBorder.relocate(0, 0);
 
-        for (int i = 0; i < grips.size(); i++) {
+        for (int i = 0; i < resizeZones.size(); i++) {
             Handle handle = Handle.values()[i];
-            grips.get(i).resizeRelocate(handle.x(width), handle.y(height), GRIP_SIZE, GRIP_SIZE);
+            Rectangle zone = resizeZones.get(i);
+            zone.setLayoutX(handle.x(width));
+            zone.setLayoutY(handle.y(height));
+            zone.setWidth(handle.width(width));
+            zone.setHeight(handle.height(height));
         }
+
+        // Top, right, bottom, left - the order refreshResizeHighlight() addresses them in. Each bar
+        // is held back from both corners by the border's arc, which it would otherwise overshoot.
+        double barLength = Math.max(0, width - 2 * CORNER_ARC);
+        double barHeight = Math.max(0, height - 2 * CORNER_ARC);
+        place(edgeHighlights.get(0), CORNER_ARC, 0, barLength, RESIZE_EDGE_WIDTH);
+        place(edgeHighlights.get(1), width - RESIZE_EDGE_WIDTH, CORNER_ARC, RESIZE_EDGE_WIDTH, barHeight);
+        place(edgeHighlights.get(2), CORNER_ARC, height - RESIZE_EDGE_WIDTH, barLength, RESIZE_EDGE_WIDTH);
+        place(edgeHighlights.get(3), 0, CORNER_ARC, RESIZE_EDGE_WIDTH, barHeight);
+    }
+
+    private static void place(Rectangle rectangle, double x, double y, double width, double height) {
+        rectangle.setLayoutX(x);
+        rectangle.setLayoutY(y);
+        rectangle.setWidth(width);
+        rectangle.setHeight(height);
     }
 }

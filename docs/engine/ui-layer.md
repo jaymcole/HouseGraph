@@ -123,10 +123,9 @@ Interactions, with the class Javadoc as the authoritative list:
   node in yellow; Escape closes it. See "Find bar" below.
 - Dragging between port circles makes a data edge; dragging between the triangular
   anchors at a node's top corners makes a flow edge.
-- A group frame's title bar drags it and everything inside it; its eight resize
-  grips resize it — a corner grip drags both adjacent edges, a side grip drags
-  only its own edge (horizontal sides resize width, vertical sides resize
-  height). See "Groups" below.
+- A group frame's title bar drags it and everything inside it; its **border**
+  resizes it — a corner drags both adjacent edges, a side drags only its own edge
+  (horizontal sides resize width, vertical sides resize height). See "Groups" below.
 
 While a data edge is dragged, every other port's anchor is coloured by how faithful
 that connection would be. `GraphCanvas.connectionSafety` calls
@@ -258,7 +257,7 @@ frame's title still wins over a larger frame's title where two happen to overlap
 | Action | Reaches |
 | --- | --- |
 | Drag the title bar | the frame, every frame it commands, every node any of those commands, and every routing waypoint inside one — recorded as one `CompositeCommand` |
-| Drag a resize grip | the frame's rectangle only — a corner grip on both axes, a side grip on the one axis it owns. That *is* the point: growing a frame over a node is how the node joins it |
+| Drag the border | the frame's rectangle only — a corner on both axes, a side on the one axis it owns. That *is* the point: growing a frame over a node is how the node joins it |
 | Copy | the frame plus everything it commands, whether or not those nodes were selected — copying a labelled region has to copy the region |
 | Delete | **the frame only.** A frame is a large target laid over real work, and cascading a delete through it would put an automation one mis-aimed keystroke from gone |
 | Rubber band | the frame, but only when the band encloses it **whole** — a node is caught on a mere intersection, but a frame is a background region, and catching it from any band drawn inside it would mean the next drag moved everything else in it too |
@@ -266,12 +265,34 @@ frame's title still wins over a larger frame's title where two happen to overlap
 Dragging nodes never moves a frame: containment runs one way, from the frame to what
 is inside it.
 
-**The frame's body takes no mouse input at all** — only the title bar and the eight
-resize grips do. A large background region that swallowed clicks would make the
-canvas inside it unusable: no rubber band, no click-through to what is behind. That
-is the same division `NodeView` makes, where the title bar drags and the body does
-not. The title bar is inset by one grip width so the top-left grip stays reachable
-beside it, and capped so it never grows over the top-right one.
+**The frame's fill takes no mouse input at all** — only the title bar and the border
+do. A large background region that swallowed clicks would make the canvas inside it
+unusable: no rubber band, no click-through to what is behind. That is the same
+division `NodeView` makes, where the title bar drags and the body does not.
+
+**The border is the resize control, the way an OS window's is** — the same change
+`NodeView` carries, and for the same reason. Eight transparent handles cover it: one
+strip down each edge, running it end to end, and one square at each corner, with the
+corners added after the sides so the pixels they share start the two-axis drag.
+Nothing is drawn for them; a hovered or dragged handle instead lights the edges it
+would move, in the frame's own colour at full strength over the border's own
+`BORDER_OPACITY`. A frame at rest is its rectangle and its title, with no resize
+furniture stuck to it.
+
+The strips are `RESIZE_BORDER_THICKNESS` (10px) deep, wider than `NodeView`'s 6px:
+that one has to stay clear of a port circle twelve pixels in, while a frame's border
+has nothing near it but empty canvas. A frame is also the thing you zoom out to see
+whole, and a handle does not compensate for zoom the way the title bar does, so a
+strip thin in canvas pixels is thin on screen too. Corners reach
+`RESIZE_CORNER_SPAN` (20px) along both edges.
+
+The cost is that a rubber band cannot be started in the few pixels directly over an
+edge. That is what buys the gesture everywhere along the border rather than at a few
+points on it, and the fill — every pixel a frame is drawn around — stays as
+click-through as it ever was. The title bar is inset by a
+corner's width so the top-left corner stays reachable beside it, and capped so it
+never grows over the top-right one; anywhere the bar reaches is a place the border
+cannot be grabbed, which is the bargain an OS window makes too.
 
 **A frame hands keyboard focus back when it is done with it** (`GroupController.
 focusCanvas()`). The inline title editor is hidden *while it still holds focus* —
@@ -280,7 +301,7 @@ just because it became invisible. Without this the hidden field stays the scene'
 focus owner and goes on swallowing every shortcut, so renaming a frame would quietly
 cost the user Ctrl/Cmd+Z, Delete, copy and paste. It runs on every exit from the
 editor, Escape and a no-op commit included, because only some of them reach
-`onGroupFrameEdited`. A grip press does the same, for the reason a `NodeView` drag
+`onGroupFrameEdited`. A border press does the same, for the reason a `NodeView` drag
 focuses the canvas: a gesture that consumes its own press leaves focus wherever it
 was.
 
@@ -332,7 +353,7 @@ does **not** run inside `place`, which paste and redo also use: a rebuild replac
 | View | Renders |
 | --- | --- |
 | `NodeView` | a `BaseNode`: title bar with drag handle and corner flow anchors, left input column, right output column, and a draggable right/bottom/corner border that sets a manual size floor |
-| `GroupView` | a `NodeGroup`: a translucent labelled rectangle behind the graph. Mouse-transparent body, a draggable/editable title bar at the top-left, four corner and four side resize grips |
+| `GroupView` | a `NodeGroup`: a translucent labelled rectangle behind the graph. Mouse-transparent fill, a draggable/editable title bar at the top-left, and a draggable border — four corner and four side handles |
 | `PortView` (`EdgeAnchor`) | one `NodeVariable`; drag its circle to make a data edge; inline editable field when the variable is manually editable and its type is in `ValueEditors` |
 | `FlowPortView` (`EdgeAnchor`) | one `FlowPort` anchor |
 | `EdgeView` / `FlowEdgeView` | the connecting curves, blue for data and green for flow |
