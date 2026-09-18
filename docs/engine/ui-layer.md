@@ -331,7 +331,7 @@ does **not** run inside `place`, which paste and redo also use: a rebuild replac
 
 | View | Renders |
 | --- | --- |
-| `NodeView` | a `BaseNode`: title bar with drag handle and corner flow anchors, left input column, right output column, and three grips that set a manual size floor |
+| `NodeView` | a `BaseNode`: title bar with drag handle and corner flow anchors, left input column, right output column, and a draggable right/bottom/corner border that sets a manual size floor |
 | `GroupView` | a `NodeGroup`: a translucent labelled rectangle behind the graph. Mouse-transparent body, a draggable/editable title bar at the top-left, four corner and four side resize grips |
 | `PortView` (`EdgeAnchor`) | one `NodeVariable`; drag its circle to make a data edge; inline editable field when the variable is manually editable and its type is in `ValueEditors` |
 | `FlowPortView` (`EdgeAnchor`) | one `FlowPort` anchor |
@@ -396,11 +396,24 @@ with an `INSIDE` stroke so they never shift or resize it:
 
 ### Manual node size
 
-A node sizes itself to its title, ports and inline content. Three grips — right edge,
-bottom edge, bottom-right corner — set a **size floor** on top of that, for the node
-whose value field is too narrow to read or whose viewer is too cramped to see. They are
-hidden until the pointer is over the node, and stay visible for as long as one is being
-dragged.
+A node sizes itself to its title, ports and inline content. Dragging the node's own
+border sets a **size floor** on top of that, for the node whose value field is too narrow
+to read or whose viewer is too cramped to see.
+
+**The border is the control, the way an OS window's is.** Nothing is drawn for it: three
+transparent `Rectangle` handles sit over the right border, the bottom border and the
+corner where they meet, and the gesture announces itself with the resize cursor and with
+the border under the pointer lighting up. So a node at rest carries no resize decoration,
+and neither does a canvas of a hundred of them. The side handles run their border end to
+end rather than sitting at a midpoint; the corner overlaps both and is added last, so the
+pixels all three share start the two-axis drag.
+
+They are `RESIZE_BORDER_THICKNESS` (6px) deep, and no deeper: the nearest thing to the
+right border is a port circle, which the body's padding holds twelve pixels in, and a
+handle that reached it would swallow the press that starts an edge. The corner reaches
+`RESIZE_CORNER_SPAN` (14px) along both, because a corner is what a pointer aims at. The
+highlight is a neutral chrome colour and deliberately not one of the node's state colours
+— a node being pointed at is not a node that is selected, misconfigured, running or found.
 
 `NodeView.setManualSize` applies the floor as the region's **minimum** width/height,
 leaving its preferred size computed from its content:
@@ -438,8 +451,10 @@ height and the slack sits below it. See
 [`../nodes/inline-ui.md`](../nodes/inline-ui.md#the-space-your-content-is-given).
 
 The top-left corner never moves, so a resize is not also a move: position stays the
-canvas's business. The grips are unmanaged children placed by `NodeView.layoutChildren`,
-unlike the overlay rectangles above, which are stretched by binding.
+canvas's business. The handles and the border highlights are unmanaged children placed
+**and sized** by `NodeView.layoutChildren` — each covers one border, so it tracks one of
+the node's dimensions and a constant on the other, unlike the overlay rectangles above,
+which are stretched over the whole node by binding.
 
 Edge curves follow automatically — `AbstractEdgeView` listens to each endpoint node's
 `boundsInParent`, which a resize changes just as a move does.
@@ -447,7 +462,7 @@ Edge curves follow automatically — `AbstractEdgeView` listens to each endpoint
 The floor is the view's, not the model's: `BaseNode` knows nothing about it. It rides
 `ClipboardNode`'s `width`/`height` alongside the position, so it survives copy/paste, a
 port-change rebuild (`rebuildNodeView` carries it to the replacement view), and
-save/load — see [save-format.md](save-format.md). A grip drag applies live and records a
+save/load — see [save-format.md](save-format.md). A border drag applies live and records a
 `ResizeNodeCommand` on release; **Reset size** goes through the same path, so both are
 one kind of undo step.
 

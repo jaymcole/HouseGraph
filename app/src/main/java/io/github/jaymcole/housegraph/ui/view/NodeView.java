@@ -53,11 +53,14 @@ import java.util.List;
  * node exposing several out-ports (e.g. a branch/decider) gets one anchor each.
  *
  * <h2>A node sizes itself, unless told a floor</h2>
- * By default a node is exactly as big as its title, ports and inline content need. Three grips —
- * right edge, bottom edge, bottom-right corner — set a <b>manual size floor</b> on top of that (see
- * {@link #setManualSize}), which is what makes a node with a long value or a cramped viewer
- * readable. The floor is a minimum, never a fixed size: a node whose content outgrows it still
- * grows, and "Reset size" in the context menu drops it again. It is saved with the graph.
+ * By default a node is exactly as big as its title, ports and inline content need. Dragging the
+ * node's own border — its right edge, its bottom edge, or the corner where the two meet — sets a
+ * <b>manual size floor</b> on top of that (see {@link #setManualSize}), which is what makes a node
+ * with a long value or a cramped viewer readable. The border is the control, the way an OS window's
+ * is: nothing is drawn for it, and the pointer announces the gesture by changing to a resize cursor
+ * while the border under it lights up. The floor is a minimum, never a fixed size: a node whose
+ * content outgrows it still grows, and "Reset size" in the context menu drops it again. It is saved
+ * with the graph.
  */
 public class NodeView extends BorderPane {
 
@@ -72,10 +75,10 @@ public class NodeView extends BorderPane {
         void onNodeReleased();
 
         /**
-         * The node's manual size floor changed — a grip drag that ended, or a reset from the context
-         * menu. Already applied to the view, so this is a record-it-for-undo call, the same shape as
-         * {@link #onNodeReleased()} for a move. A width or height of {@code 0} means that axis sizes
-         * itself; see {@link NodeView#setManualSize}.
+         * The node's manual size floor changed — a border drag that ended, or a reset from the
+         * context menu. Already applied to the view, so this is a record-it-for-undo call, the same
+         * shape as {@link #onNodeReleased()} for a move. A width or height of {@code 0} means that
+         * axis sizes itself; see {@link NodeView#setManualSize}.
          */
         void onNodeResized(NodeView node, double fromWidth, double fromHeight, double toWidth, double toHeight);
 
@@ -87,10 +90,16 @@ public class NodeView extends BorderPane {
     }
 
     /**
-     * Which axes a resize grip drives. The node's top-left corner never moves — position is the
-     * canvas's business, not the view's — so every grip grows the node right and/or down. A grip
-     * sits pinned to the far edge on the axis it resizes and centred on the one it leaves alone,
-     * which is what puts the corner grip in the corner and each side grip at its midpoint.
+     * Which axes a resize drag drives, and which strip of the node's own border starts it. The
+     * top-left corner never moves — position is the canvas's business, not the view's — so every
+     * handle grows the node right and/or down: the right border, the bottom border, and the corner
+     * where they meet.
+     *
+     * <h4>A side handle runs the whole border, and the corner wins the overlap</h4>
+     * Each side handle spans its border end to end, so the gesture is available anywhere along the
+     * edge rather than at one midpoint. The corner square overlaps both, and the handles are added
+     * to the node in this enum's order, so the last one declared sits on top and the pixels all
+     * three share start the two-axis drag — which is what a pointer aimed at a corner means.
      */
     private enum ResizeHandle {
         EAST(true, false, Cursor.E_RESIZE),
@@ -107,12 +116,32 @@ public class NodeView extends BorderPane {
             this.cursor = cursor;
         }
 
-        double x(double width) {
-            return horizontal ? width - GRIP_SIZE : (width - GRIP_SIZE) / 2;
+        /**
+         * How wide this handle's strip is on a node of the given width. A handle is thin across the
+         * border it drags and spans the node on the axis it leaves alone; the corner is thick on
+         * both. Clamped, because a node narrower than the strip still has to get a usable one.
+         */
+        double width(double nodeWidth) {
+            if (this == SOUTH_EAST) {
+                return Math.min(RESIZE_CORNER_SPAN, nodeWidth);
+            }
+            return horizontal ? Math.min(RESIZE_BORDER_THICKNESS, nodeWidth) : nodeWidth;
         }
 
-        double y(double height) {
-            return vertical ? height - GRIP_SIZE : (height - GRIP_SIZE) / 2;
+        double height(double nodeHeight) {
+            if (this == SOUTH_EAST) {
+                return Math.min(RESIZE_CORNER_SPAN, nodeHeight);
+            }
+            return vertical ? Math.min(RESIZE_BORDER_THICKNESS, nodeHeight) : nodeHeight;
+        }
+
+        /** A handle hugs the far edge on each axis it resizes, and starts at zero on the one it does not. */
+        double x(double nodeWidth) {
+            return horizontal ? nodeWidth - width(nodeWidth) : 0;
+        }
+
+        double y(double nodeHeight) {
+            return vertical ? nodeHeight - height(nodeHeight) : 0;
         }
     }
 
@@ -142,15 +171,25 @@ public class NodeView extends BorderPane {
     private static final double PROCESSING_CYCLE_LENGTH = PROCESSING_DASH_LENGTH + PROCESSING_GAP_LENGTH;
 
     /**
-     * Deliberately a little smaller than {@code GroupView}'s frame grips: a frame's corner has
-     * nothing but empty canvas near it, a node's has ports. Grips sit inside the node rather than
-     * straddling its edge for the same reason the overlays do — the node's bounds are what edges
-     * follow, what an export measures and what a frame's containment is judged against, and a
-     * decoration has no business changing any of them.
+     * How far into the node a resize handle reaches. Narrow on purpose: the nearest thing to the
+     * right border is a port circle, which the body's own padding holds twelve pixels in, and a
+     * strip that reached it would swallow the press that starts an edge. The corner reaches further
+     * along both borders, because a corner is what a pointer aims at.
+     *
+     * <p>Handles sit inside the node rather than straddling its edge for the same reason the
+     * overlays do — the node's bounds are what edges follow, what an export measures and what a
+     * frame's containment is judged against, and an affordance has no business changing any of them.
      */
-    private static final double GRIP_SIZE = 12;
-    private static final Color GRIP_COLOR = Color.web("#8a9199");
-    private static final double GRIP_RESTING_OPACITY = 0.45;
+    private static final double RESIZE_BORDER_THICKNESS = 6;
+    private static final double RESIZE_CORNER_SPAN = 14;
+
+    /**
+     * What a border lights up in while its handle is under the pointer. A neutral chrome colour,
+     * deliberately not one of the state colours above: a node being pointed at is not a node that is
+     * selected, misconfigured, running or found.
+     */
+    private static final Color RESIZE_EDGE_COLOR = Color.web("#c8cdd3");
+    private static final double RESIZE_EDGE_WIDTH = 2;
 
     /** A width or height of this means "size that axis to the content" - the state every node starts in. */
     public static final double AUTOMATIC = 0;
@@ -188,19 +227,33 @@ public class NodeView extends BorderPane {
     private final Tooltip policyTooltip = new Tooltip();
 
     /**
-     * The grips that set {@link #setManualSize the manual size floor}: one per {@link ResizeHandle},
-     * in that enum's order, which is what {@link #layoutChildren()} relies on to place them.
+     * The transparent strips of border that set {@link #setManualSize the manual size floor}: one per
+     * {@link ResizeHandle}, in that enum's order, which is what {@link #layoutChildren()} relies on
+     * to place them and what decides the corner's overlap. Nothing is drawn for them — see
+     * {@link #eastEdgeHighlight}.
      */
-    private final List<Rectangle> resizeGrips = new ArrayList<>();
+    private final List<Rectangle> resizeZones = new ArrayList<>();
+
+    /**
+     * What a resize handle actually shows: the border it would move, drawn over the node's own. The
+     * handles themselves are invisible, so an idle node carries no resize decoration at all and a
+     * canvas full of them stays quiet.
+     */
+    private final Rectangle eastEdgeHighlight = new Rectangle();
+    private final Rectangle southEdgeHighlight = new Rectangle();
+
+    /**
+     * The handle under the pointer and the handle being dragged. Either may be null, and a drag in
+     * progress outranks the pointer — see {@link #refreshResizeHighlight()}.
+     */
+    private ResizeHandle hoveredHandle;
+    private ResizeHandle draggedHandle;
 
     /** The floor in force, per axis, or {@link #AUTOMATIC}. The view's copy of what the save file stores. */
     private double manualWidth = AUTOMATIC;
     private double manualHeight = AUTOMATIC;
 
-    /** True between a grip's press and its release, so the grips stay visible while the pointer leaves the node. */
-    private boolean resizing = false;
-
-    /** The floor the current grip drag started from, captured for undo. */
+    /** The floor the current resize drag started from, captured for undo. */
     private double resizeGestureStartWidth;
     private double resizeGestureStartHeight;
 
@@ -511,17 +564,25 @@ public class NodeView extends BorderPane {
                 new KeyFrame(Duration.seconds(0.6), new KeyValue(processingStripes.strokeDashOffsetProperty(), PROCESSING_CYCLE_LENGTH)));
         processingAnimation.setCycleCount(Timeline.INDEFINITE);
 
-        // The resize grips, added last so they sit above every overlay and take the press. They are
-        // unmanaged like the overlays, but unlike them they are placed rather than stretched, which
-        // is what layoutChildren() below does. Hidden until the pointer is over the node: a grip on
-        // every node at rest would clutter a canvas of them, and the cursor change plus the hover
-        // reveal is how the gesture announces itself.
-        for (ResizeHandle handle : ResizeHandle.values()) {
-            Rectangle grip = buildResizeGrip(handle);
-            resizeGrips.add(grip);
-            getChildren().add(grip);
+        // The borders a resize lights up. Unmanaged and mouse-transparent like the overlays above,
+        // but placed rather than stretched - each covers one border, not the whole node - which is
+        // what layoutChildren() below does.
+        for (Rectangle highlight : List.of(eastEdgeHighlight, southEdgeHighlight)) {
+            highlight.setFill(RESIZE_EDGE_COLOR);
+            highlight.setMouseTransparent(true);
+            highlight.setManaged(false);
+            highlight.setVisible(false);
+            getChildren().add(highlight);
         }
-        hoverProperty().addListener((obs, was, now) -> refreshGripVisibility());
+
+        // The resize handles, added last so they sit above every overlay and take the press. Nothing
+        // is drawn for them: a strip of the node's own border is the control, the way an OS window's
+        // border is, so there is no button to reveal on hover and none to clutter the canvas at rest.
+        for (ResizeHandle handle : ResizeHandle.values()) {
+            Rectangle zone = buildResizeZone(handle);
+            resizeZones.add(zone);
+            getChildren().add(zone);
+        }
 
         // Reflect the node's initial configured state (a fresh node with unwired required
         // inputs shows red at once, before any edge is drawn).
@@ -529,61 +590,95 @@ public class NodeView extends BorderPane {
     }
 
     /**
-     * Places the resize grips, which are unmanaged and so are nobody else's job. Everything else
-     * here is either a laid-out child of the {@link BorderPane} or an overlay bound to the node's
-     * own width/height, and needs nothing from this.
+     * Places the resize handles and the border highlights they light, which are unmanaged and so are
+     * nobody else's job. They are sized here as well as positioned, because unlike the overlays —
+     * which are stretched over the whole node by binding — each covers one border and so tracks one
+     * of the node's dimensions and a constant on the other.
+     *
+     * <p>Everything else here is either a laid-out child of the {@link BorderPane} or one of those
+     * bound overlays, and needs nothing from this.
      */
     @Override
     protected void layoutChildren() {
         super.layoutChildren();
+        double width = getWidth();
+        double height = getHeight();
+
         ResizeHandle[] handles = ResizeHandle.values();
-        for (int i = 0; i < resizeGrips.size(); i++) {
-            Rectangle grip = resizeGrips.get(i);
-            grip.setLayoutX(handles[i].x(getWidth()));
-            grip.setLayoutY(handles[i].y(getHeight()));
+        for (int i = 0; i < resizeZones.size(); i++) {
+            ResizeHandle handle = handles[i];
+            Rectangle zone = resizeZones.get(i);
+            zone.setLayoutX(handle.x(width));
+            zone.setLayoutY(handle.y(height));
+            zone.setWidth(handle.width(width));
+            zone.setHeight(handle.height(height));
         }
-    }
 
-    private Rectangle buildResizeGrip(ResizeHandle handle) {
-        Rectangle grip = new Rectangle(GRIP_SIZE, GRIP_SIZE);
-        grip.setArcWidth(4);
-        grip.setArcHeight(4);
-        grip.setFill(GRIP_COLOR);
-        grip.setOpacity(GRIP_RESTING_OPACITY);
-        grip.setCursor(handle.cursor);
-        grip.setManaged(false);
-        grip.setVisible(false);
-        grip.setOnMouseEntered(event -> grip.setOpacity(1));
-        grip.setOnMouseExited(event -> grip.setOpacity(GRIP_RESTING_OPACITY));
-        grip.setOnMousePressed(event -> {
-            beginResize();
-            event.consume();
-        });
-        grip.setOnMouseDragged(event -> {
-            resizeTo(handle, content.sceneToLocal(event.getSceneX(), event.getSceneY()));
-            event.consume();
-        });
-        grip.setOnMouseReleased(event -> {
-            endResize();
-            event.consume();
-        });
-        return grip;
-    }
+        eastEdgeHighlight.setLayoutX(Math.max(0, width - RESIZE_EDGE_WIDTH));
+        eastEdgeHighlight.setLayoutY(0);
+        eastEdgeHighlight.setWidth(Math.min(RESIZE_EDGE_WIDTH, width));
+        eastEdgeHighlight.setHeight(height);
 
-    private void beginResize() {
-        if (dragController != null) {
-            dragController.focusCanvas();
-        }
-        resizing = true;
-        resizeGestureStartWidth = manualWidth;
-        resizeGestureStartHeight = manualHeight;
-        refreshGripVisibility();
+        southEdgeHighlight.setLayoutX(0);
+        southEdgeHighlight.setLayoutY(Math.max(0, height - RESIZE_EDGE_WIDTH));
+        southEdgeHighlight.setWidth(width);
+        southEdgeHighlight.setHeight(Math.min(RESIZE_EDGE_WIDTH, height));
     }
 
     /**
-     * Applies a grip drag: the pointer is where the node's right and/or bottom edge should now be,
+     * Builds one handle: a strip over the border it drags, filled with {@code Color.TRANSPARENT} and
+     * not left unfilled — an unfilled shape is invisible to the pointer, which is the one thing this
+     * has to be. Sized by {@link #layoutChildren()}, which is the only place that knows the node's
+     * dimensions.
+     */
+    private Rectangle buildResizeZone(ResizeHandle handle) {
+        Rectangle zone = new Rectangle();
+        zone.setFill(Color.TRANSPARENT);
+        zone.setCursor(handle.cursor);
+        zone.setManaged(false);
+        zone.setOnMouseEntered(event -> {
+            hoveredHandle = handle;
+            refreshResizeHighlight();
+        });
+        zone.setOnMouseExited(event -> {
+            if (hoveredHandle == handle) {
+                hoveredHandle = null;
+            }
+            refreshResizeHighlight();
+        });
+        zone.setOnMousePressed(event -> {
+            beginResize(handle);
+            event.consume();
+        });
+        zone.setOnMouseDragged(event -> {
+            resizeTo(handle, content.sceneToLocal(event.getSceneX(), event.getSceneY()));
+            event.consume();
+        });
+        zone.setOnMouseReleased(event -> {
+            // A drag moves the border out from under the pointer and back again, so the strip's own
+            // enter/exit is no longer a reliable account of where the pointer ended up. Settle it
+            // from the release point, or a node just dragged wider keeps its border lit.
+            hoveredHandle = zone.contains(event.getX(), event.getY()) ? handle : null;
+            endResize();
+            event.consume();
+        });
+        return zone;
+    }
+
+    private void beginResize(ResizeHandle handle) {
+        if (dragController != null) {
+            dragController.focusCanvas();
+        }
+        draggedHandle = handle;
+        resizeGestureStartWidth = manualWidth;
+        resizeGestureStartHeight = manualHeight;
+        refreshResizeHighlight();
+    }
+
+    /**
+     * Applies a border drag: the pointer is where the node's right and/or bottom edge should now be,
      * measured in the same content coordinates the node's own {@code layoutX}/{@code layoutY} are in,
-     * so zoom and pan need no arithmetic of their own. The axis a side grip does not own is left
+     * so zoom and pan need no arithmetic of their own. The axis a side handle does not own is left
      * exactly as it was.
      */
     private void resizeTo(ResizeHandle handle, Point2D pointerContentPoint) {
@@ -609,8 +704,8 @@ public class NodeView extends BorderPane {
     }
 
     private void endResize() {
-        resizing = false;
-        refreshGripVisibility();
+        draggedHandle = null;
+        refreshResizeHighlight();
         if (dragController != null
                 && (manualWidth != resizeGestureStartWidth || manualHeight != resizeGestureStartHeight)) {
             dragController.onNodeResized(this, resizeGestureStartWidth, resizeGestureStartHeight,
@@ -618,17 +713,20 @@ public class NodeView extends BorderPane {
         }
     }
 
-    /** Grips show while the pointer is over the node, and go on showing for as long as one is being dragged. */
-    private void refreshGripVisibility() {
-        boolean show = resizing || isHover();
-        for (Rectangle grip : resizeGrips) {
-            grip.setVisible(show);
-        }
+    /**
+     * Lights the borders the current handle would move, and keeps them lit for as long as one is
+     * being dragged: a gesture in progress should go on showing what it is doing even while the
+     * pointer runs ahead of the border it is pulling.
+     */
+    private void refreshResizeHighlight() {
+        ResizeHandle handle = draggedHandle != null ? draggedHandle : hoveredHandle;
+        eastEdgeHighlight.setVisible(handle != null && handle.horizontal);
+        southEdgeHighlight.setVisible(handle != null && handle.vertical);
     }
 
     /**
      * Sets this node's manual size floor in content coordinates, {@link #AUTOMATIC} on an axis that
-     * should size itself. Public because it is applied from three places: a grip drag, a loaded or
+     * should size itself. Public because it is applied from three places: a border drag, a loaded or
      * pasted graph, and {@code ResizeNodeCommand} undoing either.
      *
      * <h4>Why a floor and not a size</h4>
@@ -901,8 +999,8 @@ public class NodeView extends BorderPane {
 
     /**
      * Drops the manual size floor, returning the node to sizing itself. Applied here and reported to
-     * the canvas afterwards, the same way a grip drag is, so the two arrive on the undo stack as the
-     * same kind of step.
+     * the canvas afterwards, the same way a border drag is, so the two arrive on the undo stack as
+     * the same kind of step.
      */
     private MenuItem buildResetSizeItem() {
         MenuItem item = new MenuItem("Reset size");

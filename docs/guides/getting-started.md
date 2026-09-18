@@ -62,8 +62,9 @@ To build something:
 A node is normally exactly as big as it needs to be. A value field grows with what you
 type into it, but only so far — past that a node would balloon across the canvas, so it
 stops, and a long path or prompt runs out of room. When a node is too cramped to read,
-hover it and drag one of the grips that appear at its right edge, bottom edge and
-bottom-right corner; the width goes to the field, so the whole value is readable. That sets
+drag its border — the right edge, the bottom edge, or the corner between them, just like
+resizing a window. The cursor changes and the edge lights up when you are on it; the width
+goes to the field, so the whole value is readable. That sets
 a **minimum** size, not a fixed one: the node can only get bigger than it would be on
 its own, so it can never end up clipping what it has to show, and it still grows by
 itself if its contents later need more room. The size is saved with the graph. To undo
@@ -137,7 +138,7 @@ they never change what a graph does or how fast it runs.
 | Group the selection | `Ctrl/Cmd+G` — see "Grouping a region" above |
 | Undo / redo | `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` |
 | Bend an edge | double-click it to add a waypoint |
-| Resize a node | hover it, then drag a grip on its right edge, bottom edge or corner |
+| Resize a node | drag its right edge, bottom edge or bottom-right corner |
 | Un-resize a node | right-click it ▸ **Reset size**, or drag the edge back inside the node |
 | See what a port is for | hover its name (or its value field); hover the circle for the type |
 | Node options | right-click a node |
