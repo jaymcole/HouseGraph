@@ -42,7 +42,7 @@ public record NodeGroup(String title, double x, double y, double width, double h
     /** What a frame is drawn in until the user picks something else. */
     public static final String DEFAULT_COLOR = "#61afef";
 
-    /** Small enough to frame a single node, large enough to leave its title and corner grips reachable. */
+    /** Small enough to frame a single node, large enough to leave its title and corner handles reachable. */
     public static final double MIN_WIDTH = 80;
 
     /** @see #MIN_WIDTH */

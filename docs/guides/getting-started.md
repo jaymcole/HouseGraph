@@ -107,7 +107,7 @@ choosing **Add Group** drops an empty one you can then drag nodes into.
 | To | Do |
 | --- | --- |
 | Move the group and everything in it | drag its title bar |
-| Resize it | drag any corner grip |
+| Resize it | drag its border — any edge or corner, just like a window |
 | Rename it | double-click the title, or right-click it ▸ **Rename…** |
 | Recolour it | right-click the title ▸ **Colour** |
 | Delete the frame | click its title bar, then Delete — **the nodes inside stay put** |
